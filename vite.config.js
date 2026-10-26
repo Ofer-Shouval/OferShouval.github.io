@@ -14,7 +14,7 @@ function includePartials(html) {
   );
 }
 
-// Marks the navbar link for the page's top-level section (e.g. /work/ for work/luminin.html).
+// Marks the navbar link for the page's top-level section (e.g. /projects/ for projects/luminin.html).
 function markCurrentSection(html, filename) {
   const [first, ...rest] = relative(root, filename).split('/');
   const section = rest.length ? `/${first}/` : '/';
@@ -48,7 +48,7 @@ export default defineConfig({
   plugins: [htmlPartials()],
   build: {
     // p5 alone is ~1 MB minified and can't be split further.
-    chunkSizeWarningLimit: 1100,
+    chunkSizeWarningLimit: 1300,
     rollupOptions: {
       input: findPages(),
     },

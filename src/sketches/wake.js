@@ -1,5 +1,8 @@
 import p5 from 'p5';
 
+// The friendly-error checker slows every p5 call; it's for development, not the live site.
+p5.disableFriendlyErrors = import.meta.env.PROD;
+
 // Full-screen background sketch for the home page ("Wake" - 2019).
 const wake = (p) => {
   const wLength = 150;
@@ -33,6 +36,7 @@ const wake = (p) => {
     for (let i = 0; i < yValue.length - 1; i++) {
       yValue[i] = yValue[i + 1];
       xValue[i] = xValue[i + 1];
+      if (xValue[i] === undefined) continue; // trail still filling up
 
       const diameter = p.sin(p.map(i, 0, yValue.length, 0, p.PI));
       const fade = p.sin(p.map(i, 0, yValue.length, 0, p.HALF_PI));

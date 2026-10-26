@@ -116,7 +116,7 @@ ul {
 }
 
 
-/* Content pages (work, music, teaching) */
+/* Content pages (projects, music, teaching) */
 
 .page {
   max-width: 1000px;
@@ -212,13 +212,36 @@ ul {
   height: 100%;
 }
 
-#psychwormContainer {
+/* Live p5 sketches (see src/scripts/sketchbook.js) */
+
+.sketch {
   width: 100%;
-  border: white 1px solid;
+  aspect-ratio: 4 / 3;
+  background-color: black;
+  overflow: hidden;
+}
+
+.card .sketch {
+  border-bottom: 1px solid #ccc;
+}
+
+.sketch-large {
+  max-height: 80vh;
+  margin: 24px auto;
+  border: 1px solid #ccc;
+}
+
+.page .card h3 a {
+  font-size: inherit;
+  text-decoration: none;
+}
+
+.page .card h3 a:hover {
+  text-decoration: underline;
 }
 
 
-/* Card grids (work, music releases, courses, student work) */
+/* Card grids (projects, music releases, courses, student work) */
 
 .card-grid {
   display: grid;
