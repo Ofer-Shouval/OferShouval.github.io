@@ -1,9 +1,11 @@
 import { defineConfig } from 'vite';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readdirSync, readFileSync } from 'node:fs';
+import { relative, resolve } from 'node:path';
 
-const partialsDir = resolve(import.meta.dirname, 'src/partials');
+const root = import.meta.dirname;
+const partialsDir = resolve(root, 'src/partials');
 const includePattern = /<!--\s*@include\s+(\S+)\s*-->/g;
+const ignoredDirs = ['node_modules', 'dist', 'archive', 'src', 'public', '.git'];
 
 // Replaces <!-- @include name.html --> with the contents of src/partials/name.html (recursively).
 function includePartials(html) {
@@ -12,10 +14,20 @@ function includePartials(html) {
   );
 }
 
+// Marks the navbar link for the page's top-level section (e.g. /work/ for work/luminin.html).
+function markCurrentSection(html, filename) {
+  const [first, ...rest] = relative(root, filename).split('/');
+  const section = rest.length ? `/${first}/` : '/';
+  return html.replace(`<a href="${section}">`, `<a href="${section}" aria-current="page">`);
+}
+
 function htmlPartials() {
   return {
     name: 'html-partials',
-    transformIndexHtml: { order: 'pre', handler: includePartials },
+    transformIndexHtml: {
+      order: 'pre',
+      handler: (html, ctx) => markCurrentSection(includePartials(html), ctx.filename),
+    },
     handleHotUpdate({ file, server }) {
       if (file.startsWith(partialsDir)) {
         server.ws.send({ type: 'full-reload' });
@@ -25,17 +37,20 @@ function htmlPartials() {
   };
 }
 
+// Every .html file outside the ignored folders is a page, so new pages need no config changes.
+function findPages() {
+  return readdirSync(root, { recursive: true })
+    .filter((file) => file.endsWith('.html') && !ignoredDirs.includes(file.split('/')[0]))
+    .map((file) => resolve(root, file));
+}
+
 export default defineConfig({
   plugins: [htmlPartials()],
   build: {
     // p5 alone is ~1 MB minified and can't be split further.
     chunkSizeWarningLimit: 1100,
     rollupOptions: {
-      input: {
-        main: resolve(import.meta.dirname, 'index.html'),
-        projects: resolve(import.meta.dirname, 'projects.html'),
-        bio: resolve(import.meta.dirname, 'bio.html'),
-      },
+      input: findPages(),
     },
   },
 });
