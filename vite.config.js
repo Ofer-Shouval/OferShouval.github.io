@@ -46,6 +46,12 @@ function findPages() {
 
 export default defineConfig({
   plugins: [htmlPartials()],
+  // Pre-bundle p5 at startup from the real pages only (not dist/ or archive/), so the dev server
+  // never discovers it mid-session and serves pages a stale copy ("504 Outdated Optimize Dep").
+  optimizeDeps: {
+    entries: findPages(),
+    include: ['p5'],
+  },
   build: {
     // p5 alone is ~1 MB minified and can't be split further.
     chunkSizeWarningLimit: 1300,
