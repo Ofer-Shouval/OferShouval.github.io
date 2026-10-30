@@ -27,6 +27,7 @@ export default class WaterLines {
     this.waveScale = 0.01; // How long the waves are (smaller = longer waves)
     this.waveSpeed = 0.01; // How quickly the waves change
     this.waveHeight = 10; // How tall the waves are, in pixels, near the bottom of the screen
+    this.drift = 0.003; // How fast the lines drift toward the bottom of the screen on their own, in gaps per frame
     this.alpha = 200; // How bright the lines are, near the bottom of the screen (255 = solid)
     this.step = 10; // Pixels between the points along each line
     this.top = 40; // No lines higher than this up the screen
@@ -79,6 +80,8 @@ export default class WaterLines {
     // spaced in perspective, so move them by however many gaps the scroll is at the boat
     let gap = boatY * (1 - this.ratio);
     this.travelled -= scroll.y / gap;
+    // ...and they drift slowly toward the camera on their own, as if the water's flowing
+    this.travelled += this.drift;
     this.travelledX += scroll.x;
 
     // The stream of bubbles sits on the water, so it slides back with it, until they're gone

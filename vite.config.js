@@ -14,7 +14,7 @@ function includePartials(html) {
   );
 }
 
-// Marks the navbar link for the page's top-level section (e.g. /projects/ for projects/luminin.html).
+// Marks the navbar link for the page's top-level section (e.g. /art/ for art/luminin.html).
 function markCurrentSection(html, filename) {
   const [first, ...rest] = relative(root, filename).split('/');
   const section = rest.length ? `/${first}/` : '/';

@@ -12,7 +12,7 @@ npm run preview  # serve the dist/ build locally
 ## Layout
 
 - `index.html` — home (full-screen "Wake" sketch)
-- `projects/` — one page per project, `projects/index.html` is the grid
+- `art/` — one page per piece; `art/index.html` is the walking landing page, `art/all.html` the grid of everything
 - `music/` — releases grid, `live.html`, and `release-template.html` to copy for each release
 - `teaching/` — courses and student work
 - `bio/` — bio
@@ -40,8 +40,8 @@ Convert GIFs or clips to MP4 and use a poster frame:
 
 1. Copy `src/sketchbook/template.js` to `src/sketchbook/<name>.js` and write the sketch in instance mode
    (`export default function (p, container) { ... }`, size the canvas to `container`).
-2. Copy `projects/sketchbook/sketch-template.html` to `projects/sketchbook/<name>.html` and set `data-sketch="<name>"`.
-3. Add a card with `<div class="sketch" data-sketch="<name>"></div>` to `projects/sketchbook/index.html`.
+2. Copy `art/sketchbook/sketch-template.html` to `art/sketchbook/<name>.html` and set `data-sketch="<name>"`.
+3. Add a card with `<div class="sketch" data-sketch="<name>"></div>` to `art/sketchbook/index.html`.
 
 Any page can show live sketches this way. Each one loads when it scrolls near view, pauses off screen,
 and resizes with its container. p5's friendly errors are on in `npm run dev` and off in the build.

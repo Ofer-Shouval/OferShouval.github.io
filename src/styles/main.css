@@ -116,7 +116,20 @@ ul {
 }
 
 
-/* Content pages (projects, music, teaching) */
+/* The art landing page's link to the list of everything */
+
+.footer.art-list-link {
+  width: auto;
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+.footer.art-list-link:hover {
+  opacity: 1;
+}
+
+
+/* Content pages (art, music, teaching) */
 
 .page {
   max-width: 1000px;
@@ -241,7 +254,7 @@ ul {
 }
 
 
-/* Card grids (projects, music releases, courses, student work) */
+/* Card grids (art, music releases, courses, student work) */
 
 .card-grid {
   display: grid;

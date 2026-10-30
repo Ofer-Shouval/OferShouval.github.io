@@ -31,6 +31,14 @@ let bubbleSpread = 1.6; // How hard the outermost bubbles are thrown sideways, c
 let bubbleAlpha = 100; // How bright they are, like the boat's reflection (255 = solid)
 let bubbles = []; // { position, velocity, born }
 
+// The camera swings round to follow the boat: behind it when it heads away up the screen
+// at an angle, in front of it when it heads toward us, so it ends up sailing straight away
+// or straight toward us. (Heading mostly sideways, the camera stays put.)
+let cameraSpeed = 0.012; // How quickly the camera swings round
+let cameraEase = 0.03; // How gradually it starts and stops swinging (smaller = gentler)
+let cameraTurn = 0; // How fast it's swinging right now, in radians per frame
+let cameraDeadZone = 0.2; // Heading closer to sideways than this (0 to 1), the camera doesn't move
+
 function setup() {
   let canvas = createCanvas(windowWidth, windowHeight);
   canvas.position(0, 0);
@@ -47,9 +55,9 @@ function setup() {
   // point the way. Sail into one to go to that page.
   let pages = [
     ['/music/', 'music'],
+    ['/art/', 'art'],
     ['/teaching/', 'teaching'],
     ['/bio/', 'bio'],
-    ['/projects/', 'projects'],
   ];
   for (let i = 0; i < pages.length; i++) {
     // Head out from the middle of the screen at this angle (left = PI, straight up = PI * 1.5)
@@ -64,6 +72,7 @@ function setup() {
 
 function draw() {
   background(0);
+  swingCamera();
   fill(0);
 
   // The water, with the wake pushing its lines aside, then the bubbles and the wake on top
@@ -141,6 +150,60 @@ function showBubbles() {
     stroke(rippleColor(age, bubbleAlpha * fade));
     let w = diameter * bubbleSize * depth(b.position.y);
     ellipse(b.position.x, b.position.y, w, w * flatness(b.position.y) * boat.squash); // Too small to need a wavy edge
+  }
+}
+
+// Swing the camera round a little toward being behind (or in front of) the boat. Swinging the
+// camera is the same as turning everything on the water the other way around the boat: the
+// boat's heading, its wake, the gates and the bubbles. (Not the water's lines: they're waves
+// running across the view, so they look the same from any angle.)
+function swingCamera() {
+  // Hold still while the boat's going through a gate, so the gate stays put around it
+  if (boat.sinking) {
+    cameraTurn = 0;
+    return;
+  }
+  // How fast it would like to be swinging: toward having the boat head straight up or down
+  // the screen, more the steeper it's heading (and not at all when it's still)
+  let wanted = 0;
+  if (boat.velocity.mag() > 0.5) {
+    let heading = boat.velocity.heading();
+    let upOrDown = sin(heading); // -1 = straight up the screen (away), 1 = straight down (toward us)
+    let steepness = constrain((abs(upOrDown) - cameraDeadZone) / 0.3, 0, 1);
+    let target = upOrDown < 0 ? -HALF_PI : HALF_PI;
+    wanted = atan2(sin(target - heading), cos(target - heading)) * cameraSpeed * steepness;
+  }
+  // Ease into it and out of it, rather than starting and stopping all at once
+  cameraTurn = lerp(cameraTurn, wanted, cameraEase);
+  if (abs(cameraTurn) < 0.00001) return;
+  let turn = cameraTurn;
+
+  // Turn about where the boat sits on the water, on the water (unsquashing it first, so
+  // things go round in circles on the water, not on the screen)
+  let pivot = createVector(boat.position.x, boat.position.y + boat.length * 0.12);
+  let squash = boat.sinTilt;
+  let turnPoint = (v) => {
+    let dx = v.x - pivot.x;
+    let dy = (v.y - pivot.y) / squash;
+    v.set(pivot.x + dx * cos(turn) - dy * sin(turn), pivot.y + (dx * sin(turn) + dy * cos(turn)) * squash);
+  };
+  let turnDirection = (v) => {
+    let dy = v.y / squash;
+    v.set(v.x * cos(turn) - dy * sin(turn), (v.x * sin(turn) + dy * cos(turn)) * squash);
+  };
+
+  turnDirection(boat.velocity);
+  boat.angle += turn;
+  for (let portal of portals) turnPoint(portal.position);
+  for (let line of wake.lines.concat(wake.hullLines)) {
+    for (let particle of line) {
+      turnPoint(particle.position);
+      turnDirection(particle.velocity);
+    }
+  }
+  for (let b of bubbles) {
+    turnPoint(b.position);
+    turnDirection(b.velocity);
   }
 }
 

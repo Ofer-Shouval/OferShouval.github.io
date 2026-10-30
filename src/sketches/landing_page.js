@@ -35,7 +35,7 @@ function setup() {
     ['/music/', 'music'],
     ['/teaching/', 'teaching'],
     ['/bio/', 'bio'],
-    ['/projects/', 'projects'],
+    ['/art/', 'art'],
   ];
   for (let i = 0; i < pages.length; i++) {
     // Head out from the middle of the screen at this angle (left = PI, straight up = PI * 1.5)
