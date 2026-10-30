@@ -33,19 +33,19 @@ export default class Boat {
     this.sinking = false; // Set by a gate when the boat starts going through it
     this.gateCut = null; // Set by a gate while the boat goes through it: where to cut the boat off
     this.destination = null; // A portal to sail to by itself (see sailTo())
-    this.arcAmount = 0.4; // How wide the boat swings out on its way there (radians at the start)
+    this.arcAmount = 0.15; // How wide the boat swings out on its way there (radians at the start)
 
     this.angle = -PI/2; // Which way the boat is facing
     this.turnSpeed = 0.04; // How quickly it turns toward where it's going
     this.baseTilt = 0.35; // How far above the water we're looking from (radians)
     this.cameraSwing = 0.0006; // How much the view angle shifts per pixel the boat is ahead of the camera
     this.depthShrink = 0.5; // How much the boat shrinks as it moves away (1 = exactly like the ripples, 0 = never)
-    this.shape = 'boat'; // 'arrow' (like a computer's mouse pointer) or 'boat'
+    this.shape = 'arrow'; // 'arrow' (like a computer's mouse pointer) or 'boat'
     this.showHull = 'wavy'; // How to draw the boat itself: 'solid', 'wavy' (faint and wobbly, like its reflection) or 'none' (just its reflection)
     this.wavyAlpha = 200; // How bright the boat is when it's drawn 'wavy' (see reflectionAlpha for its reflection)
     this.reflectionAlpha = 100; // How bright its reflection is
     this.wavyAmount = 0.35; // How wavy the boat is then, compared to its reflection (1 = just as wavy)
-    this.surfaceWobble = 0; // How much even the parts right on the water wobble (0 = not at all, 1 = as much as the top of the cabin)
+    this.surfaceWobble = 0.6; // How much even the parts right on the water wobble (0 = not at all, 1 = as much as the top of the cabin)
     this.reflectionDepth = 1; // How far its reflection hangs down into the water, compared to its height (1 = a true mirror image)
     this.length = 400; // Hull length in pixels, updated to fit the window
     this.aimCamera();
