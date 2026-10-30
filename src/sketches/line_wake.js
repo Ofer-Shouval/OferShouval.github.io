@@ -66,7 +66,7 @@ export default class LineWake {
     this.hullLinesPerSide = 1; // With the boat: how many lines start down each side of it (1 = just the outline of the wake)
     this.hullFrom = -0.2; // ...from this far along the boat (0.5 = the bow, -0.5 = the stern)
     this.hullTo = -0.4; // ...to this far (-0.5 = the stern)
-    this.hullSpread = [0.25, 1.8]; // How hard the backmost and frontmost lines are thrown outward, compared to the boat's speed
+    this.hullSpread = [0.25, 1.5]; // How hard the backmost and frontmost lines are thrown outward, compared to the boat's speed
     this.hullMargin = 0.012; // How far outside the hull they run, in hull lengths
 
     // How far the boat has sailed in total, so the flow field moves with the water
@@ -103,7 +103,8 @@ export default class LineWake {
         let throwOut = lerp(this.hullSpread[1], this.hullSpread[0], back);
         for (let s = 0; s < 2; s++) {
           let side = s === 0 ? -1 : 1;
-          let start = boat.edgePoint(along, side, this.hullMargin);
+          // From the arrow's wide corners, if the boat's an arrow (its frontmost lines, at least)
+          let start = boat.shape === 'arrow' && i === 0 ? boat.cornerPoint(side) : boat.edgePoint(along, side, this.hullMargin);
           let push = p5.Vector.mult(sideways, side * speed * throwOut);
           let particle = new WakeParticle(start, p5.Vector.add(push, pulled), -side * handedness * this.curl);
           particle.side = side; // Which side of the boat it's on, for keeping it out from under the hull

@@ -213,6 +213,14 @@ export default class Boat {
     return point.add(this.position.x, this.position.y + this.length * 0.12);
   }
 
+  // Where one of the arrow's two wide corners is on the screen (side 1 or -1, as in the
+  // sketch's sideways vector), for the wake to start from
+  cornerPoint(side) {
+    let corner = arrowCorners()[side > 0 ? 1 : 0];
+    let point = this.toScreen(createVector(corner.x, corner.y, 0));
+    return point.add(this.position.x, this.position.y + this.length * 0.12);
+  }
+
   // Turn a 3D point on the boat into a 2D point on the screen
   toScreen(point) {
     // Spin the point around the boat's centre so it faces this.angle
@@ -444,9 +452,9 @@ function hullSlice(deckShape, down, z) {
   });
 }
 
-// The outline of a mouse pointer, seen from above, pointing forward (x = 0.5 at the tip),
-// in hull lengths: a straight edge down one side, a slanted edge down the other, and a tail
-function arrowShape() {
+// The corners of a mouse pointer, in hull lengths, seen from above, pointing forward
+// (x = 0.5 at the tip): a straight edge down one side, a slanted edge down the other, and a tail
+function arrowGrid() {
   // The classic pointer, drawn on a grid 12 wide and 20 tall with the tip at the top
   let grid = [
     [0, 0], [0, 17], [4, 13], [7, 20], [9, 19], [6, 12], [12, 12],
@@ -455,18 +463,32 @@ function arrowShape() {
   // to its tip, not along its straight edge. Tilt it so that line points straight ahead.
   let tilt = atan2(8, 19.5); // From the tip to the middle of the tail, (8, 19.5)
   let length = Math.hypot(8, 19.5);
-  grid = grid.map(([x, y]) => [x * cos(tilt) - y * sin(tilt), x * sin(tilt) + y * cos(tilt)]);
+  let narrow = 0.8; // How wide it is, compared to the classic pointer (1 = the same)
+  return grid.map(([x, y]) => {
+    let gx = x * cos(tilt) - y * sin(tilt);
+    let gy = x * sin(tilt) + y * cos(tilt);
+    // Down the grid is backward along the boat; across the grid is across it
+    return createVector(0.5 - gy / length, (gx / length) * narrow);
+  });
+}
+
+// The pointer's two wide corners, either side of where the tail starts: [one side, the other]
+function arrowCorners() {
+  let grid = arrowGrid();
+  return [grid[1], grid[6]];
+}
+
+// The outline of a mouse pointer (see arrowGrid()), with every edge in small steps
+function arrowShape() {
+  let grid = arrowGrid();
   // Every edge in small steps, so it can wobble like the rest of the boat
   let points = [];
   for (let i = 0; i < grid.length; i++) {
-    let [ax, ay] = grid[i];
-    let [bx, by] = grid[(i + 1) % grid.length];
-    let steps = max(2, ceil(dist(ax, ay, bx, by)));
+    let a = grid[i];
+    let b = grid[(i + 1) % grid.length];
+    let steps = max(2, ceil(p5.Vector.dist(a, b) * 20)); // About one per grid square
     for (let k = 0; k < steps; k++) {
-      let gx = lerp(ax, bx, k / steps);
-      let gy = lerp(ay, by, k / steps);
-      // Down the grid is backward along the boat; across the grid is across it
-      points.push(createVector(0.5 - gy / length, gx / length));
+      points.push(p5.Vector.lerp(a, b, k / steps));
     }
   }
   return points;
