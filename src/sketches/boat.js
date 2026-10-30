@@ -26,7 +26,7 @@ export default class Boat {
     this.followSpeed = 0.025; // How quickly the background catches up (0 to 1, smaller = boat gets further ahead)
     this.velocity = createVector(0, 0);
     this.acceleration = createVector(0, 0);
-    this.maxspeed = 4; // Maximum speed
+    this.maxspeed = 3 ; // Maximum speed
     this.maxforce = 0.25; // How hard the keys / mouse can push
     this.drag = 0.96; // Water slows the boat down a little every frame
     this.sinking = false; // Set by a gate when the boat starts going through it
@@ -51,6 +51,7 @@ export default class Boat {
     };
 
     this.stern = createVector(x, y); // Where the back of the boat meets the water, on the screen
+    this.bow = createVector(x, y); // ...and the front
 
     this.outlines = []; // Every shape to draw: { points, part, index, alpha }
     this.buildModel();
@@ -147,6 +148,8 @@ export default class Boat {
     // Where the back of the boat meets the water, for the sketch to put its wake ripples
     this.stern = this.toScreen(createVector(-0.45, 0, 0));
     this.stern.add(this.position.x, this.position.y + this.length * 0.12);
+    this.bow = this.toScreen(createVector(0.45, 0, 0));
+    this.bow.add(this.position.x, this.position.y + this.length * 0.12);
   }
 
   // The camera stays back at home while the boat eases ahead of it, so it sees the boat
