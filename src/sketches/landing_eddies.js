@@ -1,0 +1,213 @@
+// Full-screen background sketch for the home page, another take on "Wake" (2019):
+// the water is a series of wavy lines that get closer together into the distance (see
+// WaterLines), and the boat's wake is two lines tracing its outline (see LineWake) that push
+// the water's lines aside, with bubbles pouring out between them. The boat stays near the
+// middle; the water moves past it.
+
+import p5 from 'p5';
+import Boat from './boat.js';
+import Portal from './portal.js';
+import LineWake from './line_wake.js';
+import WaterLines from './water_lines.js';
+import rippleColor, { isWhite } from './ripple_color.js';
+import { depth, flatness } from './perspective.js';
+
+// The friendly-error checker slows every p5 call; it's for development, not the live site.
+p5.disableFriendlyErrors = import.meta.env.PROD;
+
+let boat;
+let wake;
+let water;
+let portals = [];
+let hintAlpha = 230; // The hint at the bottom of the screen, which fades away
+
+// The bubbles behind the boat, filling the V between the two sides of the wake: little
+// ripples that swell and shrink, a few new ones every frame while the boat is moving. Each is thrown outward
+// at its own speed and slowed by drag, like the wake's lines, so they fan out. Oldest first.
+let bubbleLife = 100; // How many frames a bubble lasts
+let bubbleSize = 30; // How wide (in pixels) a bubble gets at its biggest, near the bottom of the screen
+let bubblesPerFrame = 0; // 0 = no bubbles (was 2)
+let bubbleSpread = 1.6; // How hard the outermost bubbles are thrown sideways, compared to the boat's speed
+let bubbleAlpha = 60; // How bright they are, like the boat's reflection (255 = solid)
+let bubbles = []; // { position, velocity, born }
+
+function setup() {
+  let canvas = createCanvas(windowWidth, windowHeight);
+  canvas.position(0, 0);
+  canvas.style('z-index', '-1');
+  cursor(CROSS);
+
+  boat = new Boat(width / 2, height / 1.5);
+  wake = new LineWake();
+  water = new WaterLines();
+  water.sternBubbles = 0; // The sketch pours out its own bubbles (see showBubbles())
+
+  // A portal for each page, all just out of sight to start with, spread in an even arc
+  // around the top half of the screen (left to right). Tags at the edge of the screen
+  // point the way. Sail into one to go to that page.
+  let pages = [
+    ['/music/', 'music'],
+    ['/teaching/', 'teaching'],
+    ['/bio/', 'bio'],
+    ['/projects/', 'projects'],
+  ];
+  for (let i = 0; i < pages.length; i++) {
+    // Head out from the middle of the screen at this angle (left = PI, straight up = PI * 1.5)
+    let angle = map(i, 0, pages.length - 1, PI + 0.35, TWO_PI - 0.35);
+    let direction = p5.Vector.fromAngle(angle);
+    // ...to the edge of the screen, then a little further so it starts out of sight
+    let toEdge = min(width / 2 / abs(direction.x), height / 2 / abs(direction.y));
+    let position = p5.Vector.mult(direction, toEdge + 250).add(width / 2, height / 2);
+    portals.push(new Portal(position.x, position.y, pages[i][0], pages[i][1]));
+  }
+}
+
+function draw() {
+  background(0);
+  fill(0);
+
+  // The water, with the wake pushing its lines aside, then the bubbles and the wake on top
+  water.update(boat.scroll, boat.position.y);
+  water.pull(boat);
+  wake.update(boat.scroll, boat);
+  water.show(wake, boat.wakeWeight(), boat.squash);
+  showBubbles();
+  wake.show(boat.wakeWeight());
+
+  // Update the gates, then draw the ones further away than the boat (higher up the screen)
+  // behind it, and the nearer ones in front of it, so the boat can sail behind a gate
+  for (let portal of portals) {
+    portal.update(boat);
+  }
+  let boatOnWater = boat.position.y + boat.length * 0.12;
+  for (let portal of portals) {
+    if (portal.position.y <= boatOnWater) portal.show(boat);
+  }
+  boat.run();
+  for (let portal of portals) {
+    if (portal.position.y > boatOnWater) portal.show(boat);
+  }
+  for (let portal of portals) {
+    portal.showTag();
+  }
+
+  // Stir up the water down the sides of the boat, for next frame's wake, and pour out
+  // bubbles behind it
+  let sideways = createVector(-boat.sinAngle, boat.cosAngle * boat.sinTilt); // Across the boat, squashed like the water
+  wake.emit(boat.stern, sideways, boat.velocity, boat.length * 0.08, boat);
+  if (boat.velocity.mag() > 0.5) {
+    // Anywhere across the gap between the two sides of the wake, just behind the stern
+    let gap = boat.widthAt(wake.hullTo) * boat.length * 0.8;
+    let speed = boat.velocity.mag();
+    for (let k = 0; k < bubblesPerFrame; k++) {
+      let across = random(-1, 1);
+      let position = p5.Vector.add(boat.stern, p5.Vector.mult(sideways, across * gap));
+      let velocity = p5.Vector.mult(sideways, across * speed * bubbleSpread).add(p5.Vector.mult(boat.velocity, 0.2));
+      bubbles.push({ position, velocity, born: frameCount });
+    }
+  }
+
+  // A pointing hand over the portals' names, since clicking one sails the boat there
+  let overName = portals.some((portal) => portal.isLabelAt(mouseX, mouseY));
+  cursor(overName ? HAND : CROSS);
+
+  // A hint at the bottom of the screen, which fades once a name is clicked (or after ten seconds)
+  if (boat.destination || frameCount > 600) hintAlpha = max(0, hintAlpha - 4);
+  if (hintAlpha > 0) {
+    push();
+    noStroke();
+    fill(255, hintAlpha);
+    textAlign(CENTER, BOTTOM);
+    textSize(14);
+    text('click a name to sail there, or steer with the arrow keys', width / 2, height - 24);
+    pop();
+  }
+}
+
+function showBubbles() {
+  bubbles = bubbles.filter((b) => frameCount - b.born < bubbleLife);
+  let weight = boat.wakeWeight();
+  for (let b of bubbles) {
+    // Fanning out and slowing down, like the wake's lines, and sliding back with the water
+    b.velocity.mult(wake.drag);
+    b.position.add(b.velocity);
+    b.position.sub(boat.scroll);
+    if (boat.isOver(b.position.x, b.position.y)) continue; // Hidden under the boat
+
+    let age = (frameCount - b.born) / bubbleLife; // 0 = just made, 1 = about to disappear
+    let diameter = sin(age * PI); // Swells up, then shrinks away
+    let fade = sin((1 - age) * HALF_PI);
+    strokeWeight(isWhite() ? weight * random(1, 1.1) : weight);
+    stroke(rippleColor(age, bubbleAlpha * fade));
+    let w = diameter * bubbleSize * depth(b.position.y);
+    wobblyEllipse(b.position.x, b.position.y, w, w * flatness(b.position.y) * boat.squash, bubbleSize);
+  }
+}
+
+// An ellipse with a wavy edge, from the same wave as the wake's lines (and the
+// reflections), up to as wavy as they are. The wavy shape holds still: it's fixed to the
+// ellipse, so as the ellipse grows and shrinks (up to biggest pixels wide) the shape just
+// scales with it, and it's kept centred, so it doesn't slide from side to side.
+function wobblyEllipse(x, y, w, h, biggest) {
+  let steps = 24;
+  let offsets = [];
+  for (let i = 0; i < steps; i++) {
+    let a = (TWO_PI * i) / steps;
+    let py = sin(a) * 10; // As if it were always 20 pixels tall
+    let wave = sin(py * 0.25) + 0.5 * sin(py * 0.6);
+    offsets.push(wave * wake.wobble * min(1, w / biggest)); // Less wavy when it's small
+  }
+  let shift = offsets.reduce((sum, o) => sum + o, 0) / steps;
+
+  beginShape();
+  for (let i = 0; i < steps; i++) {
+    let a = (TWO_PI * i) / steps;
+    vertex(x + (cos(a) * w) / 2 + offsets[i] - shift, y + (sin(a) * h) / 2);
+  }
+  endShape(CLOSE);
+}
+
+function mousePressed() {
+  // Clicking a portal's name sends the boat sailing there by itself;
+  // clicking anywhere else takes back control
+  boat.destination = null;
+  for (let portal of portals) {
+    if (portal.isLabelAt(mouseX, mouseY)) boat.sailTo(portal);
+  }
+}
+
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
+  // Keep the boat where it was on the screen, and move everything on the water along with it
+  let shift = createVector(width / 2 - boat.home.x, height / 1.5 - boat.home.y);
+  boat.home.add(shift);
+  boat.position.add(shift);
+  wake.shift(shift);
+  for (let b of bubbles) {
+    b.position.add(shift);
+  }
+  for (let portal of portals) {
+    portal.position.add(shift);
+  }
+}
+
+function keyPressed() {
+  // "c" opens the boat's colour pickers
+  if (key === 'c') boat.toggleColorPanel();
+  // Stop the arrow keys from scrolling the page while steering
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(key)) return false;
+}
+
+// Coming back with the browser's Back button can restore the page exactly as it was left,
+// with the boat already gone through a gate, so start it fresh instead
+window.addEventListener('pageshow', (event) => {
+  if (event.persisted) location.reload();
+});
+
+// This file is a module, so its functions aren't global by default.
+// Putting them on window lets p5 find them and run in "global mode".
+window.setup = setup;
+window.draw = draw;
+window.windowResized = windowResized;
+window.keyPressed = keyPressed;
+window.mousePressed = mousePressed;

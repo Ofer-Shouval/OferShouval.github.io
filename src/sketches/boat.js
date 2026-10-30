@@ -17,6 +17,7 @@
 // toScreen() turns those 3D points into 2D points on the canvas.
 
 import p5 from 'p5';
+import { flicker } from './ripple_color.js';
 
 export default class Boat {
   constructor(x, y) {
@@ -26,8 +27,8 @@ export default class Boat {
     this.followSpeed = 0.025; // How quickly the background catches up (0 to 1, smaller = boat gets further ahead)
     this.velocity = createVector(0, 0);
     this.acceleration = createVector(0, 0);
-    this.maxspeed = 3 ; // Maximum speed
-    this.maxforce = 0.25; // How hard the keys / mouse can push
+    this.maxspeed = 1.8; // Maximum speed
+    this.maxforce = 0.06; // How hard the keys / mouse can push (smaller = it speeds up and changes course more slowly)
     this.drag = 0.96; // Water slows the boat down a little every frame
     this.sinking = false; // Set by a gate when the boat starts going through it
     this.gateCut = null; // Set by a gate while the boat goes through it: where to cut the boat off
@@ -35,18 +36,22 @@ export default class Boat {
     this.arcAmount = 0.4; // How wide the boat swings out on its way there (radians at the start)
 
     this.angle = -PI/2; // Which way the boat is facing
-    this.turnSpeed = 0.08; // How quickly it turns toward where it's going
+    this.turnSpeed = 0.025; // How quickly it turns toward where it's going
     this.baseTilt = 0.35; // How far above the water we're looking from (radians)
     this.cameraSwing = 0.0006; // How much the view angle shifts per pixel the boat is ahead of the camera
     this.depthShrink = 0.5; // How much the boat shrinks as it moves away (1 = exactly like the ripples, 0 = never)
+    this.showHull = 'wavy'; // How to draw the boat itself: 'solid', 'wavy' (faint and wobbly, like its reflection) or 'none' (just its reflection)
+    this.wavyAlpha = 150; // How bright the boat is when it's drawn 'wavy' (its reflection is 60)
+    this.wavyAmount = 0.35; // How wavy the boat is then, compared to its reflection (1 = just as wavy)
+    this.reflectionDepth = 1; // How far its reflection hangs down into the water, compared to its height (1 = a true mirror image)
     this.length = 400; // Hull length in pixels, updated to fit the window
     this.aimCamera();
 
     // Stroke colours for each part of the boat. Change these any time,
     // or press "c" to open the colour pickers.
     this.colors = {
-      hull: ['#b4b4b4', '#8e3b2c', '#c9a35a', '#9fb08f', '#7aa6dc', '#5fd6dc', '#9b2d8f'], // deck to waterline
-      cabin: ['#d9b36a', '#7d8a8c', '#d8507a', '#7fe0a8'], // top to bottom
+      hull: ['#b4b4b4', '#7aa6dc', '#9b2d8f'], // deck to waterline (add more for more outlines)
+      cabin: ['#d9b36a', '#7fe0a8'], // top to bottom
       ripple: ['#7aa6dc', '#e8a4b8', '#c8c8d0', '#e0d0e0'], // inside to outside
     };
 
@@ -183,6 +188,28 @@ export default class Boat {
     return sq(along / 0.5) + sq(across / 0.18) < 1;
   }
 
+  // Where the point (x, y) on the water is compared to the boat, in hull lengths: `along` the
+  // boat (-0.5 at the back, 0.5 at the front) and `across` it (positive on the side the
+  // sketch's sideways vector points to). Undoes toScreen(), like isOver().
+  onHull(x, y) {
+    let dx = (x - this.position.x) / this.length;
+    let dy = (y - this.position.y - this.length * 0.12) / this.length / this.sinTilt;
+    return { along: dx * this.cosAngle + dy * this.sinAngle, across: -dx * this.sinAngle + dy * this.cosAngle };
+  }
+
+  // How far the hull reaches out to either side, `along` the boat (in hull lengths)
+  widthAt(along) {
+    return hullWidth(constrain(along + 0.5, 0, 1), 0.18);
+  }
+
+  // The point on the water just outside the hull's edge, `along` the boat: side is 1 or -1
+  // for which side (as in the sketch's sideways vector), margin is how far outside the edge
+  // (in hull lengths)
+  edgePoint(along, side, margin) {
+    let point = this.toScreen(createVector(along, side * (this.widthAt(along) + margin), 0));
+    return point.add(this.position.x, this.position.y + this.length * 0.12);
+  }
+
   // Turn a 3D point on the boat into a 2D point on the screen
   toScreen(point) {
     // Spin the point around the boat's centre so it faces this.angle
@@ -197,7 +224,31 @@ export default class Boat {
   show() {
     push();
     translate(this.position.x, this.position.y + this.length * 0.12);
-    // Black silhouette first, so anything behind the boat is hidden
+    let weight = max(1, this.length * 0.0046);
+
+    // Its reflection in the water, like the gates': upside down, squashed, faint and wobbly
+    noFill();
+    strokeWeight(weight);
+    for (let outline of this.outlines) {
+      if (outline.part === 'ripple') continue;
+      stroke(flicker(this.colors[outline.part][outline.index], 60));
+      this.drawWavy(outline, true);
+    }
+
+    // The boat itself, drawn the same way as its reflection, the right way up
+    if (this.showHull === 'wavy') {
+      for (let outline of this.outlines) {
+        if (outline.part === 'ripple') continue;
+        stroke(flicker(this.colors[outline.part][outline.index], this.wavyAlpha));
+        this.drawWavy(outline, false);
+      }
+    }
+    if (this.showHull !== 'solid') {
+      pop();
+      return;
+    }
+
+    // Black silhouette, so anything behind the boat is hidden
     noStroke();
     fill(0);
     for (let outline of this.outlines) {
@@ -207,7 +258,7 @@ export default class Boat {
 
     // Then the coloured lines on top
     noFill();
-    strokeWeight(max(1, this.length * 0.0046));
+    strokeWeight(weight);
     for (let outline of this.outlines) {
       let c = color(this.colors[outline.part][outline.index]);
       c.setAlpha(outline.alpha);
@@ -229,6 +280,30 @@ export default class Boat {
     pop();
   }
 
+  // An outline pushed about by the moving water: sideways by a wave running up and down the
+  // screen (like Portal.wobblyVertex()), and up and down by one running across it, so it
+  // looks wavy whichever way the boat is facing (from the side, its outlines run across the
+  // screen). The further from the waterline, the more it moves. If reflected, it's flipped
+  // upside down below the water, as the boat's reflection.
+  drawWavy(outline, reflected) {
+    push();
+    if (this.gateCut) this.cutAtGate(reflected ? 0 : outline.points[0].z); // The reflection is on the water
+    beginShape();
+    for (let point of outline.points) {
+      let z = reflected ? -point.z * this.reflectionDepth : point.z;
+      let s = this.toScreen(createVector(point.x, point.y, z));
+      let x = s.x + this.position.x; // Where it is on the screen, so the ripples line up with the gates'
+      let y = s.y + this.position.y;
+      let sideways = sin(y * 0.25 + frameCount * 0.12) + 0.5 * sin(y * 0.6 - frameCount * 0.08);
+      let upAndDown = sin(x * 0.25 + frameCount * 0.1) + 0.5 * sin(x * 0.6 - frameCount * 0.07);
+      let deep = min(1, point.z / 0.15); // 0 at the waterline, 1 at the top of the cabin (or the bottom of its reflection)
+      let amount = this.length * 0.02 * deep * (reflected ? 1 : this.wavyAmount); // The boat itself is steadier than its reflection
+      vertex(s.x + sideways * amount, s.y + upAndDown * amount * 0.5); // Less up and down, since the water's seen at a low angle
+    }
+    endShape(CLOSE);
+    pop();
+  }
+
   // While going through a gate, hide the part of an outline that's already through, so the
   // boat looks sliced off by the gate. The gate's line is on the water, so for an outline at
   // height z it shows up that much higher on the screen. (Called with the boat translated
@@ -245,14 +320,15 @@ export default class Boat {
 
   // Build every outline once. show() just draws them from the current angle.
   buildModel() {
-    let sliceGap = 0.014; // Height between hull slices (smaller = flatter boat)
-    let deck = (this.colors.hull.length - 1) * sliceGap; // Height of the top slice
+    let deck = 0.084; // Height of the deck above the water (smaller = flatter boat)
     let deckShape = hullShape(0.18, 40);
 
-    // Hull: a stack of slices, each a bit smaller than the one above
-    for (let i = 0; i < this.colors.hull.length; i++) {
-      let z = deck - i * sliceGap;
-      this.addOutline(hullSlice(deckShape, i, z), 'hull', i, 230);
+    // Hull: a stack of slices from the deck down to the waterline, each a bit smaller than
+    // the one above. However many colours there are, the stack is the same shape.
+    let slices = this.colors.hull.length;
+    for (let i = 0; i < slices; i++) {
+      let down = slices > 1 ? i / (slices - 1) : 0; // 0 at the deck, 1 at the waterline
+      this.addOutline(hullSlice(deckShape, down, deck * (1 - down)), 'hull', i, 230);
     }
 
     // Ripples on the water, getting bigger and fainter
@@ -263,9 +339,11 @@ export default class Boat {
     // }
 
     // Cabin: rounded rectangles, widest at the bottom
-    for (let i = 0; i < this.colors.cabin.length; i++) {
-      let grow = 0.88 + i * 0.05;
-      let z = deck + 0.05 - i * 0.017;
+    let rings = this.colors.cabin.length;
+    for (let i = 0; i < rings; i++) {
+      let down = rings > 1 ? i / (rings - 1) : 0; // 0 at the top, 1 at the bottom
+      let grow = 0.88 + down * 0.15;
+      let z = deck + 0.05 - down * 0.051;
       let points = roundedRect(0.15 * grow, 0.09 * grow, 40).map((p) => createVector(p.x - 0.13, p.y, z));
       this.addOutline(points, 'cabin', i, 230);
     }
@@ -322,25 +400,30 @@ export default class Boat {
   }
 }
 
+// How wide the deck is (from the middle to one side) at t, which goes from the back (0) to
+// the front (1): round at the back, pointed at the front, halfWidth at its widest
+function hullWidth(t, halfWidth) {
+  let widthAt = (t) => pow(t, 0.5) * pow(1 - t, 0.75);
+  return (halfWidth * widthAt(t)) / widthAt(0.4);
+}
+
 // The outline of the deck, seen from above: round at the back, pointed at the front
 function hullShape(halfWidth, steps) {
-  let widthAt = (t) => pow(t, 0.5) * pow(1 - t, 0.75); // t goes from back (0) to front (1)
-  let widest = widthAt(0.4);
   let side = [];
   for (let i = 0; i <= steps; i++) {
     let t = (1 - cos((PI * i) / steps)) / 2; // More points near the ends, where it curves most
-    side.push(createVector(t - 0.5, (halfWidth * widthAt(t)) / widest));
+    side.push(createVector(t - 0.5, hullWidth(t, halfWidth)));
   }
   // Mirror one side to make the other
   let otherSide = side.slice(1, -1).reverse().map((p) => createVector(p.x, -p.y));
   return side.concat(otherSide);
 }
 
-// Slice number i of the hull, at height z.
+// A slice of the hull at height z, `down` of the way from the deck (0) to the waterline (1).
 // Lower slices are shorter and narrower, and every slice curves up at the front.
-function hullSlice(deckShape, i, z) {
-  let lengthScale = 1 - 0.022 * i;
-  let widthScale = 1 - 0.05 * i;
+function hullSlice(deckShape, down, z) {
+  let lengthScale = 1 - 0.13 * down;
+  let widthScale = 1 - 0.3 * down;
   return deckShape.map((p) => {
     let front = max(0, (p.x - 0.1) / 0.4); // 0 until the front part of the boat, then up to 1
     return createVector(-0.2 + (p.x + 0.2) * lengthScale, p.y * widthScale, z + 0.03 * front * front);

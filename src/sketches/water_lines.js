@@ -27,6 +27,7 @@ export default class WaterLines {
     this.waveScale = 0.01; // How long the waves are (smaller = longer waves)
     this.waveSpeed = 0.01; // How quickly the waves change
     this.waveHeight = 10; // How tall the waves are, in pixels, near the bottom of the screen
+    this.alpha = 150; // How bright the lines are, near the bottom of the screen (255 = solid)
     this.step = 10; // Pixels between the points along each line
     this.top = 40; // No lines higher than this up the screen
     this.band = 0.45; // How far a line can move toward its neighbours (0.5 = halfway, so under that they never cross)
@@ -56,12 +57,12 @@ export default class WaterLines {
     this.sternBubbles = 1; // How many each frame
     this.sternSpread = createVector(50, 30); // How far around the back of the boat they land (like the first version's ripples)
     this.bubbles = []; // { x, y, born } on the screen; they slide with the water
-    // When each hidden point was last covered by the wake, keyed by "line:point" like
+    // When each hidden point was last covered by the wake, keyed by line and point like
     // this.dragged. Points that have fully faded back in aren't in it.
     this.hiddenSince = new Map();
 
-    // How far each point of each line has been dragged, by the boat. Keyed by
-    // "line number:point number", so it sticks to the water; points that haven't been
+    // How far each point of each line has been dragged, by the boat. Keyed by line and
+    // point number (see key()), so it sticks to the water; points that haven't been
     // dragged (or have settled back) aren't in it at all.
     this.dragged = new Map();
 
@@ -132,7 +133,7 @@ export default class WaterLines {
         // 1 right at the boat, fading to 0 at the edge of its reach
         let closeness = 1 - sqrt(sq((x - bx) / reachX) + sq((y - by) / reachY));
         if (closeness <= 0) continue;
-        let key = n + ':' + i;
+        let key = this.key(n, i);
         let offset = this.dragged.get(key) || createVector(0, 0);
         offset.add(p5.Vector.mult(boat.velocity, this.pullStrength * closeness));
         offset.limit(this.maxPull * depth(y) / 0.8);
@@ -187,7 +188,7 @@ export default class WaterLines {
         if (abs(x - cx) > rx) continue;
         let closeness = 1 - sqrt(sq((x - cx) / rx) + sq((y - cy) / ry));
         if (closeness <= 0) continue;
-        let key = n + ':' + i;
+        let key = this.key(n, i);
         let offset = this.dragged.get(key) || createVector(0, 0);
         offset.add(p5.Vector.mult(forward, strength * closeness));
         offset.limit(this.maxPull * depth(y) / 0.8);
@@ -233,6 +234,12 @@ export default class WaterLines {
 
   // Points along a line are every `step` pixels of water. These number the ones on screen
   // (with one spare at each end), and give a point's position on the screen.
+  // A number for point i of line n, for looking it up in this.dragged and this.hiddenSince
+  // (numbers are much faster to look up than "n:i" strings, and this runs for every point)
+  key(n, i) {
+    return n * 1000000 + i;
+  }
+
   firstPoint() {
     return floor(this.travelledX / this.step) - 1;
   }
@@ -273,7 +280,7 @@ export default class WaterLines {
         let wy = y + wave * this.waveHeight * near;
         if (lineRipples.length > 0) wy -= this.rippleAt(lineRipples, i * this.step) * near;
         // Dragged along by the boat, and pushed aside by the wake
-        let key = n + ':' + i;
+        let key = this.key(n, i);
         let offset = this.dragged.get(key);
         if (offset) {
           x += offset.x;
@@ -302,7 +309,7 @@ export default class WaterLines {
           }
           pieceLevel = level;
           if (level > 0) {
-            stroke(rippleColor(shade, 255 * near * level));
+            stroke(rippleColor(shade, this.alpha * near * level));
             beginShape();
             if (onArm) vertex(onArm.x, onArm.y);
             else if (previous) vertex(previous.x, previous.y);

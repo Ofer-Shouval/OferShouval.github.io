@@ -5,9 +5,18 @@
 // a new particle at the start of each line. The particles are then:
 //   thrown sideways, the outer lines harder, which opens the wake into a V
 //   slowed down by drag, so the V curves as it spreads
+//   turned a little every frame, outward and then back, so each line curls round as it
+//   slows (the two sides of the V curl in mirror image)
 //   stirred by a Perlin noise "flow field", so the lines wobble like moving water
+// If emit() is given the boat, the lines start instead from points evenly spaced down both
+// of its sides, from the bow to near the stern, just outside the hull, leaving the middle
+// behind it clear. The ones further forward are thrown out harder, so they stay outside
+// the ones behind them and the lines fan out evenly spaced. Any particle that would slip
+// under the hull as the boat slides past is pushed back out to its edge, so the front
+// lines run flush along the boat's sides until they clear it.
 // The lines are drawn through their particles with splineVertex(), p5 2.x's version of
-// curveVertex().
+// curveVertex(), and wobble from side to side on the same moving wave as the reflections
+// of the boat and the gates.
 //
 // The camera follows the boat, so every particle also scrolls back by however far the
 // world moved this frame. pushAt() lets the water's lines get pushed aside by the wake.
@@ -16,9 +25,10 @@ import p5 from 'p5';
 import rippleColor from './ripple_color.js';
 
 class WakeParticle {
-  constructor(position, velocity) {
+  constructor(position, velocity, spin) {
     this.position = position.copy();
     this.velocity = velocity.copy();
+    this.spin = spin; // How far it turns each frame, in radians; the sign says which way
     this.acceleration = createVector(0, 0);
     this.age = 0; // In frames
   }
@@ -29,6 +39,7 @@ class WakeParticle {
 
   update(drag) {
     this.velocity.add(this.acceleration);
+    this.velocity.rotate(this.spin);
     this.velocity.mult(drag);
     this.position.add(this.velocity);
     this.acceleration.mult(0);
@@ -38,16 +49,25 @@ class WakeParticle {
 
 export default class LineWake {
   constructor() {
-    this.lineCount = 9; // How many lines, spread evenly across the V
-    this.lifespan = 110; // How many frames a particle lasts
+    this.lineCount = 16; // How many lines, spread evenly across the V
+    this.lifespan = 140; // How many frames a particle lasts
     this.drag = 0.97; // How quickly the water calms down
     this.spread = 1.2; // How hard particles are thrown sideways, compared to the boat's speed
-    this.emptyMiddle = 0.6; // Leave out the lines nearer the middle than this (0 = middle, 1 = edges), so it's an open V
-    this.flowScale = 0.004; // Size of the swirls in the water (smaller = bigger swirls)
-    this.flowStrength = 0.03; // How hard the swirls push
+    this.emptyMiddle = 0.4; // Leave out the lines nearer the middle than this (0 = middle, 1 = edges), so it's an open V
+    this.curl = 0.022; // How sharply the lines curl round, in radians per frame
+    this.flowScale = 0.0025; // Size of the swirls in the water (smaller = bigger, smoother swirls)
+    this.flowStrength = 0.02; // How hard the swirls push
     this.pieceLength = 8; // Particles per drawn piece: smaller = smoother fade, but slower
+    this.alpha = 60; // How faint the lines are, like the boat's reflection (255 = solid)
+    this.wobble = 5; // How far (in pixels) the lines wobble from side to side, the same all along them
     this.pushReach = 40; // How close (in pixels) the water's lines have to be to get pushed aside
     this.pushStrength = 7; // How far (in pixels) the wake pushes them
+    this.sampleEvery = 3; // pushAt() and the V's outline only use every this-many particles, which is much faster and still smooth
+    this.hullLinesPerSide = 1; // With the boat: how many lines start down each side of it (1 = just the outline of the wake)
+    this.hullFrom = -0.2; // ...from this far along the boat (0.5 = the bow, -0.5 = the stern)
+    this.hullTo = -0.4; // ...to this far (-0.5 = the stern), leaving a gap in the middle behind it
+    this.hullSpread = [0.25, 1.8]; // How hard the backmost and frontmost lines are thrown outward, compared to the boat's speed
+    this.hullMargin = 0.012; // How far outside the hull they run, in hull lengths
 
     // How far the boat has sailed in total, so the flow field moves with the water
     this.travelled = createVector(0, 0);
@@ -57,35 +77,65 @@ export default class LineWake {
     for (let i = 0; i < this.lineCount; i++) {
       this.lines.push([]);
     }
+    this.hullLines = []; // With the boat: the lines down its sides, one array of particles each
+    for (let i = 0; i < this.hullLinesPerSide * 2; i++) {
+      this.hullLines.push([]);
+    }
   }
 
   // Drop a new particle at the start of every line.
-  // stern: where the back of the boat is; sideways: a unit vector across the boat
-  emit(stern, sideways, boatVelocity, sternWidth) {
+  // stern: where the back of the boat is; sideways: a unit vector across the boat;
+  // boat: give it the boat to start the lines down its sides instead (see above)
+  emit(stern, sideways, boatVelocity, sternWidth, boat = null) {
     let speed = boatVelocity.mag();
     if (speed < 0.5) return; // Not moving, no new wake
+    // Which way round is "outward and back" on the screen depends on which way the boat
+    // is facing, so check which side of the sideways vector its velocity is on
+    let handedness = Math.sign(sideways.x * boatVelocity.y - sideways.y * boatVelocity.x) || 1;
+
+    let pulled = p5.Vector.mult(boatVelocity, 0.2); // Water gets dragged along behind the boat a little
+
+    if (boat) {
+      for (let i = 0; i < this.hullLinesPerSide; i++) {
+        // 0 for the frontmost line (the outline of the wake), 1 for the backmost
+        let back = this.hullLinesPerSide > 1 ? i / (this.hullLinesPerSide - 1) : 0;
+        let along = lerp(this.hullFrom, this.hullTo, back);
+        let throwOut = lerp(this.hullSpread[1], this.hullSpread[0], back);
+        for (let s = 0; s < 2; s++) {
+          let side = s === 0 ? -1 : 1;
+          let start = boat.edgePoint(along, side, this.hullMargin);
+          let push = p5.Vector.mult(sideways, side * speed * throwOut);
+          let particle = new WakeParticle(start, p5.Vector.add(push, pulled), -side * handedness * this.curl);
+          particle.side = side; // Which side of the boat it's on, for keeping it out from under the hull
+          this.hullLines[i * 2 + s].unshift(particle);
+        }
+      }
+      return;
+    }
 
     for (let i = 0; i < this.lineCount; i++) {
       let side = map(i, 0, this.lineCount - 1, -1, 1); // -1 is one edge of the V, 1 the other
       if (abs(side) < this.emptyMiddle) continue; // Only the arms of the V
       let start = p5.Vector.add(stern, p5.Vector.mult(sideways, side * sternWidth));
       let push = p5.Vector.mult(sideways, side * speed * this.spread);
-      let pulled = p5.Vector.mult(boatVelocity, 0.2); // Water gets dragged along behind the boat a little
-      this.lines[i].unshift(new WakeParticle(start, p5.Vector.add(push, pulled)));
+      let spin = -Math.sign(side) * handedness * this.curl;
+      this.lines[i].unshift(new WakeParticle(start, p5.Vector.add(push, pulled), spin));
     }
+
   }
 
-  // scroll: how far the world slides back this frame (see Boat)
-  update(scroll) {
+  // scroll: how far the world slides back this frame (see Boat);
+  // boat: the boat, for keeping the lines down its sides out from under the hull
+  update(scroll, boat = null) {
     this.travelled.add(scroll);
 
-    for (let line of this.lines) {
+    for (let line of this.lines.concat(this.hullLines)) {
       for (let particle of line) {
         // Flow field: the noise value at this spot (in the water, not on the screen)
         // picks a direction to drift in
         let x = particle.position.x + this.travelled.x;
         let y = particle.position.y + this.travelled.y;
-        let n = noise(x * this.flowScale, y * this.flowScale, frameCount * 0.005);
+        let n = noise(x * this.flowScale, y * this.flowScale, frameCount * 0.003);
         let flow = p5.Vector.fromAngle(n * TWO_PI * 2);
         flow.mult(this.flowStrength);
         particle.applyForce(flow);
@@ -93,6 +143,8 @@ export default class LineWake {
 
         // The camera follows the boat, so the water (and everything on it) slides backward
         particle.position.sub(scroll);
+
+        if (particle.side && boat) this.keepOutside(particle, boat);
       }
       // The oldest particles are at the end of the line
       while (line.length > 0 && line[line.length - 1].age > this.lifespan) {
@@ -102,6 +154,22 @@ export default class LineWake {
 
     this.findBounds();
     this.findV();
+    // Every few particles, for pushAt() (which runs for every point of every water line)
+    this.sampled = [];
+    for (let line of this.lines.concat(this.hullLines)) {
+      for (let i = 0; i < line.length; i += this.sampleEvery) {
+        this.sampled.push(line[i]);
+      }
+    }
+  }
+
+  // If a particle has slipped under the hull, push it back out to the hull's edge on its
+  // side, so the lines run along the boat rather than under it
+  keepOutside(particle, boat) {
+    let { along, across } = boat.onHull(particle.position.x, particle.position.y);
+    if (abs(along) >= 0.5) return; // In front of or behind the boat
+    if (across * particle.side >= boat.widthAt(along) + this.hullMargin) return; // Already outside
+    particle.position.set(boat.edgePoint(along, particle.side, this.hullMargin));
   }
 
   // A box around the whole wake (plus how far it reaches), so pushAt() can quickly
@@ -109,7 +177,7 @@ export default class LineWake {
   findBounds() {
     let r = this.pushReach;
     this.bounds = { left: Infinity, right: -Infinity, top: Infinity, bottom: -Infinity };
-    for (let line of this.lines) {
+    for (let line of this.lines.concat(this.hullLines)) {
       for (let particle of line) {
         this.bounds.left = min(this.bounds.left, particle.position.x - r);
         this.bounds.right = max(this.bounds.right, particle.position.x + r);
@@ -126,7 +194,7 @@ export default class LineWake {
     // The first and last vertex of each shape only steer the curve, like the old curve()
     splineProperty('ends', EXCLUDE);
 
-    for (let line of this.lines) {
+    for (let line of this.lines.concat(this.hullLines)) {
       for (let run of this.unbrokenRuns(line)) {
         // Draw the run in short pieces, each one curve with its own colour, so the wake
         // fades along its length. (One shape per piece is much faster than one per gap.)
@@ -134,10 +202,13 @@ export default class LineWake {
           // Take one extra particle on each side to steer the curve, so the pieces join smoothly
           let piece = run.slice(start - 1, start + this.pieceLength + 2);
           let age = piece[1].age / this.lifespan; // 0 = just made, 1 = about to disappear
-          stroke(rippleColor(age, 220 * (1 - age)));
+          stroke(rippleColor(age, this.alpha * (1 - age)));
           beginShape();
           for (let particle of piece) {
-            splineVertex(particle.position.x, particle.position.y);
+            // The same wave as the reflections (see Portal.wobblyVertex())
+            let y = particle.position.y;
+            let wave = sin(y * 0.25 + frameCount * 0.12) + 0.5 * sin(y * 0.6 - frameCount * 0.08);
+            splineVertex(particle.position.x + wave * this.wobble, y);
           }
           endShape();
         }
@@ -177,29 +248,33 @@ export default class LineWake {
     if (!b || x < b.left || x > b.right || y < b.top || y > b.bottom) return 0;
 
     let push = 0;
-    for (let line of this.lines) {
-      for (let i = 0; i < line.length; i += 2) { // Every other particle is plenty
-        let particle = line[i];
-        let dx = particle.position.x - x;
-        let dy = particle.position.y - y;
-        if (Math.abs(dx) > this.pushReach || Math.abs(dy) > this.pushReach) continue; // Quick check: too far
-        let d = Math.sqrt(dx * dx + dy * dy);
-        if (d < this.pushReach) {
-          let closeness = 1 - d / this.pushReach;
-          let freshness = 1 - particle.age / this.lifespan;
-          push += (dy > 0 ? -1 : 1) * closeness * freshness;
-        }
+    for (let particle of this.sampled) {
+      let dx = particle.position.x - x;
+      let dy = particle.position.y - y;
+      if (Math.abs(dx) > this.pushReach || Math.abs(dy) > this.pushReach) continue; // Quick check: too far
+      let d = Math.sqrt(dx * dx + dy * dy);
+      if (d < this.pushReach) {
+        let closeness = 1 - d / this.pushReach;
+        let freshness = 1 - particle.age / this.lifespan;
+        push += (dy > 0 ? -1 : 1) * closeness * freshness;
       }
     }
+    // It used to add up every other particle, so scale up to push just as hard
+    push *= this.sampleEvery / 2;
     return constrain(push, -1, 1) * this.pushStrength;
   }
 
   // The outline of the V: down the outermost left arm, across its far end, and back up the
   // outermost right arm (the two arms' particles were dropped together, so they line up)
+  // (or, for the lines down the boat's sides, the frontmost line on each side, which are
+  // the outermost)
   findV() {
-    let left = this.lines[0];
-    let right = this.lines[this.lines.length - 1];
-    this.vShape = left.map((p) => p.position).concat(right.map((p) => p.position).reverse());
+    let fromHull = this.hullLines[0].length > 0;
+    let left = fromHull ? this.hullLines[0] : this.lines[0];
+    let right = fromHull ? this.hullLines[1] : this.lines[this.lines.length - 1];
+    // Every few particles is plenty for the outline (insideV() and crossV() go round all of it)
+    let thin = (line) => line.filter((p, i) => i % this.sampleEvery === 0 || i === line.length - 1).map((p) => p.position);
+    this.vShape = thin(left).concat(thin(right).reverse());
   }
 
   // How much the wake covers the water at (x, y): 1 inside the V between its outer arms,
@@ -253,7 +328,7 @@ export default class LineWake {
 
   // Slide the whole wake, e.g. when the window resizes and the boat moves to the new middle
   shift(offset) {
-    for (let line of this.lines) {
+    for (let line of this.lines.concat(this.hullLines)) {
       for (let particle of line) {
         particle.position.add(offset);
       }
