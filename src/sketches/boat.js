@@ -28,7 +28,7 @@ export default class Boat {
     this.velocity = createVector(0, 0);
     this.acceleration = createVector(0, 0);
     this.maxspeed = 2.2; // Maximum speed
-    this.maxforce = 0.06; // How hard the keys / mouse can push (smaller = it speeds up and changes course more slowly)
+    this.maxforce = 0.08; // How hard the keys / mouse can push (smaller = it speeds up and changes course more slowly)
     this.drag = 0.96; // Water slows the boat down a little every frame
     this.sinking = false; // Set by a gate when the boat starts going through it
     this.gateCut = null; // Set by a gate while the boat goes through it: where to cut the boat off
@@ -36,14 +36,16 @@ export default class Boat {
     this.arcAmount = 0.4; // How wide the boat swings out on its way there (radians at the start)
 
     this.angle = -PI/2; // Which way the boat is facing
-    this.turnSpeed = 0.025; // How quickly it turns toward where it's going
+    this.turnSpeed = 0.04; // How quickly it turns toward where it's going
     this.baseTilt = 0.35; // How far above the water we're looking from (radians)
     this.cameraSwing = 0.0006; // How much the view angle shifts per pixel the boat is ahead of the camera
     this.depthShrink = 0.5; // How much the boat shrinks as it moves away (1 = exactly like the ripples, 0 = never)
+    this.shape = 'boat'; // 'arrow' (like a computer's mouse pointer) or 'boat'
     this.showHull = 'wavy'; // How to draw the boat itself: 'solid', 'wavy' (faint and wobbly, like its reflection) or 'none' (just its reflection)
     this.wavyAlpha = 200; // How bright the boat is when it's drawn 'wavy' (see reflectionAlpha for its reflection)
     this.reflectionAlpha = 100; // How bright its reflection is
     this.wavyAmount = 0.35; // How wavy the boat is then, compared to its reflection (1 = just as wavy)
+    this.surfaceWobble = 0; // How much even the parts right on the water wobble (0 = not at all, 1 = as much as the top of the cabin)
     this.reflectionDepth = 1; // How far its reflection hangs down into the water, compared to its height (1 = a true mirror image)
     this.length = 400; // Hull length in pixels, updated to fit the window
     this.aimCamera();
@@ -227,22 +229,26 @@ export default class Boat {
     translate(this.position.x, this.position.y + this.length * 0.12);
     let weight = max(1.6, this.length * 0.0075);
 
-    // Its reflection in the water, like the gates': upside down, squashed, faint and wobbly
+    // Its reflection in the water, like the gates': upside down, squashed, faint and wobbly.
+    // (The arrow lies flat on the water, so its reflection would sit right underneath it.)
     noFill();
     strokeWeight(weight);
-    for (let outline of this.outlines) {
+    for (let outline of this.shape === 'arrow' ? [] : this.outlines) {
       if (outline.part === 'ripple') continue;
       stroke(flicker(this.colors[outline.part][outline.index], this.reflectionAlpha));
       this.drawWavy(outline, true);
     }
 
-    // The boat itself, drawn the same way as its reflection, the right way up
+    // The boat itself, drawn the same way as its reflection, the right way up. The arrow is
+    // filled in black, so it hides the water's lines underneath it.
     if (this.showHull === 'wavy') {
+      if (this.shape === 'arrow') fill(0);
       for (let outline of this.outlines) {
         if (outline.part === 'ripple') continue;
         stroke(flicker(this.colors[outline.part][outline.index], this.wavyAlpha));
         this.drawWavy(outline, false);
       }
+      noFill();
     }
     if (this.showHull !== 'solid') {
       pop();
@@ -297,7 +303,7 @@ export default class Boat {
       let y = s.y + this.position.y;
       let sideways = sin(y * 0.25 + frameCount * 0.12) + 0.5 * sin(y * 0.6 - frameCount * 0.08);
       let upAndDown = sin(x * 0.25 + frameCount * 0.1) + 0.5 * sin(x * 0.6 - frameCount * 0.07);
-      let deep = min(1, point.z / 0.15); // 0 at the waterline, 1 at the top of the cabin (or the bottom of its reflection)
+      let deep = max(this.surfaceWobble, min(1, point.z / 0.15)); // Least at the waterline, 1 at the top of the cabin (or the bottom of its reflection)
       let amount = this.length * 0.02 * deep * (reflected ? 1 : this.wavyAmount); // The boat itself is steadier than its reflection
       vertex(s.x + sideways * amount, s.y + upAndDown * amount * 0.5); // Less up and down, since the water's seen at a low angle
     }
@@ -322,6 +328,13 @@ export default class Boat {
   // Build every outline once. show() just draws them from the current angle.
   buildModel() {
     let deck = 0.084; // Height of the deck above the water (smaller = flatter boat)
+
+    // A mouse pointer instead: a single outline, flat on the surface of the water
+    if (this.shape === 'arrow') {
+      this.addOutline(arrowShape().map((p) => createVector(p.x, p.y, 0)), 'hull', 0, 230);
+      return;
+    }
+
     let deckShape = hullShape(0.18, 40);
 
     // Hull: a stack of slices from the deck down to the waterline, each a bit smaller than
@@ -429,6 +442,34 @@ function hullSlice(deckShape, down, z) {
     let front = max(0, (p.x - 0.1) / 0.4); // 0 until the front part of the boat, then up to 1
     return createVector(-0.2 + (p.x + 0.2) * lengthScale, p.y * widthScale, z + 0.03 * front * front);
   });
+}
+
+// The outline of a mouse pointer, seen from above, pointing forward (x = 0.5 at the tip),
+// in hull lengths: a straight edge down one side, a slanted edge down the other, and a tail
+function arrowShape() {
+  // The classic pointer, drawn on a grid 12 wide and 20 tall with the tip at the top
+  let grid = [
+    [0, 0], [0, 17], [4, 13], [7, 20], [9, 19], [6, 12], [12, 12],
+  ];
+  // A pointer leans to one side, so it looks like it points from the middle of its tail
+  // to its tip, not along its straight edge. Tilt it so that line points straight ahead.
+  let tilt = atan2(8, 19.5); // From the tip to the middle of the tail, (8, 19.5)
+  let length = Math.hypot(8, 19.5);
+  grid = grid.map(([x, y]) => [x * cos(tilt) - y * sin(tilt), x * sin(tilt) + y * cos(tilt)]);
+  // Every edge in small steps, so it can wobble like the rest of the boat
+  let points = [];
+  for (let i = 0; i < grid.length; i++) {
+    let [ax, ay] = grid[i];
+    let [bx, by] = grid[(i + 1) % grid.length];
+    let steps = max(2, ceil(dist(ax, ay, bx, by)));
+    for (let k = 0; k < steps; k++) {
+      let gx = lerp(ax, bx, k / steps);
+      let gy = lerp(ay, by, k / steps);
+      // Down the grid is backward along the boat; across the grid is across it
+      points.push(createVector(0.5 - gy / length, gx / length));
+    }
+  }
+  return points;
 }
 
 // A rectangle with very rounded corners (a "superellipse")

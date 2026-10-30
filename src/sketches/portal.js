@@ -1,6 +1,6 @@
 // Portal class
-// A gate standing in the sea, like a simple torii: a rectangular frame (two posts and a
-// beam across the top) that the boat sails through. It draws the boat toward it, and when
+// A gate standing in the sea, like a simple torii: a frame (two posts and a beam across
+// the top, with rounded corners) that the boat sails through. It draws the boat toward it, and when
 // the boat reaches it, the boat passes through, fading away as the opening fills with
 // light, and the page goes to `url`.
 //
@@ -22,6 +22,7 @@ export default class Portal {
     this.gateWidth = 300; // Width in pixels (if it were at the bottom of the screen)
     this.gateHeight = 1.1; // Height, compared to its width
     this.outlines = 4; // How many nested outlines it's drawn with
+    this.cornerRound = 0.25; // How rounded its top corners are, compared to its width (0 = square, 0.5 = a semicircle)
     this.pull = 0.5; // How hard it draws the boat toward the middle
     this.reach = 1.6; // How far out it starts pulling the boat in (1 = the posts, 2 = twice as far)
     this.catchDistance = 0.5; // How close to the middle the boat has to get to go through (1 = the posts)
@@ -222,9 +223,10 @@ export default class Portal {
     if (this.passTime > 0) {
       noStroke();
       fill(255, 220 * this.through());
-      rect(x - w / 2, y - this.h, w, this.h);
+      let r = w * this.cornerRound;
+      rect(x - w / 2, y - this.h, w, this.h, r, r, 0, 0);
       fill(255, 90 * this.through());
-      this.reflection(x, y, w, this.h * 0.4, true);
+      this.reflection(x, y, w, this.h, true);
     }
 
     // The gate: two posts and a beam across the top (no bottom, so you can sail through),
@@ -237,7 +239,7 @@ export default class Portal {
       this.frame(x, y, w - inset * 2, this.h - inset);
       // Its reflection in the water: upside down, squashed, faint and wobbly
       stroke(rippleColor(i / this.outlines, 100));
-      this.reflection(x, y, w - inset * 2, (this.h - inset) * 0.4, false);
+      this.reflection(x, y, w - inset * 2, this.h - inset, false);
     }
 
     pop();
@@ -249,21 +251,15 @@ export default class Portal {
     }
   }
 
-  // The gate's reflection, hanging down `down` into the water from (x, y): the frame
-  // upside down, but wobbling sideways like a reflection on moving water. It's drawn as
-  // lots of small steps so it can bend. close fills it in as one shape (for the light).
-  reflection(x, y, w, down, close) {
-    let steps = 24;
+  // The gate's reflection in the water at (x, y), for a frame w wide and h tall: the frame
+  // upside down and squashed, but wobbling sideways like a reflection on moving water.
+  // close fills it in as one shape (for the light).
+  reflection(x, y, w, h, close) {
+    let down = 0.4; // How far down it hangs, compared to the frame's height
     beginShape();
-    // Down the left post, along the beam, and back up the right post
-    for (let i = 0; i <= steps; i++) {
-      this.wobblyVertex(x - w / 2, y + (down * i) / steps, i / steps, w);
-    }
-    for (let i = 0; i <= steps; i++) {
-      this.wobblyVertex(x - w / 2 + (w * i) / steps, y + down, 1, w);
-    }
-    for (let i = steps; i >= 0; i--) {
-      this.wobblyVertex(x + w / 2, y + (down * i) / steps, i / steps, w);
+    for (let p of this.outline(x, y, w, h)) {
+      let deep = (y - p.y) / h; // 0 at the surface, 1 for the top of the frame
+      this.wobblyVertex(p.x, y + deep * h * down, deep, w);
     }
     if (close) endShape(CLOSE);
     else endShape();
@@ -280,10 +276,31 @@ export default class Portal {
   // the top, h tall
   frame(x, y, w, h) {
     beginShape();
-    vertex(x - w / 2, y);
-    vertex(x - w / 2, y - h);
-    vertex(x + w / 2, y - h);
-    vertex(x + w / 2, y);
+    for (let p of this.outline(x, y, w, h)) vertex(p.x, p.y);
     endShape();
+  }
+
+  // The points along a frame standing on the water at (x, y), w wide and h tall: up the
+  // left post, round the corner, along the beam, round the other corner and down the right
+  // post. Lots of them, so its reflection can bend.
+  outline(x, y, w, h) {
+    let r = min(w * this.cornerRound, w / 2, h);
+    let left = x - w / 2;
+    let right = x + w / 2;
+    let top = y - h;
+    let steps = 16;
+    let points = [];
+    for (let i = 0; i <= steps; i++) points.push(createVector(left, lerp(y, top + r, i / steps))); // Up the left post
+    for (let i = 1; i <= steps; i++) {
+      let a = PI + HALF_PI * (i / steps); // Round the top left corner
+      points.push(createVector(left + r + cos(a) * r, top + r + sin(a) * r));
+    }
+    for (let i = 1; i <= steps; i++) points.push(createVector(lerp(left + r, right - r, i / steps), top)); // Along the beam
+    for (let i = 1; i <= steps; i++) {
+      let a = PI + HALF_PI + HALF_PI * (i / steps); // Round the top right corner
+      points.push(createVector(right - r + cos(a) * r, top + r + sin(a) * r));
+    }
+    for (let i = 1; i <= steps; i++) points.push(createVector(right, lerp(top + r, y, i / steps))); // Down the right post
+    return points;
   }
 }
