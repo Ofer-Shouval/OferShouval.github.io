@@ -236,7 +236,7 @@ export default class Portal {
       stroke(rippleColor(i / this.outlines, 230));
       this.frame(x, y, w - inset * 2, this.h - inset);
       // Its reflection in the water: upside down, squashed, faint and wobbly
-      stroke(rippleColor(i / this.outlines, 60));
+      stroke(rippleColor(i / this.outlines, 100));
       this.reflection(x, y, w - inset * 2, (this.h - inset) * 0.4, false);
     }
 

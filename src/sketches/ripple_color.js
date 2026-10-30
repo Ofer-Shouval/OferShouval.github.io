@@ -1,9 +1,17 @@
 // The colour scheme shared by the ripple circles and the boat's wake lines.
 // amount goes from 0 to 1 along a trail; colours shift through blues, greens and pinks,
 // with a little random flicker. Holding the mouse down turns everything white, and so does
-// the boat going through a gate (see turnWhite()).
+// the boat going through a gate (see turnWhite()). With greyscale on, every colour is
+// turned into a grey instead, as light as its brightest part, so it still flickers.
 
 let whiteOut = false;
+export let greyscale = true; // Everything in shades of grey (false = in colour)
+
+// The colour (r, g, b), or the grey as light as its brightest part when greyscale is on
+function shade(r, g, b, alpha) {
+  if (greyscale) return color(max(r, g, b), alpha);
+  return color(r, g, b, alpha);
+}
 
 // Turn everything white (or back), like holding the mouse down
 export function turnWhite(on) {
@@ -19,7 +27,7 @@ export default function rippleColor(amount, alpha) {
   if (isWhite()) return color(255, alpha);
   let s = abs(sin(amount * PI));
   let c = abs(cos(amount * PI));
-  return color(random(150, 255) * s, random(150, 255) * c, 255 - random(100, 255) * s, alpha);
+  return shade(random(150, 255) * s, random(150, 255) * c, 255 - random(100, 255) * s, alpha);
 }
 
 // Any colour, with the same flicker as the ripples: every frame each of its red, green and
@@ -27,5 +35,5 @@ export default function rippleColor(amount, alpha) {
 export function flicker(hex, alpha) {
   if (isWhite()) return color(255, alpha);
   let c = color(hex);
-  return color(red(c) * random(0.6, 1), green(c) * random(0.6, 1), blue(c) * random(0.6, 1), alpha);
+  return shade(red(c) * random(0.6, 1), green(c) * random(0.6, 1), blue(c) * random(0.6, 1), alpha);
 }

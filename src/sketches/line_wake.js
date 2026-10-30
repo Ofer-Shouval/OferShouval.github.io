@@ -58,14 +58,14 @@ export default class LineWake {
     this.flowScale = 0.0025; // Size of the swirls in the water (smaller = bigger, smoother swirls)
     this.flowStrength = 0.02; // How hard the swirls push
     this.pieceLength = 8; // Particles per drawn piece: smaller = smoother fade, but slower
-    this.alpha = 60; // How faint the lines are, like the boat's reflection (255 = solid)
+    this.alpha = 100; // How bright the lines are, like the boat's reflection (255 = solid)
     this.wobble = 5; // How far (in pixels) the lines wobble from side to side, the same all along them
     this.pushReach = 40; // How close (in pixels) the water's lines have to be to get pushed aside
     this.pushStrength = 7; // How far (in pixels) the wake pushes them
     this.sampleEvery = 3; // pushAt() and the V's outline only use every this-many particles, which is much faster and still smooth
     this.hullLinesPerSide = 1; // With the boat: how many lines start down each side of it (1 = just the outline of the wake)
     this.hullFrom = -0.2; // ...from this far along the boat (0.5 = the bow, -0.5 = the stern)
-    this.hullTo = -0.4; // ...to this far (-0.5 = the stern), leaving a gap in the middle behind it
+    this.hullTo = -0.4; // ...to this far (-0.5 = the stern)
     this.hullSpread = [0.25, 1.8]; // How hard the backmost and frontmost lines are thrown outward, compared to the boat's speed
     this.hullMargin = 0.012; // How far outside the hull they run, in hull lengths
 

@@ -27,7 +27,7 @@ export default class WaterLines {
     this.waveScale = 0.01; // How long the waves are (smaller = longer waves)
     this.waveSpeed = 0.01; // How quickly the waves change
     this.waveHeight = 10; // How tall the waves are, in pixels, near the bottom of the screen
-    this.alpha = 150; // How bright the lines are, near the bottom of the screen (255 = solid)
+    this.alpha = 200; // How bright the lines are, near the bottom of the screen (255 = solid)
     this.step = 10; // Pixels between the points along each line
     this.top = 40; // No lines higher than this up the screen
     this.band = 0.45; // How far a line can move toward its neighbours (0.5 = halfway, so under that they never cross)

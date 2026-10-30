@@ -24,11 +24,11 @@ let hintAlpha = 230; // The hint at the bottom of the screen, which fades away
 // The bubbles behind the boat, filling the V between the two sides of the wake: little
 // ripples that swell and shrink, a few new ones every frame while the boat is moving. Each is thrown outward
 // at its own speed and slowed by drag, like the wake's lines, so they fan out. Oldest first.
-let bubbleLife = 100; // How many frames a bubble lasts
-let bubbleSize = 30; // How wide (in pixels) a bubble gets at its biggest, near the bottom of the screen
-let bubblesPerFrame = 0; // 0 = no bubbles (was 2)
+let bubbleLife = 140; // How many frames a bubble lasts (as long as the wake's lines, so they fill the V all the way back)
+let bubbleSize = 12; // How wide (in pixels) a bubble gets at its biggest, near the bottom of the screen
+let bubblesPerFrame = 0; // 0 = no bubbles
 let bubbleSpread = 1.6; // How hard the outermost bubbles are thrown sideways, compared to the boat's speed
-let bubbleAlpha = 60; // How bright they are, like the boat's reflection (255 = solid)
+let bubbleAlpha = 100; // How bright they are, like the boat's reflection (255 = solid)
 let bubbles = []; // { position, velocity, born }
 
 function setup() {
@@ -140,31 +140,8 @@ function showBubbles() {
     strokeWeight(isWhite() ? weight * random(1, 1.1) : weight);
     stroke(rippleColor(age, bubbleAlpha * fade));
     let w = diameter * bubbleSize * depth(b.position.y);
-    wobblyEllipse(b.position.x, b.position.y, w, w * flatness(b.position.y) * boat.squash, bubbleSize);
+    ellipse(b.position.x, b.position.y, w, w * flatness(b.position.y) * boat.squash); // Too small to need a wavy edge
   }
-}
-
-// An ellipse with a wavy edge, from the same wave as the wake's lines (and the
-// reflections), up to as wavy as they are. The wavy shape holds still: it's fixed to the
-// ellipse, so as the ellipse grows and shrinks (up to biggest pixels wide) the shape just
-// scales with it, and it's kept centred, so it doesn't slide from side to side.
-function wobblyEllipse(x, y, w, h, biggest) {
-  let steps = 24;
-  let offsets = [];
-  for (let i = 0; i < steps; i++) {
-    let a = (TWO_PI * i) / steps;
-    let py = sin(a) * 10; // As if it were always 20 pixels tall
-    let wave = sin(py * 0.25) + 0.5 * sin(py * 0.6);
-    offsets.push(wave * wake.wobble * min(1, w / biggest)); // Less wavy when it's small
-  }
-  let shift = offsets.reduce((sum, o) => sum + o, 0) / steps;
-
-  beginShape();
-  for (let i = 0; i < steps; i++) {
-    let a = (TWO_PI * i) / steps;
-    vertex(x + (cos(a) * w) / 2 + offsets[i] - shift, y + (sin(a) * h) / 2);
-  }
-  endShape(CLOSE);
 }
 
 function mousePressed() {

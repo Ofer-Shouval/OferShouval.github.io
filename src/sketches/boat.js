@@ -27,7 +27,7 @@ export default class Boat {
     this.followSpeed = 0.025; // How quickly the background catches up (0 to 1, smaller = boat gets further ahead)
     this.velocity = createVector(0, 0);
     this.acceleration = createVector(0, 0);
-    this.maxspeed = 1.8; // Maximum speed
+    this.maxspeed = 2.2; // Maximum speed
     this.maxforce = 0.06; // How hard the keys / mouse can push (smaller = it speeds up and changes course more slowly)
     this.drag = 0.96; // Water slows the boat down a little every frame
     this.sinking = false; // Set by a gate when the boat starts going through it
@@ -41,7 +41,8 @@ export default class Boat {
     this.cameraSwing = 0.0006; // How much the view angle shifts per pixel the boat is ahead of the camera
     this.depthShrink = 0.5; // How much the boat shrinks as it moves away (1 = exactly like the ripples, 0 = never)
     this.showHull = 'wavy'; // How to draw the boat itself: 'solid', 'wavy' (faint and wobbly, like its reflection) or 'none' (just its reflection)
-    this.wavyAlpha = 150; // How bright the boat is when it's drawn 'wavy' (its reflection is 60)
+    this.wavyAlpha = 200; // How bright the boat is when it's drawn 'wavy' (see reflectionAlpha for its reflection)
+    this.reflectionAlpha = 100; // How bright its reflection is
     this.wavyAmount = 0.35; // How wavy the boat is then, compared to its reflection (1 = just as wavy)
     this.reflectionDepth = 1; // How far its reflection hangs down into the water, compared to its height (1 = a true mirror image)
     this.length = 400; // Hull length in pixels, updated to fit the window
@@ -72,7 +73,7 @@ export default class Boat {
 
   // Stroke weight for the ripples, which grows and shrinks with the boat
   wakeWeight() {
-    return max(1, this.length * 0.004);
+    return max(1.6, this.length * 0.0065);
   }
 
   // Sail to a portal by itself (when its name is clicked)
@@ -224,14 +225,14 @@ export default class Boat {
   show() {
     push();
     translate(this.position.x, this.position.y + this.length * 0.12);
-    let weight = max(1, this.length * 0.0046);
+    let weight = max(1.6, this.length * 0.0075);
 
     // Its reflection in the water, like the gates': upside down, squashed, faint and wobbly
     noFill();
     strokeWeight(weight);
     for (let outline of this.outlines) {
       if (outline.part === 'ripple') continue;
-      stroke(flicker(this.colors[outline.part][outline.index], 60));
+      stroke(flicker(this.colors[outline.part][outline.index], this.reflectionAlpha));
       this.drawWavy(outline, true);
     }
 
