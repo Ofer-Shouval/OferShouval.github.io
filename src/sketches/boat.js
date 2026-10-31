@@ -38,6 +38,8 @@ export default class Boat {
     this.gateCut = null; // Set by a gate while the boat goes through it: where to cut the boat off
     this.destination = null; // A portal to sail to by itself (see sailTo())
     this.arcAmount = 0.15; // How wide the boat swings out on its way there (radians at the start)
+    this.waveAmount = 0.6; // How far it curves from side to side on the way there (radians at the start)
+    this.waveTime = 5; // How long each wave takes, roughly, in seconds
 
     this.angle = -PI/2; // Which way the boat is facing
     this.turnSpeed = 0.04; // How quickly it turns toward where it's going
@@ -85,6 +87,8 @@ export default class Boat {
   // Sail to a portal by itself (when its name is clicked)
   sailTo(portal) {
     this.destination = portal;
+    this.sailedAt = millis();
+    this.waveStart = random(TWO_PI); // So it's a different route every time
     let toTarget = p5.Vector.sub(portal.position, this.position);
     this.arcStart = toTarget.mag(); // How far it was when we set off
     // Swing out on the side the boat is already facing, so it turns smoothly: if the
@@ -127,6 +131,11 @@ export default class Boat {
       // the closer it gets, so the boat curves in and arrives head on
       let stillToGo = constrain(force.mag() / this.arcStart, 0, 1);
       force.rotate(this.arcSide * this.arcAmount * stillToGo);
+      // ...and curve from side to side in long, uneven waves (two, out of step with each
+      // other), less and less the closer it gets, so it arrives straight on
+      let phase = (TWO_PI * (millis() - this.sailedAt)) / 1000 / this.waveTime + this.waveStart;
+      let weave = (sin(phase) + 0.4 * sin(phase * 1.4 + 1)) / 1.4;
+      force.rotate(this.waveAmount * weave * stillToGo * stillToGo);
     } else if (force.mag() === 0 && mouseIsPressed && !this.mouseOverPanel) {
       // No keys? Then holding the mouse down pulls the boat toward it
       let mouse = createVector(mouseX, mouseY);

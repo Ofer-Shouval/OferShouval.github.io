@@ -38,6 +38,10 @@ let rowSideways = 0; // How far the boat has sailed to the side of the middle of
 let rowGateWidth = 26; // How wide (in pixels) a gate is in the row, when it's furthest away (see fitToWindow())
 let sailTime = 3; // How many seconds clicking a name takes the boat to reach that gate (see fitToWindow(); going through it takes a moment more)
 let sailStart = null; // When it set off, in milliseconds
+let sailPeak = 1; // The fastest it's gone on this trip, compared to its usual speed
+let easeDistance = 0.25; // How far from the gate it starts easing down, compared to the height of the screen
+let easeTime = 1.5; // Roughly how long easing down takes, in seconds
+let easeTo = 0.4; // How fast it's going when it reaches the gate, compared to its fastest
 let cameraSpeed = 0.015; // How quickly the camera swings round behind (or in front of) the boat when it's heading diagonally
 let cameraEase = 0.05; // How gradually it starts and stops swinging (smaller = gentler)
 let cameraDeadZone = 0.2; // Heading closer to sideways than this (0 to 1), the camera doesn't move
@@ -89,7 +93,7 @@ function fitToWindow() {
   water.ratio = 1 - 0.05 * max(1, height / 900);
   // A little more time to sail there on a big screen, which keeps its speed closer to a small
   // screen's (it never takes more than about 7 seconds, going through the gate included)
-  sailTime = constrain(map(height, 500, 1440, 4.6, 6.4), 4.6, 6.4);
+  sailTime = constrain(map(height, 500, 1440, 4.8, 5.8), 4.8, 5.8);
   // The row's a shorter trip away on a tall screen, for the same reason
   rowY = max(110, height * 0.122);
   // The wake is the same share of the screen on any window, at any speed
@@ -174,8 +178,8 @@ function draw() {
     }
   }
 
-  // A pointing hand over the portals' names, since clicking one sails the boat there
-  let overName = portals.some((portal) => portal.isLabelAt(mouseX, mouseY));
+  // A pointing hand over the portals and their names, since clicking one sails the boat there
+  let overName = portals.some((portal) => portal.isLabelAt(mouseX, mouseY) || portal.isGateAt(mouseX, mouseY));
   cursor(overName ? HAND : CROSS);
 
   // A hint at the bottom of the screen, which fades once a name is clicked (or after ten seconds)
@@ -186,7 +190,7 @@ function draw() {
     fill(255, hintAlpha);
     textAlign(CENTER, BOTTOM);
     textSize(14);
-    text('click a name to sail there, or steer with the arrow keys', width / 2, height - 24);
+    text('click a gate to sail there, or steer with the arrow keys', width / 2, height - 24);
     pop();
   }
 }
@@ -212,11 +216,12 @@ function showBubbles() {
 }
 
 // Set the boat's speed to reach the gate it's been sent to in time: however far is left to
-// sail (forward, and to the side), over however long is left
+// sail (forward, and to the side), over however long is left, easing down as it nears the gate
 function hurryToGate() {
   if (!boat.destination) {
     boat.hurry = 1;
     sailStart = null;
+    sailPeak = 1;
     return;
   }
   if (boat.sinking) return; // Going through: keep the same speed
@@ -225,10 +230,21 @@ function hurryToGate() {
   let boatY = boat.position.y + boat.length * 0.12;
   let forward = max(0, Math.log(boatY / gate.y)) * boatY;
   let sideways = abs(gate.x - boat.position.x) / rowScale();
-  let timeLeft = max(0.3, sailTime - (millis() - sailStart) / 1000);
-  let needed = Math.hypot(forward, sideways) / (timeLeft * 60); // Pixels every 60th of a second
-  // (Never slowing down on the way, or it would lurch as it nears the gate)
-  boat.hurry = max(boat.hurry, needed / (boat.maxspeed * boat.fit()));
+  let left = Math.hypot(forward, sideways);
+  let easeFrom = height * easeDistance;
+
+  if (left > easeFrom) {
+    // Getting there: fast enough to reach where it starts easing down in time
+    let timeLeft = max(0.3, sailTime - easeTime - (millis() - sailStart) / 1000);
+    let needed = (left - easeFrom) / (timeLeft * 60); // Pixels every 60th of a second
+    // (Never slowing down on the way, or it would lurch)
+    sailPeak = max(sailPeak, needed / (boat.maxspeed * boat.fit()));
+    boat.hurry = sailPeak;
+  } else {
+    // Nearly there: easing down, gently at first
+    let eased = constrain(left / easeFrom, 0, 1);
+    boat.hurry = sailPeak * lerp(easeTo, 1, eased * eased * (3 - 2 * eased));
+  }
 }
 
 // Swing the camera round toward being behind the boat (or in front of it, if it's heading
@@ -275,11 +291,11 @@ function swingCamera() {
 }
 
 function mousePressed() {
-  // Clicking a portal's name sends the boat sailing there by itself;
+  // Clicking a portal or its name sends the boat sailing there by itself;
   // clicking anywhere else takes back control
   boat.destination = null;
   for (let portal of portals) {
-    if (portal.isLabelAt(mouseX, mouseY)) boat.sailTo(portal);
+    if (portal.isLabelAt(mouseX, mouseY) || portal.isGateAt(mouseX, mouseY)) boat.sailTo(portal);
   }
 }
 

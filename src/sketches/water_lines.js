@@ -42,7 +42,7 @@ export default class WaterLines {
     this.rippleWavelength = 50; // Pixels from one crest to the next
     this.rippleLength = 150; // How long each run of ripples is, in pixels
     this.rippleHeight = 12; // How tall, in pixels, near the bottom of the screen
-    this.rippleLife = 120; // How many frames until they've died away
+    this.rippleLife = 120; // How many frames until they've died away, with the boat at its usual top speed (faster goes further)
     this.rippleEvery = 4; // While the boat keeps pulling a line, a new ripple this often (frames)
     this.ripples = []; // { line, x (on the water), born (frameCount), strength (0 to 1) }
     this.lastRipple = new Map(); // Line number -> when it last sent out a ripple
@@ -108,7 +108,7 @@ export default class WaterLines {
       offset.mult(this.springBack);
       if (offset.mag() < 0.1) this.dragged.delete(key);
     }
-    this.ripples = this.ripples.filter((r) => frameCount - r.born < this.rippleLife);
+    this.ripples = this.ripples.filter((r) => frameCount - r.born < r.life);
     // Forget hidden points that have long since faded back in (even ones that scrolled off screen)
     for (let [key, since] of this.hiddenSince) {
       if (frameCount - since > this.fadeBackTime) this.hiddenSince.delete(key);
@@ -170,7 +170,10 @@ export default class WaterLines {
           let alongPath = (this.lineY(n) - by) / boat.velocity.y; // How far along the boat's path the line is
           crossing = bx + constrain(alongPath * boat.velocity.x, -reachX, reachX);
         }
-        this.ripples.push({ line: n, x: crossing + this.travelledX, born: frameCount, strength });
+        // The faster the boat's going, the longer they last, so the further they run along the line
+        let pace = boat.velocity.mag() / (boat.maxspeed * boat.fit());
+        let life = this.rippleLife * constrain(pace, 0.3, 4);
+        this.ripples.push({ line: n, x: crossing + this.travelledX, born: frameCount, strength, life });
         this.lastRipple.set(n, frameCount);
       }
     }
@@ -231,7 +234,7 @@ export default class WaterLines {
       let behindFront = age * this.rippleSpeed - distance; // How far behind the leading edge
       if (behindFront <= 0 || behindFront > this.rippleLength) continue;
       let swell = sin((PI * behindFront) / this.rippleLength);
-      let fade = 1 - age / this.rippleLife;
+      let fade = 1 - age / r.life;
       let wave = sin((TWO_PI * (frameCount * this.rippleSpeed - distance)) / this.rippleWavelength);
       lift += wave * swell * fade * r.strength * share;
     }

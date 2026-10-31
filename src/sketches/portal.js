@@ -80,7 +80,7 @@ export default class Portal {
       this.cameFrom = cameFrom;
       boat.sinking = true;
       turnWhite(true); // Everything turns white, like holding the mouse down
-    } else if (d < this.reach) {
+    } else if (d < this.reach && boat.destination !== this) { // (One it's already sailing to doesn't need to)
       // Close enough: draw the boat toward the middle, harder the closer it gets
       let strength = 1 - d / this.reach;
       let inward = createVector(this.position.x - bx, this.position.y - by).normalize();
@@ -204,6 +204,14 @@ export default class Portal {
   isLabelAt(x, y) {
     let a = this.labelArea;
     return a !== null && x > a.left && x < a.right && y > a.top && y < a.bottom;
+  }
+
+  // Is (x, y) on the gate itself, or its reflection? (With a little room to spare, so a
+  // small one in the distance is still easy to click)
+  isGateAt(x, y) {
+    let room = 10;
+    let inside = abs(x - this.position.x) < this.rx + room;
+    return inside && y > this.position.y - this.h - room && y < this.position.y + this.h * 0.4 + room;
   }
 
   // How big the gate looks at its spot on the screen: bigger the further down the screen,
