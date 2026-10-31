@@ -20,7 +20,7 @@ const PAGES = [
   ['/music/', 'music'],
   ['/art/', 'art'],
   ['/teaching/', 'teaching'],
-  ['/bio/', 'about me'],
+  ['/bio/', 'bio'],
 ];
 
 let boat;
