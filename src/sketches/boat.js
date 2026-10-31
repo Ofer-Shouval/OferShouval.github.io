@@ -143,9 +143,7 @@ export default class Boat {
     // tab after a long time away doesn't make it jump
     this.dt = lerp(this.dt, constrain(deltaTime / (1000 / 60), 0.5, 3), 0.1);
 
-    // The distances it sails grow with the window, so its speed does too: it takes about as
-    // long to get anywhere in a small window as in a big one
-    let fit = height / 900;
+    let fit = this.fit();
     this.velocity.add(p5.Vector.mult(this.acceleration, this.dt * fit * this.hurry));
     this.velocity.mult(pow(this.drag, this.dt));
     this.velocity.limit(this.maxspeed * fit * this.hurry);
@@ -178,6 +176,12 @@ export default class Boat {
     this.stern.add(this.position.x, this.position.y + this.length * 0.12);
     this.bow = this.toScreen(createVector(0.45, 0, 0));
     this.bow.add(this.position.x, this.position.y + this.length * 0.12);
+  }
+
+  // How much faster it sails than in a window 900 pixels tall. The distances it sails grow with
+  // the window, so its speed does too, but not quite as much, or it looks too fast on a big screen.
+  fit() {
+    return pow(height / 900, 0.75);
   }
 
   // The camera stays back at home while the boat eases ahead of it, so it sees the boat

@@ -32,16 +32,17 @@ let bubbleAlpha = 100; // How bright they are, like the boat's reflection (255 =
 let bubbles = []; // { position, velocity, born }
 
 // The row of gates in the distance
-let rowY = 110; // How far down the screen the row is, when it's furthest away
+let rowY = 110; // How far down the screen the row is, when it's furthest away (see fitToWindow())
 let rowForward = 0; // How far the boat has sailed toward it (0 = at the start, can't go back further)
 let rowSideways = 0; // How far the boat has sailed to the side of the middle of the row
 let rowGateWidth = 26; // How wide (in pixels) a gate is in the row, when it's furthest away (see fitToWindow())
-let sailTime = 3; // How many seconds clicking a name takes the boat to reach that gate (going through it takes a moment more)
+let sailTime = 3; // How many seconds clicking a name takes the boat to reach that gate (see fitToWindow(); going through it takes a moment more)
 let sailStart = null; // When it set off, in milliseconds
 let cameraSpeed = 0.015; // How quickly the camera swings round behind (or in front of) the boat when it's heading diagonally
 let cameraEase = 0.05; // How gradually it starts and stops swinging (smaller = gentler)
 let cameraDeadZone = 0.2; // Heading closer to sideways than this (0 to 1), the camera doesn't move
 let cameraTurn = 0; // How fast it's swinging right now, in radians per frame
+let wakeLength = 0.25; // How long the wake is, compared to the height of the screen
 let gateAtBoat = 1.4; // How wide a gate is when it reaches the boat, compared to the boat's length
 
 function setup() {
@@ -52,8 +53,12 @@ function setup() {
 
   boat = new Boat(width / 2, height / 1.5);
   wake = new LineWake();
+  wake.stayOnScreen = true; // The whole of the wake is always in view
   water = new WaterLines();
   water.sternBubbles = 0; // The sketch pours out its own bubbles (see showBubbles())
+  // The water closes up quickly behind the wake
+  water.fadeBackTime = 6; // How many frames its lines take to fade back in
+  water.springBack = 0.97; // How quickly lines the boat has dragged settle back (smaller = faster)
 
   boat.cameraSwing = 0; // The view stays put: everything's worked out from the row of gates (see placeGate())
 
@@ -82,6 +87,13 @@ function fitToWindow() {
   // The water's lines are further apart on a tall screen (each is this much as far down the
   // screen as the one below it)
   water.ratio = 1 - 0.05 * max(1, height / 900);
+  // A little more time to sail there on a big screen, which keeps its speed closer to a small
+  // screen's (it never takes more than about 7 seconds, going through the gate included)
+  sailTime = constrain(map(height, 500, 1440, 4.6, 6.4), 4.6, 6.4);
+  // The row's a shorter trip away on a tall screen, for the same reason
+  rowY = max(110, height * 0.122);
+  // The wake is the same share of the screen on any window, at any speed
+  wake.maxLength = height * wakeLength;
   // The gates in the distance are smaller on a small screen, down to a limit
   rowGateWidth = 26 * constrain(min(width / 1440, height / 900), 0.5, 1);
 }
@@ -149,7 +161,7 @@ function draw() {
   // bubbles behind it
   let sideways = createVector(-boat.sinAngle, boat.cosAngle * boat.sinTilt); // Across the boat, squashed like the water
   // (At no more than its usual speed, so the wake doesn't fan out wildly when it's in a hurry)
-  wake.emit(boat.stern, sideways, boat.velocity.copy().limit(boat.maxspeed * (height / 900)), boat.length * 0.08, boat);
+  wake.emit(boat.stern, sideways, boat.velocity.copy().limit(boat.maxspeed * boat.fit()), boat.length * 0.08, boat);
   if (boat.velocity.mag() > 0.5) {
     // Anywhere across the gap between the two sides of the wake, just behind the stern
     let gap = boat.widthAt(wake.hullTo) * boat.length * 0.8;
@@ -216,7 +228,7 @@ function hurryToGate() {
   let timeLeft = max(0.3, sailTime - (millis() - sailStart) / 1000);
   let needed = Math.hypot(forward, sideways) / (timeLeft * 60); // Pixels every 60th of a second
   // (Never slowing down on the way, or it would lurch as it nears the gate)
-  boat.hurry = max(boat.hurry, needed / (boat.maxspeed * (height / 900)));
+  boat.hurry = max(boat.hurry, needed / (boat.maxspeed * boat.fit()));
 }
 
 // Swing the camera round toward being behind the boat (or in front of it, if it's heading

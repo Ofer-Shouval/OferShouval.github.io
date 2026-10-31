@@ -62,6 +62,10 @@ export default class LineWake {
     this.wobble = 5; // How far (in pixels) the lines wobble from side to side, the same all along them
     this.pushReach = 40; // How close (in pixels) the water's lines have to be to get pushed aside
     this.pushStrength = 7; // How far (in pixels) the wake pushes them
+    this.maxLength = Infinity; // The longest the lines can get behind the boat, in pixels, however fast it's going
+    this.stayOnScreen = false; // Should the lines fade out and end before they reach the edge of the screen?
+    this.edgeMargin = 24; // ...this far (in pixels) from the edge
+    this.edgeFade = 0.2; // ...fading out over this much of the height of the screen before that
     this.sampleEvery = 3; // pushAt() and the V's outline only use every this-many particles, which is much faster and still smooth
     this.hullLinesPerSide = 1; // With the boat: how many lines start down each side of it (1 = just the outline of the wake)
     this.hullFrom = -0.2; // ...from this far along the boat (0.5 = the bow, -0.5 = the stern)
@@ -146,9 +150,18 @@ export default class LineWake {
         particle.position.sub(scroll);
 
         if (particle.side && boat) this.keepOutside(particle, boat);
+        if (boat) particle.behind = dist(particle.position.x, particle.position.y, boat.position.x, boat.position.y + boat.length * 0.12);
       }
       // The oldest particles are at the end of the line
       while (line.length > 0 && line[line.length - 1].age > this.lifespan) {
+        line.pop();
+      }
+      // ...and so are the ones that are too far behind the boat
+      while (line.length > 0 && line[line.length - 1].behind > this.maxLength) {
+        line.pop();
+      }
+      // ...or have reached the edge of the screen
+      while (this.stayOnScreen && line.length > 0 && this.fromEdge(line[line.length - 1]) <= 0) {
         line.pop();
       }
     }
@@ -203,7 +216,9 @@ export default class LineWake {
           // Take one extra particle on each side to steer the curve, so the pieces join smoothly
           let piece = run.slice(start - 1, start + this.pieceLength + 2);
           let age = piece[1].age / this.lifespan; // 0 = just made, 1 = about to disappear
-          stroke(rippleColor(age, this.alpha * (1 - age)));
+          let edge = this.stayOnScreen ? constrain(this.fromEdge(piece[1]) / (height * this.edgeFade), 0, 1) : 1; // 0 = at the edge
+          let length = this.maxLength < Infinity ? constrain(1 - piece[1].behind / this.maxLength, 0, 1) : 1; // 0 = as far behind as it goes
+          stroke(rippleColor(age, this.alpha * (1 - age) * edge * length));
           beginShape();
           for (let particle of piece) {
             // The same wave as the reflections (see Portal.wobblyVertex())
@@ -216,6 +231,12 @@ export default class LineWake {
       }
     }
     pop();
+  }
+
+  // How far a particle is from where the lines have to end, near the edge of the screen
+  fromEdge(particle) {
+    let p = particle.position;
+    return min(p.x, width - p.x, p.y, height - p.y) - this.edgeMargin;
   }
 
   // Split a line wherever neighbouring particles shouldn't be joined
