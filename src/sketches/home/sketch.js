@@ -8,7 +8,7 @@
 
 import p5 from 'p5';
 import Boat from './boat.js';
-import Gate from './gate.js';
+import Gate, { NAME_FONT } from './gate.js';
 import Wake from './wake.js';
 import Water from './water.js';
 import { depth } from './perspective.js';
@@ -20,7 +20,7 @@ const PAGES = [
   ['/music/', 'music'],
   ['/art/', 'art'],
   ['/teaching/', 'teaching'],
-  ['/bio/', 'bio'],
+  ['/bio/', 'about me'],
 ];
 
 let boat;
@@ -31,7 +31,7 @@ let hintAlpha = 230; // The hint at the bottom of the screen, which fades away
 let overGate = false; // Is the mouse over a gate or its name?
 
 // The row of gates in the distance
-let rowY = 110; // How far down the screen the row is, when it's furthest away (see fitToWindow())
+let rowY = 90; // How far down the screen the row is, when it's furthest away (see fitToWindow())
 let rowForward = 0; // How far the boat has sailed toward it (0 = at the start, can't go back further)
 let rowSideways = 0; // How far the boat has sailed to the side of the middle of the row
 let rowGateWidth = 26; // How wide (in pixels) a gate is in the row, when it's furthest away (see fitToWindow())
@@ -58,6 +58,7 @@ function setup() {
   canvas.position(0, 0);
   canvas.style('z-index', '-1');
   cursor(CROSS);
+  document.fonts.load(`16px "${NAME_FONT}"`); // Nothing else on the page uses the gates' font, so ask for it
 
   boat = new Boat(width / 2, height / 1.5);
   wake = new Wake();
@@ -80,7 +81,7 @@ function fitToWindow() {
   // screen's (it never takes more than about 7 seconds, going through the gate included)
   sailTime = constrain(map(height, 500, 1440, 4.8, 5.8), 4.8, 5.8);
   // The row's a shorter trip away on a tall screen, for the same reason
-  rowY = Math.max(110, height * 0.122);
+  rowY = Math.max(90, height * 0.1);
   // The wake is the same share of the screen on any window, at any speed
   wake.maxLength = height * wakeLength;
   // The gates in the distance are smaller on a small screen, down to a limit

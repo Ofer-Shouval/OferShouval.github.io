@@ -25,6 +25,7 @@ export default class Water {
     this.waveHeight = 10; // How tall the waves are, in pixels, near the bottom of the screen
     this.drift = 0.003; // How fast the lines drift toward the bottom of the screen on their own, in gaps per frame
     this.alpha = 200; // How bright the lines are, near the bottom of the screen (255 = solid)
+    this.distanceFade = 0.8; // How quickly they fade toward the horizon (smaller = slower)
     this.step = 10; // Pixels between the points along each line
     this.distantBelow = 0.25; // Lines nearer the horizon than this (0 to 1) only need every other point
     this.top = 40; // No lines higher than this up the screen
@@ -236,6 +237,7 @@ export default class Water {
       let y = this.lineY(n);
       if (y < this.top) break;
       let near = depth(y) / 0.8; // 1 at the bottom of the screen, smaller in the distance
+      let bright = this.alpha * pow(near, this.distanceFade);
 
       strokeWeight(weight * near);
       let shade = (((n * 0.137) % 1) + 1) % 1; // Each line its own shade
@@ -306,9 +308,8 @@ export default class Water {
           pieceOn = on;
           pieceColour = colourPiece;
           if (on > 0) {
-            let alpha = this.alpha * near;
-            if (colourPiece !== null) stroke(colour(this.hash(colourPiece), alpha));
-            else stroke(grey(shade, alpha));
+            if (colourPiece !== null) stroke(colour(this.hash(colourPiece), bright));
+            else stroke(grey(shade, bright));
             beginShape();
             if (onArm) vertex(onArm.x, onArm.y);
             else if (hasPrevious) vertex(previousX, previousY);

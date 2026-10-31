@@ -9,6 +9,7 @@ import { grey, turnWhite } from './color.js';
 import { depth, flatness } from './perspective.js';
 
 const REFLECTION = 0.4; // How far its reflection hangs down, compared to its height
+export const NAME_FONT = 'Major Mono Display'; // The same as the navbar on the site's other pages
 
 export default class Gate {
   constructor(url, label, place) {
@@ -105,10 +106,9 @@ export default class Gate {
     if (this.isOnScreen()) return;
 
     // Head from the middle of the screen toward the gate, stopping just inside the edge
-    // (with extra room at the top for the navbar)
     let center = createVector(width / 2, height / 2);
     let direction = p5.Vector.sub(this.position, center);
-    let room = createVector(width / 2 - 40, direction.y < 0 ? height / 2 - 80 : height / 2 - 40);
+    let room = createVector(width / 2 - 40, height / 2 - 40);
     let fit = Math.min(room.x / abs(direction.x), room.y / abs(direction.y));
     let tag = p5.Vector.add(center, p5.Vector.mult(direction, fit));
     let pointing = direction.copy().normalize();
@@ -123,9 +123,12 @@ export default class Gate {
     pop();
 
     // Name, just on the inside of the arrow
-    textSize(14);
+    push();
+    textFont(NAME_FONT);
+    textSize(16);
     let gap = abs(pointing.x) * (textWidth(this.label) / 2 + 12) + abs(pointing.y) * 18;
-    this.drawName(tag.x - pointing.x * gap, tag.y - pointing.y * gap, 14, 18);
+    pop();
+    this.drawName(tag.x - pointing.x * gap, tag.y - pointing.y * gap, 16, 18);
   }
 
   // Draw the name like a link, centred on (x, y): underlined, and brighter with a
@@ -133,6 +136,7 @@ export default class Gate {
   drawName(x, y, size, padding) {
     let hovered = this.isLabelAt(mouseX, mouseY);
     push();
+    textFont(NAME_FONT);
     textSize(size);
     textAlign(CENTER, CENTER);
     let w = textWidth(this.label);
@@ -147,7 +151,7 @@ export default class Gate {
       noStroke();
       fill(255, 180);
       textSize(11);
-      text('click to sail here', x, y + size + 10);
+      text('click to sail here', x, y - size - 2);
     }
     pop();
     // Remember a box around it (with room to spare), so clicks on it can be found
@@ -225,9 +229,9 @@ export default class Gate {
     this.reflection(x, y, w, false);
     pop();
 
-    // Name underneath (when it's off the screen, showTag() shows the name instead)
-    let size = constrain(this.rx * 0.2, 13, 18);
-    this.drawName(x, y + this.ry + 10 + size / 2, size, 10);
+    // Name above it, staying on the screen (when it's off the screen, showTag() shows the name instead)
+    let size = constrain(this.rx * 0.2, 16, 22);
+    this.drawName(x, Math.max(y - this.h - 10 - size, size), size, 10);
   }
 
   // The gate's reflection in the water: the frame upside down and squashed, wobbling sideways
