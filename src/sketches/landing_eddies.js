@@ -35,6 +35,14 @@ let bubbles = []; // { position, velocity, born }
 let rowY = 110; // How far down the screen the row is, when it's furthest away
 let rowForward = 0; // How far the boat has sailed toward it (0 = at the start, can't go back further)
 let rowSideways = 0; // How far the boat has sailed to the side of the middle of the row
+let rowGateWidth = 26; // How wide (in pixels) a gate is in the row, when it's furthest away (see fitToWindow())
+let sailTime = 3; // How many seconds clicking a name takes the boat to reach that gate (going through it takes a moment more)
+let sailStart = null; // When it set off, in milliseconds
+let cameraSpeed = 0.015; // How quickly the camera swings round behind (or in front of) the boat when it's heading diagonally
+let cameraEase = 0.05; // How gradually it starts and stops swinging (smaller = gentler)
+let cameraDeadZone = 0.2; // Heading closer to sideways than this (0 to 1), the camera doesn't move
+let cameraTurn = 0; // How fast it's swinging right now, in radians per frame
+let gateAtBoat = 1.4; // How wide a gate is when it reaches the boat, compared to the boat's length
 
 function setup() {
   let canvas = createCanvas(windowWidth, windowHeight);
@@ -61,8 +69,21 @@ function setup() {
     let portal = new Portal(width / 2, rowY, url, label);
     portal.inRow = ((i + 0.5) / pages.length - 0.5) * 2; // Where in the row: -1 is the left of the screen, 1 the right
     portal.place = placeGate;
+    portal.outlines = 1; // A single line
+    portal.brightness = 255;
+    portal.thinInDistance = true; // As thin as the water's lines at its height
     portals.push(portal);
   });
+  fitToWindow();
+}
+
+// Sizes that depend on the window
+function fitToWindow() {
+  // The water's lines are further apart on a tall screen (each is this much as far down the
+  // screen as the one below it)
+  water.ratio = 1 - 0.05 * max(1, height / 900);
+  // The gates in the distance are smaller on a small screen, down to a limit
+  rowGateWidth = 26 * constrain(min(width / 1440, height / 900), 0.5, 1);
 }
 
 // Where a gate is on the screen. The whole row grows and spreads out from the middle of the
@@ -71,6 +92,13 @@ function setup() {
 function placeGate(portal) {
   let x = portal.inRow * (width / 2) - rowSideways;
   portal.position.set(width / 2 + x * rowScale(), rowY * rowScale());
+
+  // Its size: growing from rowGateWidth in the distance to gateAtBoat times the length of the
+  // boat by the time it reaches the boat, at an even rate, whatever the size of the window
+  let boatY = boat.position.y + boat.length * 0.12;
+  let growth = Math.log((gateAtBoat * boat.length) / rowGateWidth) / Math.log(boatY / rowY);
+  let wide = rowGateWidth * pow(portal.position.y / rowY, growth);
+  portal.gateWidth = wide / depth(portal.position.y); // Portal scales this back down by depth()
 }
 
 // How much bigger the row is than when it's furthest away (1)
@@ -88,6 +116,8 @@ function moveRow() {
 function draw() {
   background(0);
   moveRow();
+  swingCamera();
+  hurryToGate();
   fill(0);
 
   // The water, with the wake pushing its lines aside, then the bubbles and the wake on top
@@ -118,7 +148,8 @@ function draw() {
   // Stir up the water down the sides of the boat, for next frame's wake, and pour out
   // bubbles behind it
   let sideways = createVector(-boat.sinAngle, boat.cosAngle * boat.sinTilt); // Across the boat, squashed like the water
-  wake.emit(boat.stern, sideways, boat.velocity, boat.length * 0.08, boat);
+  // (At no more than its usual speed, so the wake doesn't fan out wildly when it's in a hurry)
+  wake.emit(boat.stern, sideways, boat.velocity.copy().limit(boat.maxspeed * (height / 900)), boat.length * 0.08, boat);
   if (boat.velocity.mag() > 0.5) {
     // Anywhere across the gap between the two sides of the wake, just behind the stern
     let gap = boat.widthAt(wake.hullTo) * boat.length * 0.8;
@@ -168,6 +199,69 @@ function showBubbles() {
   }
 }
 
+// Set the boat's speed to reach the gate it's been sent to in time: however far is left to
+// sail (forward, and to the side), over however long is left
+function hurryToGate() {
+  if (!boat.destination) {
+    boat.hurry = 1;
+    sailStart = null;
+    return;
+  }
+  if (boat.sinking) return; // Going through: keep the same speed
+  if (sailStart === null) sailStart = millis();
+  let gate = boat.destination.position;
+  let boatY = boat.position.y + boat.length * 0.12;
+  let forward = max(0, Math.log(boatY / gate.y)) * boatY;
+  let sideways = abs(gate.x - boat.position.x) / rowScale();
+  let timeLeft = max(0.3, sailTime - (millis() - sailStart) / 1000);
+  let needed = Math.hypot(forward, sideways) / (timeLeft * 60); // Pixels every 60th of a second
+  // (Never slowing down on the way, or it would lurch as it nears the gate)
+  boat.hurry = max(boat.hurry, needed / (boat.maxspeed * (height / 900)));
+}
+
+// Swing the camera round toward being behind the boat (or in front of it, if it's heading
+// toward us) when it's heading diagonally, so it ends up sailing straight away or straight
+// toward us. Everything else turns the other way around it: the boat's heading and its wake,
+// and the row of gates, which all share a height, so turning just slides them sideways.
+function swingCamera() {
+  // Hold still while the boat's going through a gate, so the gate stays put around it
+  if (boat.sinking) {
+    cameraTurn = 0;
+    return;
+  }
+  let wanted = 0;
+  if (boat.velocity.mag() > 0.5) {
+    let heading = boat.velocity.heading();
+    let upOrDown = sin(heading); // -1 = straight up the screen (away), 1 = straight down (toward us)
+    let steepness = constrain((abs(upOrDown) - cameraDeadZone) / 0.3, 0, 1);
+    let target = upOrDown < 0 ? -HALF_PI : HALF_PI;
+    wanted = atan2(sin(target - heading), cos(target - heading)) * cameraSpeed * steepness;
+  }
+  // Ease into it and out of it, rather than starting and stopping all at once
+  cameraTurn = lerp(cameraTurn, wanted, cameraEase);
+  let turn = cameraTurn * boat.dt;
+  if (abs(turn) < 0.00001) return;
+
+  // Slide the row (unless it's as far as it goes: then there's nothing more to swing round to)
+  let boatY = boat.position.y + boat.length * 0.12;
+  let slid = rowSideways - ((boatY - rowY * rowScale()) * turn) / rowScale();
+  if (abs(slid) > width / 2) {
+    cameraTurn = 0;
+    return;
+  }
+  rowSideways = slid;
+
+  boat.velocity.rotate(turn);
+  boat.angle += turn;
+  boat.keyTurn += turn;
+  for (let line of wake.lines.concat(wake.hullLines)) {
+    for (let particle of line) {
+      particle.position.sub(boat.position.x, boatY).rotate(turn).add(boat.position.x, boatY);
+      particle.velocity.rotate(turn);
+    }
+  }
+}
+
 function mousePressed() {
   // Clicking a portal's name sends the boat sailing there by itself;
   // clicking anywhere else takes back control
@@ -179,6 +273,7 @@ function mousePressed() {
 
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
+  fitToWindow();
   // Keep the boat where it was on the screen, and move everything on the water along with it
   let shift = createVector(width / 2 - boat.home.x, height / 1.5 - boat.home.y);
   boat.home.add(shift);

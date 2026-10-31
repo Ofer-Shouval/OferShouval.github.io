@@ -23,7 +23,7 @@ export default class Portal {
     this.gateHeight = 1.1; // Height, compared to its width
     this.outlines = 4; // How many nested outlines it's drawn with
     this.slowest = 0.35; // How slowly it slides past when it's furthest away, compared to at the boat
-    this.cornerRound = 0.25; // How rounded its top corners are, compared to its width (0 = square, 0.5 = a semicircle)
+    this.cornerRound = 0; // How rounded its top corners are, compared to its width (0 = square, 0.5 = a semicircle)
     this.pull = 0.5; // How hard it draws the boat toward the middle
     this.reach = 1.6; // How far out it starts pulling the boat in (1 = the posts, 2 = twice as far)
     this.catchDistance = 0.5; // How close to the middle the boat has to get to go through (1 = the posts)
@@ -32,6 +32,8 @@ export default class Portal {
     this.labelArea = null; // Where the name was last drawn, so it can be clicked
     this.passTime = 0; // Frames since the boat started going through (0 = not yet)
     this.boatSide = 0; // Which side of the gate the boat was on last frame (-1 = beyond it, 1 = in front)
+    this.brightness = 230; // How bright its lines are (255 = solid)
+    this.thinInDistance = false; // Should its lines get thinner up the screen, like the water's lines?
     this.place = null; // A function that sets where it is each frame, if the sketch wants to (rather than it drifting with the water)
     this.measure(1);
   }
@@ -93,7 +95,7 @@ export default class Portal {
   passThrough(boat) {
     this.passTime++;
     // Straight on through, away from the side it came from, and into the middle of the opening
-    boat.velocity.set((this.position.x - boat.position.x) * 0.05, -this.cameFrom * 3);
+    boat.velocity.set((this.position.x - boat.position.x) * 0.05 * boat.hurry, -this.cameFrom * 3 * boat.hurry);
 
     // Cut the boat off between the posts, on the far side of the gate (see Boat.cutAtGate())
     boat.gateCut = { left: this.position.x - this.rx, width: this.rx * 2, y: this.position.y, cameFrom: this.cameFrom };
@@ -241,13 +243,14 @@ export default class Portal {
     // The gate: two posts and a beam across the top (no bottom, so you can sail through),
     // drawn as a few nested outlines, each a little inside the last
     noFill();
-    strokeWeight(boat.wakeWeight());
+    // (Never so thin it can't be seen)
+    strokeWeight(this.thinInDistance ? max(0.75, boat.wakeWeight() * constrain(y / height, 0, 1)) : boat.wakeWeight());
     for (let i = 0; i < this.outlines; i++) {
       let inset = i * w * 0.03;
-      stroke(rippleColor(i / this.outlines, 230));
+      stroke(rippleColor((i + 0.5) / this.outlines, this.brightness));
       this.frame(x, y, w - inset * 2, this.h - inset);
       // Its reflection in the water: upside down, squashed, faint and wobbly
-      stroke(rippleColor(i / this.outlines, 100));
+      stroke(rippleColor((i + 0.5) / this.outlines, this.brightness * 0.43));
       this.reflection(x, y, w - inset * 2, this.h - inset, false);
     }
 
@@ -255,7 +258,7 @@ export default class Portal {
 
     // Name underneath (when it's off the screen, showTag() shows the name instead)
     if (this.label && this.isOnScreen()) {
-      let size = max(13, this.rx * 0.2);
+      let size = constrain(this.rx * 0.2, 13, 18);
       this.drawName(this.position.x, this.position.y + this.ry + 10 + size / 2, size, 10);
     }
   }
@@ -278,7 +281,7 @@ export default class Portal {
   // down it is (0 at the surface, 1 at the bottom): the deeper, the more it wobbles.
   wobblyVertex(px, py, deep, w) {
     let wave = sin(py * 0.25 + frameCount * 0.12) + 0.5 * sin(py * 0.6 - frameCount * 0.08);
-    vertex(px + wave * w * 0.03 * deep, py);
+    vertex(px + wave * min(w * 0.03, 5) * deep, py);
   }
 
   // A gate frame standing on the water at (x, y): a post either side and a beam across

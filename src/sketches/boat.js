@@ -27,6 +27,9 @@ export default class Boat {
     this.followSpeed = 0.025; // How quickly the background catches up (0 to 1, smaller = boat gets further ahead)
     this.velocity = createVector(0, 0);
     this.acceleration = createVector(0, 0);
+    this.keyTurn = 0; // How far the camera has swung since these keys were pressed, so they turn with it
+    this.lastKeys = 0; // Which arrow keys were down last frame
+    this.hurry = 1; // How many times its usual speed it's going (the sketch raises it to reach a gate in time)
     this.dt = 1; // How many 60ths of a second this frame took (smoothed), so it sails at the same speed at any frame rate
     this.maxspeed = 2; // Maximum speed
     this.maxforce = 0.08; // How hard the keys / mouse can push (smaller = it speeds up and changes course more slowly)
@@ -107,6 +110,14 @@ export default class Boat {
     // Steering with the keys takes back control from sailing by itself
     if (force.mag() > 0) this.destination = null;
 
+    // The keys steer relative to the camera, so once it's swung round behind the boat they
+    // carry straight on, rather than pushing it back off to the side. Pressing a different
+    // key starts afresh.
+    let keys = force.x * 3 + force.y;
+    if (keys !== this.lastKeys) this.keyTurn = 0;
+    this.lastKeys = keys;
+    force.rotate(this.keyTurn);
+
     if (force.mag() === 0 && this.destination) {
       // Sailing by itself: head for the middle of the portal. The boat is drawn a little
       // above where it touches the water, so aim that much higher.
@@ -135,22 +146,23 @@ export default class Boat {
     // The distances it sails grow with the window, so its speed does too: it takes about as
     // long to get anywhere in a small window as in a big one
     let fit = height / 900;
-    this.velocity.add(p5.Vector.mult(this.acceleration, this.dt * fit));
+    this.velocity.add(p5.Vector.mult(this.acceleration, this.dt * fit * this.hurry));
     this.velocity.mult(pow(this.drag, this.dt));
-    this.velocity.limit(this.maxspeed * fit);
+    this.velocity.limit(this.maxspeed * fit * this.hurry);
     this.position.add(p5.Vector.mult(this.velocity, this.dt));
     this.acceleration.mult(0);
 
     // The camera eases toward the boat: slide the world (and the boat) back
     // by a small part of how far the boat is from home
-    this.scroll = p5.Vector.sub(this.position, this.home).mult(1 - pow(1 - this.followSpeed, this.dt));
+    // (Keeping up when it's in a hurry, so it doesn't run away up the screen)
+    this.scroll = p5.Vector.sub(this.position, this.home).mult(1 - pow(1 - min(0.5, this.followSpeed * this.hurry), this.dt));
     this.position.sub(this.scroll);
 
     // Turn smoothly to face the direction we're moving
     if (this.velocity.mag() > 0.5) {
       let target = this.velocity.heading();
       let difference = atan2(sin(target - this.angle), cos(target - this.angle)); // The shortest way round
-      this.angle += difference * (1 - pow(1 - this.turnSpeed, this.dt));
+      this.angle += difference * (1 - pow(1 - min(0.5, this.turnSpeed * this.hurry), this.dt));
     }
 
     this.aimCamera();
