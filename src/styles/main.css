@@ -66,6 +66,18 @@ ul {
   background-color: rgba(100, 100, 100, 0.4);
 }
 
+/* A house in the same thin, even line as the navbar's font */
+
+.home-icon {
+  width: 1.1em;
+  height: 1.1em;
+  margin: -0.55em 0; /* So it doesn't make its tab taller than the others */
+  vertical-align: middle;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+}
+
 @media screen and (max-width: 500px) {
   .navbar a {
     padding: 16px 0;
@@ -126,6 +138,29 @@ ul {
 
 .footer.art-list-link:hover {
   opacity: 1;
+}
+
+
+/* The art landing page is black on white, the opposite of the rest of the site */
+
+.light .navbar {
+  background-color: white;
+  border-color: #171717;
+}
+
+.light .navbar a {
+  color: black;
+}
+
+.light .footer.art-list-link {
+  color: black;
+  background-color: white;
+  padding: 2px 6px;
+  opacity: 1;
+}
+
+.light .footer.art-list-link:hover {
+  text-decoration: none;
 }
 
 

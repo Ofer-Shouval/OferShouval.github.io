@@ -1,324 +1,138 @@
 // Full-screen landing sketch for the art section, grown out of a week 6 homework (archive/week 6):
-// a stick figure walks along a street of doors, one for each piece. Walk up to a door and step
-// through it (or click one) to go to that piece. Behind the street, a crowd of smaller figures
-// walks back and forth in the distance.
+// a crowd of stick figures walks across the screen, laid out like the water on the home page
+// (see home/water.js). They walk in rows that get closer together toward the horizon, so the crowd
+// stretches away into the distance. Swells of Perlin noise lift and drop the figures as they pass.
+//
+// A figure's feet are below the horizon by the camera's height at that figure's size. The view
+// is warped so that the ground curls upward as it goes away from the camera, like a road rising
+// up a wall: the further away, the more it lifts, and the more the figures tip back with it.
 //
 // The figures are a 12-frame walk cycle (public/media/walk_cycle), drawn in black on clear
-// backgrounds and turned light here for the dark page. The camera follows the walker along
-// the street; the crowd is further away, so it slides past more slowly.
+// backgrounds. Everything here works out from the clock and the window, so nothing needs
+// remembering from one frame to the next.
 
 import p5 from 'p5';
 
 // The friendly-error checker slows every p5 call; it's for development, not the live site.
 p5.disableFriendlyErrors = import.meta.env.PROD;
 
-let pieces = [
-  ['The Luminin', '/art/luminin.html'],
-  ['Visuals for O. Wake', '/art/band-visuals.html'],
-  ['Ghost Harp', '/art/ghost-harp.html'],
-  ['Point in Passing', '/art/point-in-passing.html'],
-  ['Sun Deity', '/art/sun-deity.html'],
-  ['Refracture', '/art/refracture.html'],
-  ['Sketchbook', '/art/sketchbook/'],
-  ['Animation', '/art/animation.html'],
-];
+let horizon = 0.45; // How far down the screen the horizon is (0 = the top, 1 = the bottom)
+let cameraHeight = 375; // How high off the ground the camera is, in the frames' own pixels (a figure is about 150 tall)
+let curl = 0.1; // How much the ground curls upward with distance, as a fraction of the screen's height (0 = flat)
+let curlTip = 0.12; // How much the figures tip back as the ground curls, so they look shorter in the distance (0 = not at all)
+let ratio = 0.9; // Each row is this much the size of the one in front of it (smaller = bunch up faster)
+let furthestSize = 0.005; // The rows carry on until they reach the top of the screen, or get this small, per 900 pixels of window height
+let rowsBelow = 0; // How many rows to draw with their feet below the bottom of the screen, since the rest of them still shows
+let spacing = 260; // How far apart the figures in a row are on average, in the frames' own pixels
+let rowJitter = 1.2; // How far forward or back of its row a figure can stray, in gaps between rows
+let walkSpeed = [60, 180]; // The slowest and fastest a figure can walk, in the frames' own pixels per second
+let stride = 7.5; // How far a planted foot slides back each frame of the walk cycle, in the frames' own pixels
+let offScreen = 100; // How far past the side of the screen a figure goes before wrapping round, in the frames' own pixels
+let waveScale = 0.004; // How long the swells are (smaller = longer swells)
+let waveSpeed = 0.5; // How quickly the swells change, per second
+let waveHeight = 28; // How tall the swells are, in pixels, near the bottom of the screen
+let alpha = 0.9; // How solid the figures are, near the bottom of the screen (1 = solid)
+let distanceFade = 0.2; // How quickly they fade toward the horizon (smaller = slower)
 
 let frames = []; // The walk cycle
-let standing = 1; // The frame to show when standing still
-let crowdSize = 120;
-let crowd = [];
-let doors = [];
-let walker;
-let cameraX = 0; // Where on the street the middle of the screen is
-let hintAlpha = 230; // The hint at the bottom of the screen, which fades away
-
-// Sizes, worked out from the window (see layout())
-let groundY; // Where the street is, down the screen
-let horizonY; // Where the crowd fades into the distance
-let figureScale; // How big the walker is drawn (1 = the frames' own size)
-let doorWidth;
-let doorHeight;
-let doorSpacing;
+let frameHeight = 168; // How tall the frames are
 
 async function setup() {
   let canvas = createCanvas(windowWidth, windowHeight);
   canvas.position(0, 0);
   canvas.style('z-index', '-1');
   imageMode(CENTER);
-  textFont('Source Code Pro');
 
   for (let i = 1; i <= 12; i++) {
-    frames.push(lighten(await loadImage('/media/walk_cycle/' + i + '.png')));
+    frames.push(await loadImage('/media/walk_cycle/' + i + '.png'));
   }
-
-  layout();
-  walker = { x: -doorSpacing, direction: 1, walked: 0, target: null, entering: null, enterTime: 0 };
-  cameraX = walker.x;
-  for (let i = 0; i < crowdSize; i++) {
-    crowd.push(new Passerby());
-  }
-  crowd.sort((a, b) => a.depth - b.depth); // The furthest away drawn first
-}
-
-// Turn a black-on-clear frame light, for the dark page (the clear parts stay clear)
-function lighten(img) {
-  img.loadPixels();
-  for (let i = 0; i < img.pixels.length; i += 4) {
-    img.pixels[i] = 255 - img.pixels[i];
-    img.pixels[i + 1] = 255 - img.pixels[i + 1];
-    img.pixels[i + 2] = 255 - img.pixels[i + 2];
-  }
-  img.updatePixels();
-  return img;
-}
-
-// Work out the sizes from the window, and space the doors out along the street
-function layout() {
-  groundY = height * 0.8;
-  horizonY = height * 0.32;
-  figureScale = constrain(height / 750, 0.6, 1.4);
-  let figureHeight = 168 * figureScale;
-  doorWidth = figureHeight * 0.6;
-  doorHeight = figureHeight * 1.3;
-  doorSpacing = max(doorWidth * 2.6, 240);
-  doors = pieces.map(([name, url], i) => ({ name, url, x: i * doorSpacing, light: 0 }));
 }
 
 function draw() {
-  if (frames.length < 12) return; // Still loading
-  background(0);
+  background(255);
+  let seconds = millis() / 1000;
 
-  walk();
-  cameraX = lerp(cameraX, walker.x, 0.06); // Follow the walker, with a little ease
-
-  for (let person of crowd) {
-    person.update();
-    person.show();
+  // The furthest row first, so the nearer ones walk in front of it
+  let bottomSize = (height * (1 - horizon)) / cameraHeight; // The size that puts a figure's feet at the bottom of the screen
+  let smallestSize = (furthestSize * height) / 900;
+  let furthest = 0;
+  while (groundAt(bottomSize * pow(ratio, furthest), bottomSize) > 0 && bottomSize * pow(ratio, furthest) > smallestSize) {
+    furthest++;
   }
-
-  // The street
-  stroke(255, 90);
-  strokeWeight(1.5);
-  line(0, groundY, width, groundY);
-
-  let near = nearestDoor();
-  for (let door of doors) {
-    showDoor(door, door === near && !walker.entering);
+  for (let n = furthest; n >= -rowsBelow; n--) {
+    showRow(n, bottomSize * pow(ratio, n), bottomSize, seconds);
   }
-  showWalker();
-  showHint();
 }
 
-// Move the walker: with the arrow keys (or A and D), or toward a door that was clicked,
-// and through a door once it's gone in
-function walk() {
-  if (walker.entering) {
-    walker.enterTime++;
-    walker.entering.light = min(1, walker.enterTime / 40);
-    if (walker.enterTime === 45) window.location.href = walker.entering.url;
-    return;
-  }
-
-  let step = 2.2 * figureScale; // How far it walks each frame
-  let move = 0;
-  if (keyIsDown(LEFT_ARROW) || keyIsDown(65)) move -= 1; // A
-  if (keyIsDown(RIGHT_ARROW) || keyIsDown(68)) move += 1; // D
-  if (move !== 0) {
-    walker.target = null; // The keys take back control from walking to a door by itself
-  } else if (walker.target) {
-    let toGo = walker.target.x - walker.x;
-    if (abs(toGo) <= step) {
-      walker.x = walker.target.x;
-      enter(walker.target);
-      return;
-    }
-    move = Math.sign(toGo);
-  }
-
-  if (move !== 0) {
-    walker.x += move * step;
-    walker.direction = move;
-    walker.walked += step;
-  }
-  // Keep to the street
-  walker.x = constrain(walker.x, -doorSpacing * 1.5, doors[doors.length - 1].x + doorSpacing * 1.5);
-  walker.moving = move !== 0;
+// How far down the screen the ground is under a figure of this size.
+//
+// The ground lifts steadily with distance, counted in how many times smaller the figures have
+// got (a log, so it keeps on rising instead of stopping at the horizon). That gives the rows a
+// smallest gap they settle toward. The figures keep shrinking, so against them the ground looks
+// steeper and steeper. Lifting any faster than this would make the gaps shrink and then grow
+// again, which looks like a dip in the ground.
+function groundAt(size, bottomSize) {
+  let distance = Math.max(0, Math.log(bottomSize / size));
+  return horizon * height + cameraHeight * size - curl * height * distance;
 }
 
-function enter(door) {
-  walker.entering = door;
-  walker.enterTime = 0;
-}
+// Row number n, with its figures drawn at this size
+function showRow(n, size, bottomSize, seconds) {
+  let near = size / bottomSize; // 1 at the bottom of the screen, smaller in the distance
 
-// The door the walker is standing at, if any
-function nearestDoor() {
-  return doors.find((door) => abs(door.x - walker.x) < doorWidth * 0.4) || null;
-}
+  let direction = n % 2 === 0 ? 1 : -1; // Every other row walks the other way
 
-// Where something on the street is on the screen
-function screenX(streetX) {
-  return width / 2 + streetX - cameraX;
-}
-
-function showDoor(door, near) {
-  let x = screenX(door.x);
-  if (x < -doorWidth * 2 || x > width + doorWidth * 2) return;
-  let left = x - doorWidth / 2;
-  let top = groundY - doorHeight;
-  let corner = doorWidth * 0.25;
+  // The row is a strip a little wider than the screen, which the figures wrap round. It's
+  // worked out from the smallest a figure in this row can be, so they always wrap off screen.
+  let smallest = size * (1 - (rowJitter * (1 - ratio)) / 2);
+  let span = width / smallest + offScreen * 2;
+  let count = Math.round(span / spacing);
 
   push();
-  // Light pours out as the walker goes through
-  if (door.light > 0) {
-    noStroke();
-    fill(255, 220 * door.light);
-    rect(left, top, doorWidth, doorHeight, corner, corner, 0, 0);
-  }
-  // A couple of outlines, one inside the other, brighter when the walker's at it
-  noFill();
-  strokeWeight(1.5);
-  for (let i = 0; i < 2; i++) {
-    let inset = i * doorWidth * 0.06;
-    stroke(255, (near ? 230 : 140) - i * 60);
-    rect(left + inset, top + inset, doorWidth - inset * 2, doorHeight - inset, corner, corner, 0, 0);
-  }
+  drawingContext.globalAlpha = alpha * Math.min(1, pow(near, distanceFade));
 
-  // Its name above it, underlined when the walker's there or the mouse is over it
-  let hovered = isOverDoor(door, mouseX, mouseY);
-  noStroke();
-  fill(255, near || hovered ? 255 : 190);
-  textAlign(CENTER, BOTTOM);
-  textSize(constrain(doorWidth * 0.14, 12, 16));
-  text(door.name, x, top - 12);
-  if (near || hovered) {
-    let w = textWidth(door.name);
-    stroke(255, 160);
-    strokeWeight(1);
-    line(x - w / 2, top - 8, x + w / 2, top - 8);
-  }
-  if (near && !walker.target) {
-    noStroke();
-    fill(255, 170);
-    textSize(11);
-    textAlign(CENTER, TOP);
-    text('↑ to go in', x, groundY + 10);
-  }
-  pop();
-}
+  for (let i = 0; i < count; i++) {
+    let person = n * 1000 + i;
+    // Stepping out of the row toward the camera makes a figure bigger, as well as lower down
+    let stray = 1 + (hash(person + 0.25) - 0.5) * rowJitter * (1 - ratio);
+    let personSize = size * stray;
 
-function showWalker() {
-  let figureHeight = 168 * figureScale;
-  let frame = walker.moving ? frames[floor(walker.walked / (11 * figureScale)) % frames.length] : frames[standing];
-  push();
-  translate(screenX(walker.x), groundY - figureHeight / 2);
-  // Fades away through the door as it goes in
-  if (walker.entering) tint(255, 255 * (1 - walker.entering.light));
-  scale(walker.direction * figureScale, figureScale);
-  image(frame, 0, 0);
-  pop();
-}
+    // Each figure walks at its own speed, and only moves when its walk cycle moves on, by
+    // exactly as far as its planted foot slides back, so that foot stays put on the ground
+    let speed = lerp(walkSpeed[0], walkSpeed[1], hash(person + 0.75));
+    let steps = Math.floor((speed * seconds) / stride);
+    let along = hash(person) * span + steps * stride * direction;
+    let x = width / 2 + (((along % span) + span) % span - span / 2) * personSize;
 
-// A figure in the crowd: walks one way along its own bit of the distance, at its own pace,
-// and wraps round when it goes off the side of the screen
-class Passerby {
-  constructor() {
-    this.depth = random(0.2, 0.75); // How close it is: smaller and higher up the screen further away
-    this.x = random(width * 1.5);
-    this.direction = random([1, -1]);
-    this.pace = floor(random(3, 7)); // Frames between steps of its walk cycle
-    this.frame = floor(random(frames.length));
-    this.counter = 0;
-  }
+    let wave = (noise(x * waveScale + 100, n * 0.3 + 100, seconds * waveSpeed) - 0.5) * 2;
+    let feet = groundAt(personSize, bottomSize) + wave * waveHeight * near;
+    let frame = frames[(steps + Math.floor(hash(person + 0.5) * frames.length)) % frames.length];
 
-  update() {
-    this.counter++;
-    if (this.counter % this.pace === 0) {
-      this.frame++;
-      this.x += 7.5 * figureScale * this.depth * this.direction;
-    }
-  }
+    // The further away the ground has curled, the more the figures tip back with it
+    let distance = Math.max(0, Math.log(bottomSize / personSize));
+    let tipped = Math.cos(Math.min(distance * curlTip, 1.2));
 
-  show() {
-    let size = figureScale * this.depth;
-    let y = lerp(horizonY, groundY - 30 * figureScale, (this.depth - 0.2) / 0.55) - (168 * size) / 2;
-    // Further away, so it slides past more slowly as the camera follows the walker. Wrap
-    // round a strip a little wider than the screen.
-    let span = width + 200;
-    let x = ((((this.x - cameraX * this.depth) % span) + span) % span) - 100;
     push();
-    translate(x, y);
-    tint(255, 40 + 120 * this.depth); // Fainter in the distance
-    scale(this.direction * size, size);
-    image(frames[this.frame % frames.length], 0, 0);
+    translate(x, feet - (frameHeight * personSize * tipped) / 2);
+    scale(direction * personSize, personSize * tipped);
+    image(frame, 0, 0);
     pop();
   }
-}
-
-// Is (x, y) on a door or its name?
-function isOverDoor(door, x, y) {
-  let dx = screenX(door.x);
-  return abs(x - dx) < doorWidth * 0.7 && y > groundY - doorHeight - 40 && y < groundY;
-}
-
-// A hint at the bottom of the screen, which fades once a door is clicked (or after ten seconds)
-function showHint() {
-  if (walker.target || frameCount > 600) hintAlpha = max(0, hintAlpha - 4);
-  if (hintAlpha <= 0) return;
-  push();
-  noStroke();
-  fill(255, hintAlpha);
-  textAlign(CENTER, BOTTOM);
-  textSize(14);
-  text('walk with ← → (or A D), ↑ to go through a door, or click one', width / 2, height - 24);
   pop();
 }
 
-function mousePressed() {
-  if (walker.entering) return;
-  // Clicking a door sends the walker there and through it
-  for (let door of doors) {
-    if (isOverDoor(door, mouseX, mouseY)) walker.target = door;
-  }
-}
-
-function mouseMoved() {
-  cursor(doors.some((door) => isOverDoor(door, mouseX, mouseY)) ? HAND : ARROW);
-}
-
-function keyPressed() {
-  if (walker.entering) return false;
-  // Up (or W, or Enter) at a door goes through it
-  if (keyCode === UP_ARROW || key === 'w' || keyCode === ENTER) {
-    let door = nearestDoor();
-    if (door) {
-      walker.x = door.x;
-      enter(door);
-    }
-  }
-  // Stop the arrow keys from scrolling the page
-  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(key)) return false;
+// A number from 0 to 1 that's always the same for the same input, but looks random
+function hash(x) {
+  let h = Math.sin(x * 12.9898) * 43758.5453;
+  return h - Math.floor(h);
 }
 
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
-  // Keep the walker at the same door
-  let at = walker.x / doorSpacing;
-  layout();
-  walker.x = at * doorSpacing;
-  cameraX = walker.x;
 }
-
-// Coming back with the browser's Back button can restore the page exactly as it was left,
-// with the walker already through a door, so start it fresh instead
-window.addEventListener('pageshow', (event) => {
-  if (event.persisted) location.reload();
-});
 
 // This file is a module, so its functions aren't global by default.
 // Putting them on window lets p5 find them and run in "global mode".
 window.setup = setup;
 window.draw = draw;
-window.mousePressed = mousePressed;
-window.mouseMoved = mouseMoved;
-window.keyPressed = keyPressed;
 window.windowResized = windowResized;
