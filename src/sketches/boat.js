@@ -325,11 +325,18 @@ export default class Boat {
   // to its own position, so everything here is measured from there.)
   cutAtGate(z) {
     let g = this.gateCut;
-    let line = g.y - (this.position.y + this.length * 0.12) - z * this.cosTilt * this.length;
-    let left = g.left - this.position.x;
+    // The gate's line across the water, at the gate (raised up the screen for height z),
+    // turned to lie along the x axis, with the far side of the gate at positive y
+    let angle = g.line.heading();
+    let farSide = Math.sign(g.line.x * g.through.y - g.line.y * g.through.x) || 1;
+    let halfLength = g.line.mag() * g.halfWidth; // From the middle to a post, on the screen
     beginClip({ invert: true }); // Draw everywhere except inside this rectangle
-    if (g.cameFrom === 1) rect(left, line - height * 2, g.width, height * 2); // Through = up the screen
-    else rect(left, line, g.width, height * 2); // Through = down the screen
+    push();
+    translate(g.x - this.position.x, g.y - (this.position.y + this.length * 0.12) - z * this.cosTilt * this.length);
+    rotate(angle);
+    if (farSide > 0) rect(-halfLength, 0, halfLength * 2, height * 2);
+    else rect(-halfLength, -height * 2, halfLength * 2, height * 2);
+    pop();
     endClip();
   }
 

@@ -50,23 +50,19 @@ function setup() {
   water = new WaterLines();
   water.sternBubbles = 0; // The sketch pours out its own bubbles (see showBubbles())
 
-  // A portal for each page, all just out of sight to start with, spread in an even arc
-  // around the top half of the screen (left to right). Tags at the edge of the screen
-  // point the way. Sail into one to go to that page.
+  // A portal for each page, in a diamond around where the boat starts: above it, to its
+  // right, below it and to its left, all just out of sight to start with. Tags at the edge
+  // of the screen point the way. Sail into one to go to that page.
+  let out = 250; // How far off the screen they start
+  let below = 380; // Further for the bottom one: gates are tallest there, and would poke up into view
   let pages = [
-    ['/music/', 'music'],
-    ['/art/', 'art'],
-    ['/teaching/', 'teaching'],
-    ['/bio/', 'bio'],
+    ['/music/', 'music', boat.home.x, -out],
+    ['/art/', 'art', width + out, boat.home.y],
+    ['/teaching/', 'teaching', boat.home.x, height + below],
+    ['/bio/', 'bio', -out, boat.home.y],
   ];
-  for (let i = 0; i < pages.length; i++) {
-    // Head out from the middle of the screen at this angle (left = PI, straight up = PI * 1.5)
-    let angle = map(i, 0, pages.length - 1, PI + 0.35, TWO_PI - 0.35);
-    let direction = p5.Vector.fromAngle(angle);
-    // ...to the edge of the screen, then a little further so it starts out of sight
-    let toEdge = min(width / 2 / abs(direction.x), height / 2 / abs(direction.y));
-    let position = p5.Vector.mult(direction, toEdge + 250).add(width / 2, height / 2);
-    portals.push(new Portal(position.x, position.y, pages[i][0], pages[i][1]));
+  for (let [url, label, x, y] of pages) {
+    portals.push(new Portal(x, y, url, label));
   }
 }
 
@@ -128,7 +124,7 @@ function draw() {
     fill(255, hintAlpha);
     textAlign(CENTER, BOTTOM);
     textSize(14);
-    text('click a name to sail there, or steer with the arrow keys', width / 2, height - 24);
+    text('click a name to sail there, or steer with the arrow keys', width / 2, height - 70); // Above the bottom gate's tag
     pop();
   }
 }
@@ -194,7 +190,10 @@ function swingCamera() {
 
   turnDirection(boat.velocity);
   boat.angle += turn;
-  for (let portal of portals) turnPoint(portal.position);
+  for (let portal of portals) {
+    turnPoint(portal.position);
+    if (portal.facing !== null) portal.facing += turn;
+  }
   for (let line of wake.lines.concat(wake.hullLines)) {
     for (let particle of line) {
       turnPoint(particle.position);
