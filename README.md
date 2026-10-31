@@ -18,12 +18,13 @@ npm run preview  # serve the dist/ build locally
 - `bio/` — bio
 - `projects.html`, `bio.html` — redirects from the old URLs
 - `src/partials/` — shared HTML pulled in with `<!-- @include file.html -->` at build time
-- `src/sketches/wake.js` — the home page background sketch
+- `src/sketches/home/` — the home page sketch: `sketch.js` runs it, with `boat.js`, `gate.js`, `wake.js`, `water.js`, `color.js` and `perspective.js`
+- `src/sketches/art_walk.js` — the art section's landing sketch
 - `src/sketchbook/` — sketchbook sketches, mounted by `src/scripts/sketchbook.js`
 - `src/scripts/media.js` — lazy-loads videos on every page
 - `src/styles/main.css` — site styles
 - `public/media/` — images and videos, referenced as `/media/name.ext`
-- `archive/` — old pages, sketches and images, not part of the build
+- `archive/` — old pages, sketches and images, not part of the build (`archive/home-sketch-before-cleanup/` has the earlier versions of the home sketch)
 
 Any `.html` file outside `src/`, `public/` and `archive/` is built as a page automatically.
 Dashed "TODO" boxes (`class="placeholder"`) mark content still to be added.
