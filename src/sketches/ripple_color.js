@@ -40,7 +40,10 @@ export function fadingColor(amount, alpha, colourful) {
   let g = random(150, 255) * c;
   let b = 255 - random(100, 255) * s;
   let grey = max(r, g, b);
-  return color(lerp(grey, r, colourful), lerp(grey, g, colourful), lerp(grey, b, colourful), alpha);
+  // Some of these mix to nearly grey, so stretch them to as colourful as they can be
+  let least = min(r, g, b);
+  let stretch = (v) => (grey > least ? ((v - least) / (grey - least)) * grey : v);
+  return color(lerp(grey, stretch(r), colourful), lerp(grey, stretch(g), colourful), lerp(grey, stretch(b), colourful), alpha);
 }
 
 // Any colour, with the same flicker as the ripples: every frame each of its red, green and

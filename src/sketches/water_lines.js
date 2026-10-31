@@ -54,7 +54,7 @@ export default class WaterLines {
     // Or, while the wake's over it, it can be only black or colour: short segments of it flicker
     // on in colour, then it comes back as a plain line once the wake's gone
     this.flickerBack = false;
-    this.segmentLength = 2; // How many points are in a segment
+    this.segmentLengths = [1, 2, 4, 8]; // How many points are in a segment, from right behind the boat to the far end of the wake
     this.flickerEvery = 12; // How many frames a segment holds before it can change (bigger = calmer)
     this.colourNear = 0.04; // How likely a segment is to be in colour, right behind the boat
     this.colourFar = 0.8; // ...and at the far end of the wake
@@ -309,11 +309,11 @@ export default class WaterLines {
 
         // Hidden under the wake, or fading back in?
         let cover = wake.coverAt(x, wy);
-        let segment = floor(i / this.segmentLength);
-        let back = this.flickerBack ? this.flickerState(cover, this.key(n, segment), x, wy) : null;
+        let back = this.flickerBack ? this.flickerState(cover, n, i, x, wy) : null;
         let level = back ? back.level : this.visibility(key, cover);
         let colourful = back ? back.colourful : 0;
-        let colourPiece = colourful > 0 ? segment : -1;
+        let segmentKey = back ? back.segmentKey : -1;
+        let colourPiece = colourful > 0 ? segmentKey : -1;
 
         // Start a new piece of line whenever the opacity changes, joined to the last point.
         // Where the line goes into or comes out of the wake's V, end or start it exactly on
@@ -330,7 +330,7 @@ export default class WaterLines {
           pieceColour = colourPiece;
           if (level > 0) {
             let alpha = this.alpha * near * level;
-            if (colourful > 0) stroke(fadingColor(this.hash(this.key(n, segment)), alpha, colourful));
+            if (colourful > 0) stroke(fadingColor(this.hash(segmentKey), alpha, colourful));
             else stroke(rippleColor(shade, alpha));
             beginShape();
             if (onArm) vertex(onArm.x, onArm.y);
@@ -354,17 +354,21 @@ export default class WaterLines {
   // How visible the point `key` should be (0 = hidden, 1 = fully there), given how much
   // the wake covers it right now. While it's covered it stays hidden; once the wake moves
   // on, it fades straight back in.
-  // How a point looks if flickerBack is on: { level } is how much of it shows, { colourful }
-  // how much colour it has. While the wake's over it, it's black or in colour, and much more
-  // likely to be in colour the further behind the boat it is; after that it's a plain line.
-  // segmentKey says which segment it's in, which flickers as one.
-  flickerState(cover, segmentKey, x, y) {
-    if (cover <= this.coverThreshold) return { level: 1, colourful: 0 };
+  // How point i of line n, at (x, y), looks if flickerBack is on: { level } is how much of it
+  // shows, { colourful } how much colour it has. While the wake's over it, it's black or in
+  // colour, and much more likely to be in colour the further behind the boat it is; after that
+  // it's a plain line. It flickers as one with the rest of its segment (segmentKey): segments
+  // are short right behind the boat, and longer further back.
+  flickerState(cover, n, i, x, y) {
+    if (cover <= this.coverThreshold) return { level: 1, colourful: 0, segmentKey: -1 };
     let far = constrain(dist(x, y, this.boat.position.x, this.boat.position.y + this.boat.length * 0.12) / this.wakeLength, 0, 1);
+    let sizes = this.segmentLengths;
+    let size = min(floor(far * sizes.length), sizes.length - 1);
+    let segmentKey = this.key(n, floor(i / sizes[size]) * sizes.length + size);
     // Each segment holds for a moment before it can change, at its own time, so it doesn't strobe
     let beat = floor((frameCount + this.hash(segmentKey) * this.flickerEvery) / this.flickerEvery);
     let flash = this.hash(segmentKey + beat * 0.61) < lerp(this.colourNear, this.colourFar, far * far) ? 1 : 0;
-    return { level: flash, colourful: flash };
+    return { level: flash, colourful: flash, segmentKey };
   }
 
   // A number from 0 to 1 that's always the same for the same input, but looks random
