@@ -27,7 +27,8 @@ export default class Boat {
     this.followSpeed = 0.025; // How quickly the background catches up (0 to 1, smaller = boat gets further ahead)
     this.velocity = createVector(0, 0);
     this.acceleration = createVector(0, 0);
-    this.maxspeed = 2.2; // Maximum speed
+    this.dt = 1; // How many 60ths of a second this frame took (smoothed), so it sails at the same speed at any frame rate
+    this.maxspeed = 2; // Maximum speed
     this.maxforce = 0.08; // How hard the keys / mouse can push (smaller = it speeds up and changes course more slowly)
     this.drag = 0.96; // Water slows the boat down a little every frame
     this.sinking = false; // Set by a gate when the boat starts going through it
@@ -127,22 +128,29 @@ export default class Boat {
   }
 
   update() {
-    this.velocity.add(this.acceleration);
-    this.velocity.mult(this.drag);
-    this.velocity.limit(this.maxspeed);
-    this.position.add(this.velocity);
+    // Smoothed, so an odd slow frame doesn't make it lurch; and limited, so coming back to the
+    // tab after a long time away doesn't make it jump
+    this.dt = lerp(this.dt, constrain(deltaTime / (1000 / 60), 0.5, 3), 0.1);
+
+    // The distances it sails grow with the window, so its speed does too: it takes about as
+    // long to get anywhere in a small window as in a big one
+    let fit = height / 900;
+    this.velocity.add(p5.Vector.mult(this.acceleration, this.dt * fit));
+    this.velocity.mult(pow(this.drag, this.dt));
+    this.velocity.limit(this.maxspeed * fit);
+    this.position.add(p5.Vector.mult(this.velocity, this.dt));
     this.acceleration.mult(0);
 
     // The camera eases toward the boat: slide the world (and the boat) back
     // by a small part of how far the boat is from home
-    this.scroll = p5.Vector.sub(this.position, this.home).mult(this.followSpeed);
+    this.scroll = p5.Vector.sub(this.position, this.home).mult(1 - pow(1 - this.followSpeed, this.dt));
     this.position.sub(this.scroll);
 
     // Turn smoothly to face the direction we're moving
     if (this.velocity.mag() > 0.5) {
       let target = this.velocity.heading();
       let difference = atan2(sin(target - this.angle), cos(target - this.angle)); // The shortest way round
-      this.angle += difference * this.turnSpeed;
+      this.angle += difference * (1 - pow(1 - this.turnSpeed, this.dt));
     }
 
     this.aimCamera();
@@ -325,18 +333,11 @@ export default class Boat {
   // to its own position, so everything here is measured from there.)
   cutAtGate(z) {
     let g = this.gateCut;
-    // The gate's line across the water, at the gate (raised up the screen for height z),
-    // turned to lie along the x axis, with the far side of the gate at positive y
-    let angle = g.line.heading();
-    let farSide = Math.sign(g.line.x * g.through.y - g.line.y * g.through.x) || 1;
-    let halfLength = g.line.mag() * g.halfWidth; // From the middle to a post, on the screen
+    let line = g.y - (this.position.y + this.length * 0.12) - z * this.cosTilt * this.length;
+    let left = g.left - this.position.x;
     beginClip({ invert: true }); // Draw everywhere except inside this rectangle
-    push();
-    translate(g.x - this.position.x, g.y - (this.position.y + this.length * 0.12) - z * this.cosTilt * this.length);
-    rotate(angle);
-    if (farSide > 0) rect(-halfLength, 0, halfLength * 2, height * 2);
-    else rect(-halfLength, -height * 2, halfLength * 2, height * 2);
-    pop();
+    if (g.cameFrom === 1) rect(left, line - height * 2, g.width, height * 2); // Through = up the screen
+    else rect(left, line, g.width, height * 2); // Through = down the screen
     endClip();
   }
 

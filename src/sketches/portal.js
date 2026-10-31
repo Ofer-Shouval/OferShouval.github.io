@@ -1,7 +1,6 @@
 // Portal class
 // A gate standing in the sea, like a simple torii: a frame (two posts and a beam across
-// the top, with rounded corners) that the boat sails through. It turns to face the boat, so
-// the boat can always sail straight in, and holds still once the boat is close. It draws the boat toward it, and when
+// the top, with rounded corners) that the boat sails through. It draws the boat toward it, and when
 // the boat reaches it, the boat passes through, fading away as the opening fills with
 // light, and the page goes to `url`.
 //
@@ -23,17 +22,17 @@ export default class Portal {
     this.gateWidth = 300; // Width in pixels (if it were at the bottom of the screen)
     this.gateHeight = 1.1; // Height, compared to its width
     this.outlines = 4; // How many nested outlines it's drawn with
-    this.facing = null; // Which way its opening faces, on the water (set the first time it sees the boat)
-    this.turnSpeed = 0.03; // How quickly it turns to face the boat
+    this.slowest = 0.35; // How slowly it slides past when it's furthest away, compared to at the boat
     this.cornerRound = 0.25; // How rounded its top corners are, compared to its width (0 = square, 0.5 = a semicircle)
     this.pull = 0.5; // How hard it draws the boat toward the middle
     this.reach = 1.6; // How far out it starts pulling the boat in (1 = the posts, 2 = twice as far)
     this.catchDistance = 0.5; // How close to the middle the boat has to get to go through (1 = the posts)
-    this.worldScreens = 3; // The water loops around every this-many screens (see borders())
+    this.worldScreens = 3; // How many screens across the gates can drift to (see borders())
 
     this.labelArea = null; // Where the name was last drawn, so it can be clicked
     this.passTime = 0; // Frames since the boat started going through (0 = not yet)
     this.boatSide = 0; // Which side of the gate the boat was on last frame (-1 = beyond it, 1 = in front)
+    this.place = null; // A function that sets where it is each frame, if the sketch wants to (rather than it drifting with the water)
     this.measure(1);
   }
 
@@ -41,9 +40,16 @@ export default class Portal {
   // before it and the ones in front of it after it, so the boat can sail behind a gate.)
 
   update(boat) {
-    // It sits on the water, so it slides back as the camera follows the boat
-    this.position.sub(boat.scroll);
-    this.borders();
+    // It sits on the water, so it slides back as the camera follows the boat: slower the
+    // further away it is, like the water's lines, so it grows at an even rate as it nears
+    if (this.place) {
+      this.place(this);
+    } else {
+      let distance = constrain(this.position.y / (boat.position.y + boat.length * 0.12), this.slowest, 1.5);
+      // (Both ways equally, so a gate the boat is aiming at stays straight ahead of it)
+      this.position.sub(p5.Vector.mult(boat.scroll, distance));
+      this.borders();
+    }
     this.measure(boat.squash);
 
     // Where the boat touches the water
@@ -56,26 +62,17 @@ export default class Portal {
     }
     if (boat.sinking) return; // Already going through another gate
 
-    // Turn to face the boat, unless it's close enough to be drawn in (then hold still, so
-    // it can sail through to the other side)
-    let d = this.distanceFromCenter(bx, by);
-    let toBoat = this.toWater(bx, by).heading();
-    if (this.facing === null) this.facing = toBoat;
-    else if (d >= this.reach) {
-      this.facing += atan2(sin(toBoat - this.facing), cos(toBoat - this.facing)) * this.turnSpeed; // The shortest way round
-    }
-
     // Did the boat cross the line between the posts since last frame? The patch of water
     // between the posts is only a few pixels deep in perspective, and the boat can move
     // further than that in one frame, so check for crossing it, not just for being on it.
-    let { along, across } = this.onGate(bx, by);
-    let side = along > 0 ? 1 : -1; // 1 = in front of it (the side it faces), -1 = behind it
-    let betweenPosts = abs(across) < this.rx;
-    let nearby = abs(along) < this.rx;
+    let side = by < this.position.y ? -1 : 1;
+    let betweenPosts = abs(bx - this.position.x) < this.rx;
+    let nearby = abs(by - this.position.y) < this.rx;
     let crossed = this.boatSide !== 0 && side !== this.boatSide && betweenPosts && nearby;
     let cameFrom = crossed ? this.boatSide : side; // Which side it's coming through from
     this.boatSide = side;
 
+    let d = this.distanceFromCenter(bx, by);
     if (crossed || d < this.catchDistance) {
       this.passTime = 1;
       this.cameFrom = cameFrom;
@@ -96,18 +93,14 @@ export default class Portal {
   passThrough(boat) {
     this.passTime++;
     // Straight on through, away from the side it came from, and into the middle of the opening
-    let through = this.fromWater(p5.Vector.fromAngle(this.facing).mult(-this.cameFrom)).normalize();
-    let toMiddle = p5.Vector.sub(this.position, createVector(boat.position.x, boat.position.y + boat.length * 0.12));
-    toMiddle.sub(p5.Vector.mult(through, toMiddle.dot(through))); // Just the part across the opening
-    boat.velocity = p5.Vector.mult(through, 3).add(toMiddle.mult(0.05));
+    boat.velocity.set((this.position.x - boat.position.x) * 0.05, -this.cameFrom * 3);
 
     // Cut the boat off between the posts, on the far side of the gate (see Boat.cutAtGate())
-    let line = this.fromWater(this.across()); // Along the gate, on the screen
-    boat.gateCut = { x: this.position.x, y: this.position.y, line, halfWidth: this.rx, through };
+    boat.gateCut = { left: this.position.x - this.rx, width: this.rx * 2, y: this.position.y, cameFrom: this.cameFrom };
 
     // Is the back of the boat through yet? Then it's all gone: change page a moment later
     // (or after a few seconds, just in case)
-    let sternThrough = this.onGate(boat.stern.x, boat.stern.y).along * this.cameFrom < 0;
+    let sternThrough = this.cameFrom === 1 ? boat.stern.y < this.position.y : boat.stern.y > this.position.y;
     if (sternThrough && !this.allThroughAt) this.allThroughAt = this.passTime;
     let done = (this.allThroughAt && this.passTime > this.allThroughAt + 10) || this.passTime > 150;
     if (done && !this.leaving) {
@@ -127,10 +120,10 @@ export default class Portal {
   borders() {
     let worldWidth = width * this.worldScreens;
     let worldHeight = height * this.worldScreens;
-    if (this.position.x < width / 2 - worldWidth / 2) this.position.x += worldWidth;
-    if (this.position.x > width / 2 + worldWidth / 2) this.position.x -= worldWidth;
-    if (this.position.y < height / 2 - worldHeight / 2) this.position.y += worldHeight;
-    if (this.position.y > height / 2 + worldHeight / 2) this.position.y -= worldHeight;
+    // Stop at the edge and wait there, so it's never too far to sail back to, rather than
+    // jumping to the other side
+    this.position.x = constrain(this.position.x, width / 2 - worldWidth / 2, width / 2 + worldWidth / 2);
+    this.position.y = constrain(this.position.y, height / 2 - worldHeight / 2, height / 2 + worldHeight / 2);
   }
 
   // While the portal is off the screen, show its label at the edge of the screen
@@ -220,34 +213,6 @@ export default class Portal {
     this.h = this.rx * 2 * this.gateHeight;
   }
 
-  // The water's surface, unsquashed: a point on the screen as an offset from the gate, as
-  // if seen from straight above (so directions on the water are true), and back again
-  toWater(x, y) {
-    return createVector(x - this.position.x, ((y - this.position.y) * this.rx) / this.ry);
-  }
-  fromWater(v) {
-    return createVector(v.x, (v.y * this.ry) / this.rx);
-  }
-
-  // Which way along the gate (from post to post), on the water: across the way it faces
-  across() {
-    return createVector(-sin(this.facing), cos(this.facing));
-  }
-
-  // Where (x, y) on the water is compared to the gate, in pixels on the water: how far in
-  // front of it (`along`, negative = behind it) and how far to the side (`across`)
-  onGate(x, y) {
-    let v = this.toWater(x, y);
-    return { along: v.dot(p5.Vector.fromAngle(this.facing)), across: v.dot(this.across()) };
-  }
-
-  // A point on the gate, u along it from the middle (in pixels on the water) and v up from
-  // the water, on the screen
-  gatePoint(u, v) {
-    let side = this.fromWater(this.across()).mult(u);
-    return createVector(this.position.x + side.x, this.position.y + side.y - v);
-  }
-
   // How far (x, y) on the water is from the middle of the gate: 0 in the middle,
   // 1 out at the posts, more than 1 outside
   distanceFromCenter(x, y) {
@@ -267,7 +232,8 @@ export default class Portal {
     if (this.passTime > 0) {
       noStroke();
       fill(255, 220 * this.through());
-      this.frame(x, y, w, this.h, true);
+      let r = w * this.cornerRound;
+      rect(x - w / 2, y - this.h, w, this.h, r, r, 0, 0);
       fill(255, 90 * this.through());
       this.reflection(x, y, w, this.h, true);
     }
@@ -294,15 +260,15 @@ export default class Portal {
     }
   }
 
-  // The gate's reflection in the water, for a frame w wide and h tall: the frame upside down
-  // and squashed, but wobbling sideways like a reflection on moving water.
+  // The gate's reflection in the water at (x, y), for a frame w wide and h tall: the frame
+  // upside down and squashed, but wobbling sideways like a reflection on moving water.
   // close fills it in as one shape (for the light).
   reflection(x, y, w, h, close) {
     let down = 0.4; // How far down it hangs, compared to the frame's height
     beginShape();
-    for (let [u, v] of this.outline(w, h)) {
-      let p = this.gatePoint(u, -v * down); // Below the water instead of above it
-      this.wobblyVertex(p.x, p.y, v / h, w);
+    for (let p of this.outline(x, y, w, h)) {
+      let deep = (y - p.y) / h; // 0 at the surface, 1 for the top of the frame
+      this.wobblyVertex(p.x, y + deep * h * down, deep, w);
     }
     if (close) endShape(CLOSE);
     else endShape();
@@ -315,38 +281,35 @@ export default class Portal {
     vertex(px + wave * w * 0.03 * deep, py);
   }
 
-  // A gate frame standing on the water, turned to face this.facing: a post either side and
-  // a beam across the top, w wide and h tall. close fills it in as one shape (for the light).
-  frame(x, y, w, h, close = false) {
+  // A gate frame standing on the water at (x, y): a post either side and a beam across
+  // the top, h tall
+  frame(x, y, w, h) {
     beginShape();
-    for (let [u, v] of this.outline(w, h)) {
-      let p = this.gatePoint(u, v);
-      vertex(p.x, p.y);
-    }
-    if (close) endShape(CLOSE);
-    else endShape();
+    for (let p of this.outline(x, y, w, h)) vertex(p.x, p.y);
+    endShape();
   }
 
-  // The points along a frame w wide and h tall, as [u, v]: u along the gate from its middle,
-  // v up from the water. Up the left post, round the corner, along the beam, round the other
-  // corner and down the right post. Lots of them, so its reflection can bend.
-  outline(w, h) {
+  // The points along a frame standing on the water at (x, y), w wide and h tall: up the
+  // left post, round the corner, along the beam, round the other corner and down the right
+  // post. Lots of them, so its reflection can bend.
+  outline(x, y, w, h) {
     let r = min(w * this.cornerRound, w / 2, h);
-    let left = -w / 2;
-    let right = w / 2;
+    let left = x - w / 2;
+    let right = x + w / 2;
+    let top = y - h;
     let steps = 16;
     let points = [];
-    for (let i = 0; i <= steps; i++) points.push([left, lerp(0, h - r, i / steps)]); // Up the left post
+    for (let i = 0; i <= steps; i++) points.push(createVector(left, lerp(y, top + r, i / steps))); // Up the left post
     for (let i = 1; i <= steps; i++) {
-      let a = PI - HALF_PI * (i / steps); // Round the top left corner
-      points.push([left + r + cos(a) * r, h - r + sin(a) * r]);
+      let a = PI + HALF_PI * (i / steps); // Round the top left corner
+      points.push(createVector(left + r + cos(a) * r, top + r + sin(a) * r));
     }
-    for (let i = 1; i <= steps; i++) points.push([lerp(left + r, right - r, i / steps), h]); // Along the beam
+    for (let i = 1; i <= steps; i++) points.push(createVector(lerp(left + r, right - r, i / steps), top)); // Along the beam
     for (let i = 1; i <= steps; i++) {
-      let a = HALF_PI - HALF_PI * (i / steps); // Round the top right corner
-      points.push([right - r + cos(a) * r, h - r + sin(a) * r]);
+      let a = PI + HALF_PI + HALF_PI * (i / steps); // Round the top right corner
+      points.push(createVector(right - r + cos(a) * r, top + r + sin(a) * r));
     }
-    for (let i = 1; i <= steps; i++) points.push([right, lerp(h - r, 0, i / steps)]); // Down the right post
+    for (let i = 1; i <= steps; i++) points.push(createVector(right, lerp(top + r, y, i / steps))); // Down the right post
     return points;
   }
 }
