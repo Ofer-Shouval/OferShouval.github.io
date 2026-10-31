@@ -19,7 +19,7 @@ npm run preview  # serve the dist/ build locally
 - `projects.html`, `bio.html` — redirects from the old URLs
 - `src/partials/` — shared HTML pulled in with `<!-- @include file.html -->` at build time
 - `src/sketches/home/` — the home page sketch: `sketch.js` runs it, with `boat.js`, `gate.js`, `wake.js`, `water.js`, `color.js` and `perspective.js`
-- `src/sketches/art_walk.js` — the art section's landing sketch
+- `src/sketches/art_walk.js` — the art section's landing sketch, with `brush_frames.js`, which paints its walk cycle with p5.brush along the skeleton in `figure.js`
 - `src/sketchbook/` — sketchbook sketches, mounted by `src/scripts/sketchbook.js`
 - `src/scripts/media.js` — lazy-loads videos on every page
 - `src/styles/main.css` — site styles

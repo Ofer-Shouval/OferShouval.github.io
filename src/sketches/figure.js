@@ -10,7 +10,7 @@
 // it's drawn. Each pose is a list of angles, in degrees: 0 points straight down, and bigger
 // angles swing forward, the way it's walking. So a foot flat on the ground is 90.
 
-let poses = [
+export let poses = [
   { neck: -3.1, torso: -5.1, near: { arm: [-20.8, -10], leg: [31, 13, 121.9] }, far: { arm: [10.5, 45.7], leg: [13.3, -42.4, 60] } },
   { neck: 0.7, torso: -7.6, near: { arm: [-17.4, -4.1], leg: [33, 2, 90] }, far: { arm: [12.2, 57.1], leg: [8.1, -44.1, 49.5] } },
   { neck: -2.3, torso: -4.8, near: { arm: [-10.5, 3.1], leg: [22.7, -2.6, 90] }, far: { arm: [12.6, 52.5], leg: [12.5, -51.7, 56.2] } },
