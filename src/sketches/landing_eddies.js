@@ -42,7 +42,7 @@ let cameraSpeed = 0.015; // How quickly the camera swings round behind (or in fr
 let cameraEase = 0.05; // How gradually it starts and stops swinging (smaller = gentler)
 let cameraDeadZone = 0.2; // Heading closer to sideways than this (0 to 1), the camera doesn't move
 let cameraTurn = 0; // How fast it's swinging right now, in radians per frame
-let wakeLength = 0.25; // How long the wake is, compared to the height of the screen
+let wakeLength = 0.38; // How long the wake is, compared to the height of the screen
 let gateAtBoat = 1.4; // How wide a gate is when it reaches the boat, compared to the boat's length
 
 function setup() {
@@ -56,8 +56,8 @@ function setup() {
   wake.stayOnScreen = true; // The whole of the wake is always in view
   water = new WaterLines();
   water.sternBubbles = 0; // The sketch pours out its own bubbles (see showBubbles())
-  // The water closes up quickly behind the wake
-  water.fadeBackTime = 6; // How many frames its lines take to fade back in
+  // Under the wake, the water's lines are only black or flickers of colour
+  water.flickerBack = true;
   water.springBack = 0.97; // How quickly lines the boat has dragged settle back (smaller = faster)
 
   boat.cameraSwing = 0; // The view stays put: everything's worked out from the row of gates (see placeGate())

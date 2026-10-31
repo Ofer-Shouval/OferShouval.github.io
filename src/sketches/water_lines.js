@@ -18,7 +18,7 @@
 // of water), so a bit of line that's been dragged stays dragged as it scrolls past.
 
 import p5 from 'p5';
-import rippleColor from './ripple_color.js';
+import rippleColor, { fadingColor } from './ripple_color.js';
 import { depth, flatness } from './perspective.js';
 
 export default class WaterLines {
@@ -50,6 +50,14 @@ export default class WaterLines {
     // Where the wake covers the lines they disappear, then fade back in once it's gone
     this.coverThreshold = 0.35; // How much the wake has to cover a point to hide it (0 to 1)
     this.fadeBackTime = 20; // How many frames the line takes to fade back in afterwards
+
+    // Or, while the wake's over it, it can be only black or colour: short segments of it flicker
+    // on in colour, then it comes back as a plain line once the wake's gone
+    this.flickerBack = false;
+    this.segmentLength = 2; // How many points are in a segment
+    this.flickerEvery = 12; // How many frames a segment holds before it can change (bigger = calmer)
+    this.colourNear = 0.04; // How likely a segment is to be in colour, right behind the boat
+    this.colourFar = 0.8; // ...and at the far end of the wake
 
     // A stream of bubbles pouring out right behind the boat while it's moving, drawn exactly
     // like the ripples that followed the mouse in the first version (landing_page.js)
@@ -95,6 +103,7 @@ export default class WaterLines {
   // Drag the bits of line near the boat along in the direction it's moving, and let
   // everything that's been dragged before spring back a little
   pull(boat) {
+    this.boat = boat;
     for (let [key, offset] of this.dragged) {
       offset.mult(this.springBack);
       if (offset.mag() < 0.1) this.dragged.delete(key);
@@ -255,6 +264,7 @@ export default class WaterLines {
 
   // cameraSquash: the boat's camera squash, so the bubbles tip with the view like the ripples did
   show(wake, weight, cameraSquash) {
+    this.wakeLength = wake.maxLength;
     push();
     noFill();
     for (let n = ceil(this.travelled); ; n++) {
@@ -276,6 +286,7 @@ export default class WaterLines {
       // The line is drawn in pieces, one for each stretch that's equally faded (hidden under
       // the wake, fading back in, or fully there), so each piece can have its own opacity
       let pieceLevel = -1; // Opacity of the piece being drawn, from 0 to 1 (-1 = none yet)
+      let pieceColour = -1; // Which segment and how much colour the piece being drawn has (-1 = none)
       let previous = null;
       for (let i = this.firstPoint(); i <= this.lastPoint(); i++) {
         let x = this.pointX(i);
@@ -297,13 +308,18 @@ export default class WaterLines {
         wy = y + room * Math.tanh(moved / room);
 
         // Hidden under the wake, or fading back in?
-        let level = this.visibility(key, wake.coverAt(x, wy));
+        let cover = wake.coverAt(x, wy);
+        let segment = floor(i / this.segmentLength);
+        let back = this.flickerBack ? this.flickerState(cover, this.key(n, segment), x, wy) : null;
+        let level = back ? back.level : this.visibility(key, cover);
+        let colourful = back ? back.colourful : 0;
+        let colourPiece = colourful > 0 ? segment : -1;
 
         // Start a new piece of line whenever the opacity changes, joined to the last point.
         // Where the line goes into or comes out of the wake's V, end or start it exactly on
         // the V's arm, so the line runs right into the arm.
         level = round(level * 4) / 4; // A few steps of opacity is plenty, and keeps the pieces long
-        if (level !== pieceLevel) {
+        if (level !== pieceLevel || colourPiece !== pieceColour) {
           let onArm = previous && (level === 0 || pieceLevel === 0) ? wake.crossV(previous.x, previous.y, x, wy) : null;
           if (pieceLevel > 0) {
             if (onArm) vertex(onArm.x, onArm.y);
@@ -311,8 +327,11 @@ export default class WaterLines {
             endShape();
           }
           pieceLevel = level;
+          pieceColour = colourPiece;
           if (level > 0) {
-            stroke(rippleColor(shade, this.alpha * near * level));
+            let alpha = this.alpha * near * level;
+            if (colourful > 0) stroke(fadingColor(this.hash(this.key(n, segment)), alpha, colourful));
+            else stroke(rippleColor(shade, alpha));
             beginShape();
             if (onArm) vertex(onArm.x, onArm.y);
             else if (previous) vertex(previous.x, previous.y);
@@ -335,6 +354,25 @@ export default class WaterLines {
   // How visible the point `key` should be (0 = hidden, 1 = fully there), given how much
   // the wake covers it right now. While it's covered it stays hidden; once the wake moves
   // on, it fades straight back in.
+  // How a point looks if flickerBack is on: { level } is how much of it shows, { colourful }
+  // how much colour it has. While the wake's over it, it's black or in colour, and much more
+  // likely to be in colour the further behind the boat it is; after that it's a plain line.
+  // segmentKey says which segment it's in, which flickers as one.
+  flickerState(cover, segmentKey, x, y) {
+    if (cover <= this.coverThreshold) return { level: 1, colourful: 0 };
+    let far = constrain(dist(x, y, this.boat.position.x, this.boat.position.y + this.boat.length * 0.12) / this.wakeLength, 0, 1);
+    // Each segment holds for a moment before it can change, at its own time, so it doesn't strobe
+    let beat = floor((frameCount + this.hash(segmentKey) * this.flickerEvery) / this.flickerEvery);
+    let flash = this.hash(segmentKey + beat * 0.61) < lerp(this.colourNear, this.colourFar, far * far) ? 1 : 0;
+    return { level: flash, colourful: flash };
+  }
+
+  // A number from 0 to 1 that's always the same for the same input, but looks random
+  hash(x) {
+    let h = Math.sin(x * 12.9898) * 43758.5453;
+    return h - Math.floor(h);
+  }
+
   visibility(key, cover) {
     if (cover > this.coverThreshold) this.hiddenSince.set(key, frameCount);
     let since = this.hiddenSince.get(key);
