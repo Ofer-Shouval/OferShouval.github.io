@@ -4,16 +4,21 @@
 <head>
   <title>Art – Ofer Shouval</title>
   <!-- @include head.html -->
+  <style>@view-transition { navigation: auto; }</style>
 </head>
 
 <body class="light">
   <!-- @include navbar.html -->
 
-  <a id="wipe-link" class="wipe-link" href="/art/luminin.html">luminin</a>
+  <a id="fade-link" class="fade-link" href="/art/luminin.html"><span class="gate-frame"><span class="gate-name">luminin</span></span></a>
+  <div id="fade-background" class="fade-background">
+    <video src="/media/lumininSmear.mp4" muted loop playsinline preload="auto"></video>
+  </div>
 
   <a class="footer art-list-link" href="/art/all.html">see everything as a list</a>
 
   <script type="module" src="/src/sketches/art_walk.js"></script>
+  <script type="module" src="/src/scripts/fade_link.js"></script>
 </body>
 
 </html>

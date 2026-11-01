@@ -4,10 +4,14 @@
 <head>
   <title>The Luminin – Ofer Shouval</title>
   <!-- @include head.html -->
+  <style>@view-transition { navigation: auto; }</style>
 </head>
 
 <body bgcolor="#171717">
   <!-- @include navbar.html -->
+
+  <video id="luminin-background" class="luminin-background" src="/media/lumininSmear.mp4" muted loop playsinline></video>
+  <script type="module" src="/src/scripts/luminin_background.js"></script>
 
   <main class="page">
     <a class="back-link" href="/art/">&larr; art</a>
@@ -46,6 +50,9 @@
       Modular in design and built with cheap, easy to obtain materials,
       the Luminin is a proof of concept for a DIY platform which would provide musicians and performers with the tools to design and
       innovate the visual aspects of their performance while on a budget.</p>
+
+    <!-- @include luminin_system.html -->
+
     <video data-src="/media/lumininGif1_intro.mp4" poster="/media/lumininGif1_intro_poster.jpg" autoplay muted loop playsinline></video>
     <p>
       The controller, mounted on a guitar headstock, contains an MPU accelerometer/gyroscope that measures the motions of a performer and transmits the data to a Raspberry Pi.

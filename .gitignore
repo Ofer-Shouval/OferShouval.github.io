@@ -1,3 +1,4 @@
 node_modules/
 dist/
+art/*.MOV
 .DS_Store

@@ -19,6 +19,7 @@ export let frameHeight = 174;
 export let feetX = 45;
 export let feetY = 160;
 export let steps = poses.length * 2; // How many steps there are in the walk cycle
+export let portalMargin = 20; // Room around the portal's picture for the post holes and the pen to wander, in pixels
 let levels = 4; // How many sizes of the sheet to keep, each half the size of the last
 
 let figure = new Figure();
@@ -64,6 +65,55 @@ export function paintSheets(name, weights, resolution) {
     sheets.push(smaller);
   }
   return sheets;
+}
+
+// Paint the portal's two outlines (with no bottom) and post holes, like a hand drawing: each line
+// its own stroke, not quite straight, running a little past the corners. Gives a canvas
+// portalMargin bigger than the portal on every side.
+// holeWidth: how wide the post holes are
+export function paintPortal(name, weight, width, height, inset, holeWidth, density) {
+  let canvas = brush.createCanvas(width + portalMargin * 2, height + portalMargin * 2, { pixelDensity: density, parent: null });
+  let gl = canvas.getContext('webgl2');
+  brush.clear();
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  brush.set(name, '#000000', weight);
+
+  // Everything's measured from the middle of the portal, as the brush does
+  let left = -width / 2;
+  let right = width / 2;
+  let top = -height / 2;
+  let bottom = height / 2;
+  for (let i of [0, inset]) {
+    stroke(left + i, bottom, left + i, top + i - 3);
+    stroke(left + i - 3, top + i, right - i + 3, top + i);
+    stroke(right - i, top + i - 3, right - i, bottom);
+  }
+  for (let x of [left + inset / 2, right - inset / 2]) {
+    stroke(x - holeWidth / 2, bottom, x + holeWidth / 2, bottom);
+  }
+  brush.render();
+
+  let picture = document.createElement('canvas');
+  picture.width = canvas.width;
+  picture.height = canvas.height;
+  picture.getContext('2d').drawImage(canvas, 0, 0);
+  return picture;
+}
+
+// A straight line, as a shaky hand would draw it
+function stroke(x1, y1, x2, y2) {
+  let points = [];
+  let count = Math.max(2, Math.round(Math.hypot(x2 - x1, y2 - y1) / 35));
+  for (let i = 0; i <= count; i++) {
+    let along = i / count;
+    let shake = i === 0 || i === count ? 0.3 : 1;
+    points.push([
+      x1 + (x2 - x1) * along + (Math.random() - 0.5) * shake,
+      y1 + (y2 - y1) * along + (Math.random() - 0.5) * shake,
+    ]);
+  }
+  brush.spline(points, 0.6);
 }
 
 function paint(step, name, weight) {

@@ -10,13 +10,9 @@
 // The figures are a walk cycle painted with a p5.brush brush when the page starts (see
 // brush_frames.js). There can be thousands of them, so everything about each one that doesn't
 // change is worked out once (see buildCrowd()), and each frame only works out where they've got to.
-//
-// Pressing a link in the middle of the screen sets off a transition to its page: the figures each
-// turn a colour and speed up, dragging a streaky stripe of it behind them, and the paint smears
-// along the rows as they go, until the screen is full.
 
 import p5 from 'p5';
-import { paintSheets, frameWidth, frameHeight, feetX, feetY, steps } from './brush_frames.js';
+import { paintSheets, paintPortal, portalMargin, frameWidth, frameHeight, feetX, feetY, steps } from './brush_frames.js';
 
 // The friendly-error checker slows every p5 call; it's for development, not the live site.
 p5.disableFriendlyErrors = import.meta.env.PROD;
@@ -44,23 +40,27 @@ let distanceFade = 0.2; // How quickly they fade toward the horizon (smaller = s
 let brushName = 'pen';
 let lineWeights = [3, 3.5, 4, 4.75, 5.5]; // How thick its lines can be, from the far distance to the front
 let weightJitter = 0.35; // How far a figure's lines stray from what's usual at its distance, as a fraction of that whole range
-let wipeColours = ['#20c0c0', '#ff4f9a', '#2f6bff', '#2fd27a', '#a84fff']; // The colours the figures wipe the screen with
-let figureShade = 0.45; // How bright the figures are compared to their colour (darker, so they still show on it)
-let wipeEndColour = '#171717'; // The colour it all fades into at the end (the background of the page it's going to)
-let smear = 0.6; // How far the paint in each row gets dragged along, compared to how far the figures walk
-let smearAlpha = 0.5; // How strongly the dragged paint shows over what's already there
-let bristleHeight = 6; // How tall each streak in a stripe is, in pixels, at most
-let wipeTime = 2.6; // How many seconds the figures wipe the screen for
-let wipeFade = 0.5; // How many seconds it then takes to fade into wipeEndColour
-let wipeSpeedUp = 8; // How many times faster the figures end up walking
-let turnTime = 0.5; // How many seconds the figures take to all turn the colour, one after another
-
-let wipe = null; // The transition under way, if any: { start, url, sheets, layer, layerContext }
-let clock = 0; // How many seconds' worth the figures have walked, which runs fast during the wipe
 let density; // How many pixels of canvas for each pixel of window
 let resolution; // How many pixels of sheet for each of the frames' own pixels
 let sheets; // The walk cycle painted at each line weight, at each size (see brush_frames.js)
 let rows = []; // The crowd, the furthest row first (see buildCrowd())
+let portal; // Where the portal in the middle of the screen is (see showPortal())
+let portalLink;
+let portalVideo;
+let portalAlpha = 0.7; // How solid its white is (1 = hides everyone behind it)
+let portalInset = 6; // How far apart its two outlines are, in pixels
+let portalLight = 0; // How much the colourful light fills it: 0 to 1, when the mouse is over it
+let portalLightTime = 0.5; // How many seconds the light takes to come on or go off
+let portalColour = 0.5; // How strong the light's colours are (1 = as they are in the video)
+let portalOutline; // The portal's outlines and post holes, drawn in pen (see brush_frames.js)
+let portalPenWeight = 2.5; // How thick the pen's lines are
+let portalCrop; // Which part of the video shows in the portal this frame
+let glowLength = 120; // How far the light reflects along the ground in front of the portal, in pixels
+let glowBehind = 80; // ...and behind it, which looks shorter since it's going away from us
+let glowWidth = 2.4; // How wide that reflection is, compared to the portal
+let glowAlpha = 0.5; // How strong it is, right at the portal's foot
+let glow; // A very small picture of the reflection, which goes soft when it's stretched out (see showGlow())
+let holeWidth = 19; // How wide the post holes are, in pixels
 
 function setup() {
   density = Math.min(2, window.devicePixelRatio); // Sharp enough, and any more is slow on phones
@@ -70,16 +70,13 @@ function setup() {
   canvas.style('z-index', '-1');
   // Sharp enough for the biggest figures on this screen, and no bigger
   resolution = constrain(bottomSize() * 1.1 * density, 1, 3);
+  // (Before the sheets, since painting those finishes with the brush)
+  let foot = document.querySelector('.gate-frame').getBoundingClientRect();
+  portalOutline = paintPortal(brushName, portalPenWeight, foot.width, foot.height, portalInset, holeWidth, density);
   sheets = paintSheets(brushName, lineWeights, resolution);
   buildCrowd();
-
-  let link = document.getElementById('wipe-link');
-  link.addEventListener('click', (event) => {
-    // Opening it in a new tab, or asking for less motion, just follows the link
-    if (event.metaKey || event.ctrlKey || event.shiftKey || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    event.preventDefault();
-    if (!wipe) startWipe(link);
-  });
+  portalLink = document.getElementById('fade-link');
+  portalVideo = document.querySelector('#fade-background video');
 }
 
 // The size that puts a figure's feet at the bottom of the screen
@@ -100,12 +97,18 @@ function buildCrowd() {
   for (let n = furthest; n >= -rowsBelow; n--) {
     rows.push(buildRow(n, bottom * pow(ratio, n), bottom));
   }
-  // Each row wipes the band from its feet up to the feet of the row behind it, so they join up
-  let overlap = 2;
-  rows.forEach((row, i) => {
-    row.bandTop = i === 0 ? 0 : rows[i - 1].ground - overlap;
-    row.bandHeight = (i === rows.length - 1 ? height : row.ground + overlap) - row.bandTop;
-  });
+  standPortal();
+}
+
+// Stand the portal on the ground: its foot goes on the row of people nearest to it, with it in the
+// middle of the screen, so they walk across its threshold
+function standPortal() {
+  let link = document.getElementById('fade-link');
+  link.style.top = '';
+  let foot = link.getBoundingClientRect().bottom;
+  let row = rows.reduce((best, r) => (Math.abs(r.ground - foot) < Math.abs(best.ground - foot) ? r : best));
+  link.style.top = `calc(50% + ${row.ground - foot}px)`;
+  portal = link.querySelector('.gate-frame').getBoundingClientRect();
 }
 
 // Row number n, with its figures drawn at this size
@@ -144,21 +147,17 @@ function buildRow(n, size, bottom) {
       stepsPerSecond: lerp(walkSpeed[0], walkSpeed[1], hash(person + 0.75)) / stride,
       start: hash(person) * span,
       firstStep: Math.floor(hash(person + 0.5) * steps),
-      level,
-      id: person,
-      colour: Math.floor(hash(person + 0.85) * wipeColours.length),
-      turnAt: hash(person + 0.6) * turnTime,
+      sheet: sheets[level],
       sheetScale,
-      weight,
+      sheetY: weight * Math.round(frameHeight * resolution) / 2 ** level,
     });
   }
 
   return {
     people,
     span,
-    ground: groundAt(size, bottom),
-    size,
     direction: n % 2 === 0 ? 1 : -1, // Every other row walks the other way
+    ground: groundAt(size, bottom),
     alpha: alpha * Math.min(1, pow(near, distanceFade)),
     swell: waveHeight * near,
     noiseRow: n * 0.3 + 100,
@@ -173,150 +172,139 @@ function draw() {
   let cellWidth = Math.round(frameWidth * resolution); // How wide a picture is on the full-size sheet
   let cellHeight = Math.round(frameHeight * resolution);
 
-  // How long the wipe's been going, and the figures speed up over the first half of it
-  let wiped = wipe ? seconds - wipe.start : 0;
-  let speedUp = wipe ? lerp(1, wipeSpeedUp, Math.min(1, wiped / (wipeTime / 2)) ** 2) : 1;
-  clock += (deltaTime / 1000) * speedUp;
-
-  // Where everyone's got to, adding to the wipe as they go
+  updatePortalLight(ctx);
+  let portalShown = false;
   for (let row of rows) {
+    // Everyone drawn so far is further away than the foot of the portal, so behind it
+    if (!portalShown && row.ground > portal.bottom - 1) {
+      showPortal(ctx);
+      portalShown = true;
+    }
+    ctx.globalAlpha = row.alpha;
     let span = row.span;
     for (let p of row.people) {
       // Each figure walks at its own speed, and only moves when its walk cycle moves on, by
       // exactly as far as its planted foot slides back, so that foot stays put on the ground
-      p.walked = Math.floor(p.stepsPerSecond * clock);
-      let along = p.start + p.walked * stride * row.direction;
-      p.x = width / 2 + ((((along % span) + span) % span) - span / 2) * p.size;
-      if (wipe && wiped >= p.turnAt) wipeBehind(p, row);
-    }
-  }
-  if (wipe) {
-    smearRows(speedUp);
-    ctx.drawImage(wipe.layer, 0, 0, width, height);
-  }
+      let walked = Math.floor(p.stepsPerSecond * seconds);
+      let along = p.start + walked * stride * row.direction;
+      let x = width / 2 + ((((along % span) + span) % span) - span / 2) * p.size;
 
-  for (let row of rows) {
-    ctx.globalAlpha = row.alpha;
-    for (let p of row.people) {
       // Figures in the far distance are too small for the swells to show
       let feet = p.ground;
-      if (row.swell > 1) feet += (noise(p.x * waveScale + 100, row.noiseRow, swellTime) - 0.5) * 2 * row.swell;
+      if (row.swell > 1) feet += (noise(x * waveScale + 100, row.noiseRow, swellTime) - 0.5) * 2 * row.swell;
 
       let scaleDown = p.sheetScale / resolution;
-      let sheet = sheets[p.level];
-      if (wipe && wiped >= p.turnAt) {
-        // The tinted sheets start from the second size (see startWipe())
-        sheet = wipe.sheets[p.colour][Math.max(1, p.level) - 1];
-        scaleDown = 1 / 2 ** Math.max(1, p.level);
-      }
-      ctx.setTransform(row.direction * p.size * density, 0, 0, p.size * p.tipped * density, p.x * density, feet * density);
+      ctx.setTransform(row.direction * p.size * density, 0, 0, p.size * p.tipped * density, x * density, feet * density);
       ctx.drawImage(
-        sheet,
-        ((p.walked + p.firstStep) % steps) * cellWidth * scaleDown, p.weight * cellHeight * scaleDown, cellWidth * scaleDown, cellHeight * scaleDown,
+        p.sheet,
+        ((walked + p.firstStep) % steps) * cellWidth * scaleDown, p.sheetY, cellWidth * scaleDown, cellHeight * scaleDown,
         -feetX, -feetY, frameWidth, frameHeight,
       );
     }
   }
   ctx.setTransform(density, 0, 0, density, 0, 0);
   ctx.globalAlpha = 1;
+}
 
-  // Fade out, and go
-  if (wipe && wiped > wipeTime) {
-    let filled = Math.min(1, (wiped - wipeTime) / wipeFade);
-    ctx.globalAlpha = filled;
-    ctx.fillStyle = wipeEndColour;
-    ctx.fillRect(0, 0, width, height);
-    ctx.globalAlpha = 1;
-    if (filled === 1 && !wipe.gone) {
-      wipe.gone = true;
-      window.location.href = wipe.url;
-    }
+// Fade the portal's colourful light on while the mouse is over it, and off when it isn't. As the
+// transition's video fades in behind everything (see fade_link.js), the light fades out at the same
+// pace, since the white then lets the video through anyway. The reflection on the ground behind
+// the portal goes first, so that everyone walks over it.
+function updatePortalLight(ctx) {
+  let fading = document.body.classList.contains('fading');
+  let change = deltaTime / 1000 / (fading ? 4.5 : portalLightTime);
+  let on = !fading && portalLink.matches(':hover');
+  portalLight = constrain(portalLight + (on ? change : -change), 0, 1);
+
+  portalCrop = null;
+  if (portalLight > 0 && portalVideo.readyState >= 2) {
+    // The middle of the video, keeping its proportions, to fill the portal inside the inner outline
+    let inner = portal.width - portalInset * 2;
+    let high = portal.height - portalInset;
+    let fit = Math.max(inner / portalVideo.videoWidth, high / portalVideo.videoHeight);
+    let cropWidth = inner / fit;
+    let cropHeight = high / fit;
+    portalCrop = { x: (portalVideo.videoWidth - cropWidth) / 2, y: (portalVideo.videoHeight - cropHeight) / 2, width: cropWidth, height: cropHeight };
+    paintGlow();
+    showGlow(ctx, -1, glowBehind);
   }
 }
 
-// Set off the transition to the page a link goes to
-function startWipe(link) {
-  link.classList.add('leaving');
-  let layer = document.createElement('canvas');
-  layer.width = width * density;
-  layer.height = height * density;
-  let layerContext = layer.getContext('2d');
-  layerContext.scale(density, density);
-  // A set of sheets for each colour. They're only needed for a moment, with the figures moving
-  // too fast to see the difference, so to save memory they leave out the full size.
-  let tintedSheets = wipeColours.map((colour) => sheets.slice(1).map((sheet) => tinted(sheet, colour)));
-  wipe = { start: millis() / 1000, url: link.href, sheets: tintedSheets, layer, layerContext };
-}
+// The portal: see-through white with the colourful light inside it, its outlines and post holes
+// on top, and the light's reflection on the ground in front of it
+function showPortal(ctx) {
+  ctx.setTransform(density, 0, 0, density, 0, 0);
+  ctx.globalAlpha = portalAlpha;
+  ctx.fillStyle = 'white';
+  ctx.fillRect(portal.left, portal.top, portal.width, portal.height);
 
-// A copy of a sheet in a darker shade of a colour: black turns that shade, and the grey far limbs
-// a lighter one
-function tinted(sheet, colour) {
-  let copy = document.createElement('canvas');
-  copy.width = sheet.width;
-  copy.height = sheet.height;
-  let context = copy.getContext('2d');
-  context.drawImage(sheet, 0, 0);
-  context.globalCompositeOperation = 'multiply';
-  context.fillStyle = colour;
-  context.fillRect(0, 0, copy.width, copy.height);
-  context.globalCompositeOperation = 'lighten';
-  context.fillStyle = shaded(colour);
-  context.fillRect(0, 0, copy.width, copy.height);
-  // Those filled in the see-through parts too, so cut the figures back out
-  context.globalCompositeOperation = 'destination-in';
-  context.drawImage(sheet, 0, 0);
-  return copy;
-}
-
-// A colour like '#20c0c0' made darker by figureShade
-function shaded(colour) {
-  let channel = (start) => Math.round(parseInt(colour.slice(start, start + 2), 16) * figureShade);
-  return `rgb(${channel(1)}, ${channel(3)}, ${channel(5)})`;
-}
-
-// Paint the stripe a figure's left behind it since last frame, across its row's band. It's made
-// of streaks, like the bristles of a brush, some thinner on paint than others.
-function wipeBehind(p, row) {
-  if (p.lastX === undefined) p.lastX = p.x;
-  let context = wipe.layerContext;
-  context.fillStyle = wipeColours[p.colour];
-  let bristles = Math.ceil(row.bandHeight / bristleHeight);
-  // To whole pixels, since stripes that meet partway through a pixel leave a faint line between them
-  let stripe = (from, to) => {
-    let left = Math.floor(Math.min(from, to));
-    let across = Math.ceil(Math.max(from, to)) - left;
-    for (let b = 0; b < bristles; b++) {
-      context.globalAlpha = 0.5 + 0.5 * hash(p.id + b * 0.37);
-      let top = Math.floor(row.bandTop + (b * row.bandHeight) / bristles);
-      let bottom = Math.ceil(row.bandTop + ((b + 1) * row.bandHeight) / bristles);
-      context.fillRect(left, top, across, bottom - top);
-    }
-  };
-  if ((p.x - p.lastX) * row.direction >= 0) {
-    stripe(p.lastX, p.x);
-  } else {
-    // It's gone off one side of the screen and come back on the other
-    stripe(p.lastX, row.direction > 0 ? width : 0);
-    stripe(row.direction > 0 ? 0 : width, p.x);
-  }
-  p.lastX = p.x;
-}
-
-// Drag the paint in each row along the way that row is walking, over what's already there
-function smearRows(speedUp) {
-  let context = wipe.layerContext;
-  let layer = wipe.layer;
-  let averageSpeed = (walkSpeed[0] + walkSpeed[1]) / 2;
-  context.globalAlpha = smearAlpha;
-  for (let row of rows) {
-    let shift = Math.max(1, averageSpeed * row.size * speedUp * (deltaTime / 1000) * smear) * row.direction;
-    context.drawImage(
-      layer,
-      0, row.bandTop * density, layer.width, row.bandHeight * density,
-      shift, row.bandTop, width, row.bandHeight,
+  if (portalCrop) {
+    ctx.globalAlpha = portalLight * portalColour;
+    ctx.drawImage(
+      portalVideo, portalCrop.x, portalCrop.y, portalCrop.width, portalCrop.height,
+      portal.left + portalInset, portal.top + portalInset, portal.width - portalInset * 2, portal.height - portalInset,
     );
+    showGlow(ctx, 1, glowLength);
   }
-  context.globalAlpha = 1;
+
+  ctx.globalAlpha = 1;
+  ctx.drawImage(
+    portalOutline,
+    portal.left - portalMargin, portal.top - portalMargin, portal.width + portalMargin * 2, portal.height + portalMargin * 2,
+  );
+}
+
+// The light reflecting off the ground: the bottom half of what's in the portal, upside down, fading
+// out into the distance from its foot and off to the sides
+function paintGlow() {
+  if (!glow) {
+    glow = document.createElement('canvas').getContext('2d');
+    glow.canvas.width = 64;
+    glow.canvas.height = 32;
+  }
+  let w = glow.canvas.width;
+  let h = glow.canvas.height;
+  glow.globalCompositeOperation = 'source-over';
+  glow.clearRect(0, 0, w, h);
+  glow.save();
+  glow.translate(0, h);
+  glow.scale(1, -1);
+  glow.drawImage(portalVideo, portalCrop.x, portalCrop.y + portalCrop.height / 2, portalCrop.width, portalCrop.height / 2, 0, 0, w, h);
+  glow.restore();
+
+  glow.save();
+  glow.globalCompositeOperation = 'destination-in';
+  glow.translate(w / 2, 0);
+  glow.scale(w / 2, h);
+  let fade = glow.createRadialGradient(0, 0, 0, 0, 0, 1);
+  fade.addColorStop(0, 'rgba(0, 0, 0, 1)');
+  fade.addColorStop(0.45, 'rgba(0, 0, 0, 0.5)');
+  fade.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  glow.fillStyle = fade;
+  glow.fillRect(-1, 0, 2, 1);
+  glow.restore();
+
+  // It starts as wide as the portal's foot, and spreads out from there
+  let foot = (w * (1 - 1 / glowWidth)) / 2;
+  glow.globalCompositeOperation = 'destination-out';
+  glow.beginPath();
+  glow.moveTo(0, 0);
+  glow.lineTo(foot, 0);
+  glow.lineTo(0, h * 0.7);
+  glow.moveTo(w, 0);
+  glow.lineTo(w - foot, 0);
+  glow.lineTo(w, h * 0.7);
+  glow.fill();
+}
+
+// Draw the reflection out from the portal's foot: direction 1 is in front of it, -1 is behind it
+function showGlow(ctx, direction, length) {
+  let spread = portal.width * glowWidth;
+  ctx.save();
+  ctx.setTransform(density, 0, 0, density * direction, 0, portal.bottom * density);
+  ctx.globalAlpha = portalLight * glowAlpha;
+  ctx.drawImage(glow.canvas, portal.left + (portal.width - spread) / 2, 0, spread, length);
+  ctx.restore();
 }
 
 // How far down the screen the ground is under a figure of this size.
@@ -341,12 +329,6 @@ function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
   buildCrowd();
 }
-
-// Coming back with the browser's Back button can restore the page just as it was left, already
-// wiped, so start it fresh instead
-window.addEventListener('pageshow', (event) => {
-  if (event.persisted) location.reload();
-});
 
 // This file is a module, so its functions aren't global by default.
 // Putting them on window lets p5 find them and run in "global mode".
