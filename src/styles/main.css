@@ -167,32 +167,63 @@ ul {
 /* The link in the middle of the art landing page: pressing it fades a video in behind the crowd
    (see src/scripts/fade_link.js) */
 
-.fade-link {
+.gate {
   position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
   z-index: 1;
-  display: block;
+  transform: translateX(-50%);
   color: black;
   font-family: 'Major Mono Display', monospace;
   text-decoration: none;
 }
 
-/* The portal: the sketch draws it, here, among the crowd (see showPortal() in art_walk.js) */
+/* The gates: the sketch draws them, here, among the crowd (see showGate() in art_walk.js), and
+   sizes these to match */
 
 .gate-frame {
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  width: 120px;
-  height: 170px;
-  padding-top: 18px;
+  display: block;
+  padding: 10% 6% 0;
+  text-align: center;
 }
 
 .gate-name {
-  border-bottom: 1px solid rgba(0, 0, 0, 0.5);
-  font-size: 18px;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  line-height: 1.3;
+}
+
+/* With a mouse, a gate's name shows in the middle of the screen while it's over it. Without one,
+   there's no hovering, so the names stay on the gates. */
+
+.gate-title {
+  position: fixed;
+  top: 50%;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+  z-index: 1;
+  padding: 0 16px;
+  color: black;
+  font-family: 'Major Mono Display', monospace;
+  font-size: clamp(32px, 5vw, 72px);
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s;
+}
+
+.gate-title.showing {
+  opacity: 1;
+}
+
+@media (hover: hover) {
+  .gate-name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
 }
 
 .fade-background {
@@ -217,12 +248,13 @@ ul {
 
 .fading .navbar,
 .fading .navbar a,
-.fading .fade-link,
+.fading .gate,
 .fading .art-list-link {
   transition: background-color 1.5s, border-color 1.5s, color 1.5s, opacity 1.5s;
 }
 
-.fading.leaving .fade-link,
+.fading.leaving .gate-title,
+.fading.leaving .gate,
 .fading.leaving .art-list-link {
   opacity: 0;
   pointer-events: none;

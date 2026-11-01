@@ -46,14 +46,6 @@ link.addEventListener('click', (event) => {
   setTimeout(go, (fadeTime + holdTime + leaveTime) * 1000);
 });
 
-// The sketch shows the video inside the portal while the mouse is over it
-link.addEventListener('mouseenter', () => {
-  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) video.play();
-});
-link.addEventListener('mouseleave', () => {
-  if (!started) video.pause();
-});
-
 // Coming back with the browser's Back button can restore the page just as it was left, so start
 // it fresh instead
 window.addEventListener('pageshow', (event) => {

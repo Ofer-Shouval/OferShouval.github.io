@@ -12,7 +12,7 @@
 // change is worked out once (see buildCrowd()), and each frame only works out where they've got to.
 
 import p5 from 'p5';
-import { paintSheets, paintPortal, portalMargin, frameWidth, frameHeight, feetX, feetY, steps } from './brush_frames.js';
+import { paintSheets, paintGates, gateMargin, frameWidth, frameHeight, feetX, feetY, steps } from './brush_frames.js';
 
 // The friendly-error checker slows every p5 call; it's for development, not the live site.
 p5.disableFriendlyErrors = import.meta.env.PROD;
@@ -44,23 +44,22 @@ let density; // How many pixels of canvas for each pixel of window
 let resolution; // How many pixels of sheet for each of the frames' own pixels
 let sheets; // The walk cycle painted at each line weight, at each size (see brush_frames.js)
 let rows = []; // The crowd, the furthest row first (see buildCrowd())
-let portal; // Where the portal in the middle of the screen is (see showPortal())
-let portalLink;
-let portalVideo;
-let portalAlpha = 0.7; // How solid its white is (1 = hides everyone behind it)
-let portalInset = 6; // How far apart its two outlines are, in pixels
-let portalLight = 0; // How much the colourful light fills it: 0 to 1, when the mouse is over it
-let portalLightTime = 0.5; // How many seconds the light takes to come on or go off
-let portalColour = 0.5; // How strong the light's colours are (1 = as they are in the video)
-let portalOutline; // The portal's outlines and post holes, drawn in pen (see brush_frames.js)
-let portalPenWeight = 2.5; // How thick the pen's lines are
-let portalCrop; // Which part of the video shows in the portal this frame
-let glowLength = 120; // How far the light reflects along the ground in front of the portal, in pixels
-let glowBehind = 80; // ...and behind it, which looks shorter since it's going away from us
-let glowWidth = 2.4; // How wide that reflection is, compared to the portal
-let glowAlpha = 0.5; // How strong it is, right at the portal's foot
+let gates = []; // A gate for each project, the furthest first (see setupGates() and standGates())
+let gateAlpha = 0.7; // How solid their white is (1 = hides everyone behind them)
+let gateWidth = 44; // How wide a gate is, in pixels
+let gateWidthTouch = 76; // ...and on touch screens, where the names stay on the gates and need room
+let gateGap = 14; // The space under the navbar, and between rows of gates if they don't all fit in one
+let gateShape = 1.43; // How tall a gate is, compared to how wide
+let gatePen = { width: 80, weight: 2.2, hole: 12 }; // How the outlines are drawn, before they're stretched to fit
+let lightTime = 0.5; // How many seconds a gate's light takes to come on or go off
+let lightColour = 0.5; // How strong the light's colours are (1 = as they are in the picture)
+let glowLength = 0.7; // How far the light reflects along the ground in front of a gate, compared to its height
+let glowWidth = 2.4; // How wide that reflection is, compared to the gate
+let glowAlpha = 0.75; // How strong it is, right at the gate's foot
 let glow; // A very small picture of the reflection, which goes soft when it's stretched out (see showGlow())
-let holeWidth = 19; // How wide the post holes are, in pixels
+let horizonDark = 0.12; // How dark the world gets at the horizon as a gate lights up (0 = not at all, 1 = black)
+let frontDark = 0; // ...and at the front
+let worldShade; // That darkness, as a gradient down the screen
 
 function setup() {
   density = Math.min(2, window.devicePixelRatio); // Sharp enough, and any more is slow on phones
@@ -70,13 +69,9 @@ function setup() {
   canvas.style('z-index', '-1');
   // Sharp enough for the biggest figures on this screen, and no bigger
   resolution = constrain(bottomSize() * 1.1 * density, 1, 3);
-  // (Before the sheets, since painting those finishes with the brush)
-  let foot = document.querySelector('.gate-frame').getBoundingClientRect();
-  portalOutline = paintPortal(brushName, portalPenWeight, foot.width, foot.height, portalInset, holeWidth, density);
+  setupGates(); // (Before the sheets, since painting those finishes with the brush)
   sheets = paintSheets(brushName, lineWeights, resolution);
   buildCrowd();
-  portalLink = document.getElementById('fade-link');
-  portalVideo = document.querySelector('#fade-background video');
 }
 
 // The size that puts a figure's feet at the bottom of the screen
@@ -86,6 +81,9 @@ function bottomSize() {
 
 // Work out everything about the crowd that doesn't change from frame to frame
 function buildCrowd() {
+  worldShade = drawingContext.createLinearGradient(0, 0, 0, height);
+  worldShade.addColorStop(0, `rgba(0, 0, 0, ${horizonDark})`);
+  worldShade.addColorStop(1, `rgba(0, 0, 0, ${frontDark})`);
   let bottom = bottomSize();
   let smallestSize = (furthestSize * height) / 900;
   let furthest = 0;
@@ -97,18 +95,85 @@ function buildCrowd() {
   for (let n = furthest; n >= -rowsBelow; n--) {
     rows.push(buildRow(n, bottom * pow(ratio, n), bottom));
   }
-  standPortal();
+  standGates();
 }
 
-// Stand the portal on the ground: its foot goes on the row of people nearest to it, with it in the
-// middle of the screen, so they walk across its threshold
-function standPortal() {
-  let link = document.getElementById('fade-link');
-  link.style.top = '';
-  let foot = link.getBoundingClientRect().bottom;
-  let row = rows.reduce((best, r) => (Math.abs(r.ground - foot) < Math.abs(best.ground - foot) ? r : best));
-  link.style.top = `calc(50% + ${row.ground - foot}px)`;
-  portal = link.querySelector('.gate-frame').getBoundingClientRect();
+// Find the gates on the page, draw their outlines, and get ready to light them up on hover
+function setupGates() {
+  let links = [...document.querySelectorAll('.gate')];
+  let title = document.getElementById('gate-title');
+  let pictures = paintGates(links.length, brushName, gatePen.weight, gatePen.width, gatePen.width * gateShape, gatePen.hole, density * 1.5);
+  gates = links.map((link, i) => {
+    let gate = {
+      link,
+      frame: link.querySelector('.gate-frame'),
+      name: link.querySelector('.gate-name'),
+      light: 0,
+      picture: pictures[i],
+      media: null,
+    };
+    link.addEventListener('mouseenter', () => {
+      startLight(gate);
+      title.textContent = gate.name.textContent;
+      title.classList.add('showing');
+    });
+    link.addEventListener('mouseleave', () => {
+      if (gate.media?.pause && !document.body.classList.contains('fading')) gate.media.pause();
+      title.classList.remove('showing');
+    });
+    return gate;
+  });
+}
+
+// What lights up a gate only gets loaded once the mouse goes over it. The gate that sets off the
+// transition (see fade_link.js) shares its video.
+function startLight(gate) {
+  if (!gate.media) {
+    let source = gate.link.dataset.light;
+    if (gate.link.id === 'fade-link') {
+      gate.media = document.querySelector('#fade-background video');
+    } else if (source.endsWith('.mp4')) {
+      gate.media = document.createElement('video');
+      gate.media.muted = true;
+      gate.media.loop = true;
+      gate.media.playsInline = true;
+      gate.media.src = source;
+    } else {
+      gate.media = new Image();
+      gate.media.src = source;
+    }
+  }
+  if (gate.media.play && !matchMedia('(prefers-reduced-motion: reduce)').matches) gate.media.play();
+}
+
+// Stand the gates in a row across the top of the screen (or two, if they don't fit), each on the row
+// of people nearest to where it goes, so they all line up
+function standGates() {
+  let target = matchMedia('(hover: hover)').matches ? gateWidth : gateWidthTouch;
+  let perRow = width < gates.length * (target + 8) ? Math.ceil(gates.length / 2) : gates.length;
+  let wide = Math.min(target, width / perRow - 8);
+  let high = wide * gateShape;
+  let top = document.querySelector('.navbar').getBoundingClientRect().bottom + gateGap;
+
+  document.querySelectorAll('.gate').forEach((link, i) => {
+    let gate = gates.find((g) => g.link === link);
+    let foot = top + (high + gateGap) * Math.floor(i / perRow) + high;
+    let row = rows.reduce((best, r) => (Math.abs(r.ground - foot) < Math.abs(best.ground - foot) ? r : best));
+    gate.left = (((i % perRow) + 0.5) / perRow) * width - wide / 2;
+    gate.top = row.ground - high;
+    gate.width = wide;
+    gate.height = high;
+    gate.bottom = row.ground;
+
+    gate.link.style.left = `${gate.left + wide / 2}px`;
+    gate.link.style.top = `${gate.top}px`;
+    gate.frame.style.width = `${wide}px`;
+    gate.frame.style.height = `${high}px`;
+    // Small enough for its longest word to fit across the gate
+    let longest = Math.max(...gate.name.textContent.split(' ').map((word) => word.length));
+    gate.name.style.fontSize = `${Math.min(18, (wide * 0.85) / (longest * 0.68))}px`;
+  });
+  gates.sort((a, b) => a.bottom - b.bottom);
 }
 
 // Row number n, with its figures drawn at this size
@@ -158,6 +223,7 @@ function buildRow(n, size, bottom) {
     span,
     direction: n % 2 === 0 ? 1 : -1, // Every other row walks the other way
     ground: groundAt(size, bottom),
+    size,
     alpha: alpha * Math.min(1, pow(near, distanceFade)),
     swell: waveHeight * near,
     noiseRow: n * 0.3 + 100,
@@ -165,20 +231,27 @@ function buildRow(n, size, bottom) {
 }
 
 function draw() {
+  updateGateLights();
   background(255);
   let seconds = millis() / 1000;
   let ctx = drawingContext;
+  let brightest = Math.max(...gates.map((gate) => gate.light));
+  if (brightest > 0) {
+    ctx.setTransform(density, 0, 0, density, 0, 0);
+    ctx.globalAlpha = brightest;
+    ctx.fillStyle = worldShade;
+    ctx.fillRect(0, 0, width, height);
+  }
   let swellTime = seconds * waveSpeed;
   let cellWidth = Math.round(frameWidth * resolution); // How wide a picture is on the full-size sheet
   let cellHeight = Math.round(frameHeight * resolution);
 
-  updatePortalLight(ctx);
-  let portalShown = false;
+  let nextGate = 0;
   for (let row of rows) {
-    // Everyone drawn so far is further away than the foot of the portal, so behind it
-    if (!portalShown && row.ground > portal.bottom - 1) {
-      showPortal(ctx);
-      portalShown = true;
+    // Everyone drawn so far is further away than the foot of the next gate, so behind it
+    while (nextGate < gates.length && row.ground > gates[nextGate].bottom - 1) {
+      showGate(ctx, gates[nextGate]);
+      nextGate++;
     }
     ctx.globalAlpha = row.alpha;
     let span = row.span;
@@ -202,61 +275,63 @@ function draw() {
       );
     }
   }
+  while (nextGate < gates.length) {
+    showGate(ctx, gates[nextGate]);
+    nextGate++;
+  }
   ctx.setTransform(density, 0, 0, density, 0, 0);
   ctx.globalAlpha = 1;
 }
 
-// Fade the portal's colourful light on while the mouse is over it, and off when it isn't. As the
-// transition's video fades in behind everything (see fade_link.js), the light fades out at the same
-// pace, since the white then lets the video through anyway. The reflection on the ground behind
-// the portal goes first, so that everyone walks over it.
-function updatePortalLight(ctx) {
+// Fade each gate's light on while the mouse is over it, and off when it isn't. As the transition's
+// video fades in behind everything (see fade_link.js), the lights fade out at the same pace, since
+// the white then lets the video through anyway.
+function updateGateLights() {
   let fading = document.body.classList.contains('fading');
-  let change = deltaTime / 1000 / (fading ? 4.5 : portalLightTime);
-  let on = !fading && portalLink.matches(':hover');
-  portalLight = constrain(portalLight + (on ? change : -change), 0, 1);
-
-  portalCrop = null;
-  if (portalLight > 0 && portalVideo.readyState >= 2) {
-    // The middle of the video, keeping its proportions, to fill the portal inside the inner outline
-    let inner = portal.width - portalInset * 2;
-    let high = portal.height - portalInset;
-    let fit = Math.max(inner / portalVideo.videoWidth, high / portalVideo.videoHeight);
-    let cropWidth = inner / fit;
-    let cropHeight = high / fit;
-    portalCrop = { x: (portalVideo.videoWidth - cropWidth) / 2, y: (portalVideo.videoHeight - cropHeight) / 2, width: cropWidth, height: cropHeight };
-    paintGlow();
-    showGlow(ctx, -1, glowBehind);
+  let change = deltaTime / 1000 / (fading ? 4.5 : lightTime);
+  for (let gate of gates) {
+    let on = !fading && gate.link.matches(':hover');
+    gate.light = constrain(gate.light + (on ? change : -change), 0, 1);
   }
 }
 
-// The portal: see-through white with the colourful light inside it, its outlines and post holes
-// on top, and the light's reflection on the ground in front of it
-function showPortal(ctx) {
+// How wide and tall a video or image is, once it's ready to be drawn (or null until then)
+function mediaSize(media) {
+  if (!media) return null;
+  if (media.videoWidth) return media.readyState >= 2 ? { width: media.videoWidth, height: media.videoHeight } : null;
+  return media.naturalWidth ? { width: media.naturalWidth, height: media.naturalHeight } : null;
+}
+
+// A gate: see-through white with its light inside, its outline and post holes on top, and the
+// light's reflection on the ground in front of it
+function showGate(ctx, gate) {
   ctx.setTransform(density, 0, 0, density, 0, 0);
-  ctx.globalAlpha = portalAlpha;
+  ctx.globalAlpha = gateAlpha;
   ctx.fillStyle = 'white';
-  ctx.fillRect(portal.left, portal.top, portal.width, portal.height);
+  ctx.fillRect(gate.left, gate.top, gate.width, gate.height);
 
-  if (portalCrop) {
-    ctx.globalAlpha = portalLight * portalColour;
-    ctx.drawImage(
-      portalVideo, portalCrop.x, portalCrop.y, portalCrop.width, portalCrop.height,
-      portal.left + portalInset, portal.top + portalInset, portal.width - portalInset * 2, portal.height - portalInset,
-    );
-    showGlow(ctx, 1, glowLength);
+  let size = mediaSize(gate.media);
+  if (gate.light > 0 && size) {
+    // The middle of the picture, keeping its proportions, to fill the gate
+    let fit = Math.max(gate.width / size.width, gate.height / size.height);
+    let crop = { width: gate.width / fit, height: gate.height / fit };
+    crop.x = (size.width - crop.width) / 2;
+    crop.y = (size.height - crop.height) / 2;
+    ctx.globalAlpha = gate.light * lightColour;
+    ctx.drawImage(gate.media, crop.x, crop.y, crop.width, crop.height, gate.left, gate.top, gate.width, gate.height);
+    paintGlow(gate, crop);
+    showGlow(ctx, gate);
   }
 
+  let margin = (gateMargin * gate.width) / gatePen.width;
   ctx.globalAlpha = 1;
-  ctx.drawImage(
-    portalOutline,
-    portal.left - portalMargin, portal.top - portalMargin, portal.width + portalMargin * 2, portal.height + portalMargin * 2,
-  );
+  ctx.drawImage(gate.picture, gate.left - margin, gate.top - margin, gate.width + margin * 2, gate.height + margin * 2);
+  ctx.globalAlpha = 1;
 }
 
-// The light reflecting off the ground: the bottom half of what's in the portal, upside down, fading
+// The light reflecting off the ground: the bottom half of what's in the gate, upside down, fading
 // out into the distance from its foot and off to the sides
-function paintGlow() {
+function paintGlow(gate, crop) {
   if (!glow) {
     glow = document.createElement('canvas').getContext('2d');
     glow.canvas.width = 64;
@@ -269,7 +344,7 @@ function paintGlow() {
   glow.save();
   glow.translate(0, h);
   glow.scale(1, -1);
-  glow.drawImage(portalVideo, portalCrop.x, portalCrop.y + portalCrop.height / 2, portalCrop.width, portalCrop.height / 2, 0, 0, w, h);
+  glow.drawImage(gate.media, crop.x, crop.y + crop.height / 2, crop.width, crop.height / 2, 0, 0, w, h);
   glow.restore();
 
   glow.save();
@@ -278,13 +353,14 @@ function paintGlow() {
   glow.scale(w / 2, h);
   let fade = glow.createRadialGradient(0, 0, 0, 0, 0, 1);
   fade.addColorStop(0, 'rgba(0, 0, 0, 1)');
-  fade.addColorStop(0.45, 'rgba(0, 0, 0, 0.5)');
+  fade.addColorStop(0.25, 'rgba(0, 0, 0, 0.45)');
+  fade.addColorStop(0.6, 'rgba(0, 0, 0, 0.1)');
   fade.addColorStop(1, 'rgba(0, 0, 0, 0)');
   glow.fillStyle = fade;
   glow.fillRect(-1, 0, 2, 1);
   glow.restore();
 
-  // It starts as wide as the portal's foot, and spreads out from there
+  // It starts as wide as the gate's foot, and spreads out from there
   let foot = (w * (1 - 1 / glowWidth)) / 2;
   glow.globalCompositeOperation = 'destination-out';
   glow.beginPath();
@@ -297,14 +373,11 @@ function paintGlow() {
   glow.fill();
 }
 
-// Draw the reflection out from the portal's foot: direction 1 is in front of it, -1 is behind it
-function showGlow(ctx, direction, length) {
-  let spread = portal.width * glowWidth;
-  ctx.save();
-  ctx.setTransform(density, 0, 0, density * direction, 0, portal.bottom * density);
-  ctx.globalAlpha = portalLight * glowAlpha;
-  ctx.drawImage(glow.canvas, portal.left + (portal.width - spread) / 2, 0, spread, length);
-  ctx.restore();
+// Draw the reflection out from a gate's foot, along the ground in front of it
+function showGlow(ctx, gate) {
+  let spread = gate.width * glowWidth;
+  ctx.globalAlpha = gate.light * glowAlpha;
+  ctx.drawImage(glow.canvas, gate.left + (gate.width - spread) / 2, gate.bottom, spread, gate.height * glowLength);
 }
 
 // How far down the screen the ground is under a figure of this size.

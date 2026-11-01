@@ -19,7 +19,7 @@ export let frameHeight = 174;
 export let feetX = 45;
 export let feetY = 160;
 export let steps = poses.length * 2; // How many steps there are in the walk cycle
-export let portalMargin = 20; // Room around the portal's picture for the post holes and the pen to wander, in pixels
+export let gateMargin = 20; // Room around a gate's picture for the post holes and the pen to wander, in pixels
 let levels = 4; // How many sizes of the sheet to keep, each half the size of the last
 
 let figure = new Figure();
@@ -51,6 +51,8 @@ export function paintSheets(name, weights, resolution) {
     }
   });
 
+  makeBlack(sheet);
+
   // That's all the WebGL needed, and browsers only allow so many contexts at a time
   gl.getExtension('WEBGL_lose_context')?.loseContext();
 
@@ -67,38 +69,50 @@ export function paintSheets(name, weights, resolution) {
   return sheets;
 }
 
-// Paint the portal's two outlines (with no bottom) and post holes, like a hand drawing: each line
-// its own stroke, not quite straight, running a little past the corners. Gives a canvas
-// portalMargin bigger than the portal on every side.
-// holeWidth: how wide the post holes are
-export function paintPortal(name, weight, width, height, inset, holeWidth, density) {
-  let canvas = brush.createCanvas(width + portalMargin * 2, height + portalMargin * 2, { pixelDensity: density, parent: null });
+// Paint some gates' outlines (with no bottom) and post holes, like hand drawings: each line its own
+// stroke, not quite straight, running a little past the corners. Gives a canvas for each,
+// gateMargin bigger than the gate on every side, to be stretched to whatever size it's needed.
+export function paintGates(count, name, weight, width, height, holeWidth, density) {
+  let canvas = brush.createCanvas(width + gateMargin * 2, height + gateMargin * 2, { pixelDensity: density, parent: null });
   let gl = canvas.getContext('webgl2');
-  brush.clear();
-  gl.clearColor(0, 0, 0, 0);
-  gl.clear(gl.COLOR_BUFFER_BIT);
-  brush.set(name, '#000000', weight);
 
-  // Everything's measured from the middle of the portal, as the brush does
+  // Everything's measured from the middle of the gate, as the brush does
   let left = -width / 2;
   let right = width / 2;
   let top = -height / 2;
   let bottom = height / 2;
-  for (let i of [0, inset]) {
-    stroke(left + i, bottom, left + i, top + i - 3);
-    stroke(left + i - 3, top + i, right - i + 3, top + i);
-    stroke(right - i, top + i - 3, right - i, bottom);
-  }
-  for (let x of [left + inset / 2, right - inset / 2]) {
-    stroke(x - holeWidth / 2, bottom, x + holeWidth / 2, bottom);
-  }
-  brush.render();
+  let pictures = [];
+  for (let i = 0; i < count; i++) {
+    brush.clear();
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    brush.set(name, '#000000', weight);
+    stroke(left, bottom, left, top - 3);
+    stroke(left - 3, top, right + 3, top);
+    stroke(right, top - 3, right, bottom);
+    for (let x of [left, right]) {
+      stroke(x - holeWidth / 2, bottom, x + holeWidth / 2, bottom);
+    }
+    brush.render();
 
-  let picture = document.createElement('canvas');
-  picture.width = canvas.width;
-  picture.height = canvas.height;
-  picture.getContext('2d').drawImage(canvas, 0, 0);
-  return picture;
+    let picture = document.createElement('canvas');
+    picture.width = canvas.width;
+    picture.height = canvas.height;
+    picture.getContext('2d').drawImage(canvas, 0, 0);
+    makeBlack(picture);
+    pictures.push(picture);
+  }
+  return pictures;
+}
+
+// The brush leaves pale edges on its lines, which show on anything darker than white. Turn every
+// bit of it pure black, keeping how see-through it is.
+function makeBlack(canvas) {
+  let context = canvas.getContext('2d');
+  context.globalCompositeOperation = 'source-in';
+  context.fillStyle = 'black';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.globalCompositeOperation = 'source-over';
 }
 
 // A straight line, as a shaky hand would draw it
@@ -118,19 +132,14 @@ function stroke(x1, y1, x2, y2) {
 
 function paint(step, name, weight) {
   let j = figure.joints(poses[step % poses.length]);
-  let swapped = Math.floor(step / poses.length) % 2 === 1;
   // The brush measures from the middle of its canvas
   let toImage = (point) => [point.x + feetX - frameWidth / 2, point.y - j.ground + feetY - frameHeight / 2];
 
-  let limbs = (side, colour) => {
-    brush.set(name, colour, weight);
+  brush.set(name, '#000000', weight);
+  for (let side of [j.far, j.near]) {
     brush.spline(side.arm.map(toImage), 0);
     brush.spline(side.leg.map(toImage), 0);
-  };
-  limbs(swapped ? j.near : j.far, '#828282');
-  limbs(swapped ? j.far : j.near, '#000000');
-
-  brush.set(name, '#000000', weight);
+  }
   brush.spline([j.shoulders, j.hips].map(toImage), 0);
   let [headX, headY] = toImage(j.head);
   brush.circle(headX, headY, figure.headRadius);
