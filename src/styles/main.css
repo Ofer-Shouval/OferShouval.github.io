@@ -170,6 +170,51 @@ ul {
 }
 
 
+/* How to walk the art landing page's mouse: shown once it's walked on, until it's first moved (see
+   showInstructions() in art_walk.js) */
+
+.art-instructions {
+  position: fixed;
+  top: 62px;
+  left: 16px;
+  right: 16px;
+  z-index: 1;
+  margin: 0;
+  text-align: center;
+  font-family: 'Source Code Pro', monospace;
+  font-weight: 200;
+  font-size: 15px;
+  color: black;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.8s;
+}
+
+.art-instructions.showing {
+  opacity: 1;
+}
+
+.art-instructions span {
+  padding: 3px 8px;
+  background-color: white;
+}
+
+.art-instructions-touch {
+  display: none;
+}
+
+/* Where there's a finger instead of a mouse and keys */
+@media (hover: none) {
+  .art-instructions-mouse {
+    display: none;
+  }
+
+  .art-instructions-touch {
+    display: inline;
+  }
+}
+
+
 /* The holes in the art landing page's ground, with their signposts: the sketch draws them (see
    showHole() and showSign() in art_walk.js), and moves these links to match */
 
@@ -553,57 +598,7 @@ ul {
   touch-action: none; /* So dragging on a phone plays the sketch rather than scrolling the page */
 }
 
-.flow-welcome {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 1;
-  width: min(420px, calc(100% - 32px));
-  padding: 24px;
-  border: 1px solid #ccc;
-  background-color: #171717;
-  color: white;
-  font-family: 'Source Code Pro', monospace;
-  font-weight: 200;
-}
-
-.flow-welcome h1 {
-  display: block;
-  margin: 0 0 12px;
-  font-size: 24px;
-  font-weight: normal;
-}
-
-.flow-welcome p {
-  margin: 0 0 20px;
-  line-height: 1.5;
-}
-
-.flow-welcome button {
-  margin-right: 8px;
-  padding: 10px 14px;
-  border: 1px solid #ccc;
-  background: none;
-  color: white;
-  font: inherit;
-  cursor: pointer;
-}
-
-.flow-welcome button:hover:enabled {
-  background-color: rgba(100, 100, 100, 0.6);
-}
-
-.flow-welcome .flow-no {
-  border-color: transparent;
-}
-
-/* The names stay hidden until the box has been answered */
-.sketch-flow:not(.flow-begun) .flow-caption,
-.sketch-flow:not(.flow-begun) .flow-marks {
-  visibility: hidden;
-}
-
+.flow-welcome,
 .flow-caption,
 .flow-marks {
   position: absolute;
@@ -623,6 +618,77 @@ ul {
   bottom: 60px;
   opacity: 0;
   pointer-events: none;
+}
+
+/* The offer of the camera and sound, just under the navbar */
+.flow-welcome {
+  top: 62px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: baseline;
+  gap: 0 14px;
+}
+
+.flow-welcome[hidden] {
+  display: none;
+}
+
+/* The label of the flower that leads to the next sketch */
+.flow-next {
+  position: absolute;
+  top: 62px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1;
+  margin: 0;
+  color: white;
+  padding: 4px 12px;
+  border: 0;
+  background: none;
+  font-family: 'Major Mono Display', monospace;
+  font-size: 16px;
+  white-space: nowrap;
+  opacity: 0;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.flow-next:disabled {
+  pointer-events: none;
+}
+
+.flow-next:hover,
+.flow-next:focus-visible {
+  background-color: rgba(100, 100, 100, 0.6);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.flow-welcome button {
+  padding: 6px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.flow-welcome .flow-yes {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.flow-welcome .flow-no {
+  opacity: 0.65;
+}
+
+.flow-welcome .flow-no:hover,
+.flow-welcome .flow-no:focus-visible {
+  opacity: 1;
 }
 
 @media screen and (max-width: 500px) {

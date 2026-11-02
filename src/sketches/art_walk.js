@@ -83,10 +83,13 @@ let mouseWalkSteps = 36; // ...and of its walk, walking. This sets how fast it g
 let mouseBowTime = 0.12; // How many seconds it takes to get up and lower its head before it sets off, or to sit back up after it stops
 let mouseViewStick = 1.2; // How far past halfway to the next way of facing it has to be heading before it changes to that
 let mouseFollow = 5; // How quickly the camera catches up with it (bigger = quicker)
+let mouseEntersFrom = -0.17; // Where it starts when the page opens, in the units of mouse.depth: just off the bottom of the screen
 let mouseSheet; // The mouse standing and walking (see brush_frames.js)
 let mouse; // Where it is in the world and what it's doing (see placeMouse() and moveMouse())
 let mouseHome; // How far away it is when it's where the camera keeps it (in the units of mouse.depth)
 let mouseTarget = null; // The point in the world it's walking to, after a click or a tap
+let mouseMoved = false; // Has the viewer moved it yet?
+let mouseWentForward = false; // Has it gone further away than where the camera keeps it? Until then, nobody's cut off by the bottom of the screen
 let keysHeld = new Set(); // Which of the keys that move it are down
 // The camera. x is how far it's gone sideways, in the frames' own pixels. depth is how far it's gone
 // along the ground, as the log of how much bigger that's made everything, so it's 0 where it starts.
@@ -117,9 +120,29 @@ function buildCrowd() {
   rows = new Map();
   standHoles();
   mouseHome = Math.log(bottomSize() / sizeAt(mouseSpot.y * height));
-  // Start the mouse off, or leave it where it is in the world if the screen has changed
-  if (!mouse) mouse = { x: 0, depth: mouseHome, view: 0, facing: 1, bow: 0, walked: 0, walking: false, falling: null };
   mouseTarget = null;
+  // Start the mouse off, walking on from the bottom of the screen. If the screen has changed, leave it
+  // where it is in the world, or where it would have got to if it hadn't finished walking on.
+  if (!mouse) {
+    let calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    mouse = { x: 0, depth: calm ? mouseHome : mouseEntersFrom, view: 0, facing: 1, bow: 0, walked: 0, walking: false, falling: null };
+    if (calm) showInstructions();
+    else mouseTarget = { x: 0, depth: mouseHome, walkingOn: true };
+  } else if (mouse.depth < 0) {
+    mouse.depth = mouseHome;
+    showInstructions();
+  }
+}
+
+// The line at the top of the screen saying how to walk the mouse, from when it's walked on until the
+// viewer first moves it
+function showInstructions() {
+  if (!mouseMoved) document.querySelector('.art-instructions').classList.add('showing');
+}
+
+function hideInstructions() {
+  mouseMoved = true;
+  document.querySelector('.art-instructions').classList.remove('showing');
 }
 
 // Row number n, built the first time it's needed. They come out the same if they're built again, so
@@ -169,13 +192,15 @@ function setupMouseControls() {
   window.addEventListener('keydown', (event) => {
     if (!moveKeys.includes(event.code) || event.metaKey || event.ctrlKey || event.altKey) return;
     keysHeld.add(event.code);
-    mouseTarget = null; // (Here, since a quick tap can be over before the next frame)
+    if (!mouseTarget?.walkingOn) mouseTarget = null; // (Here, since a quick tap can be over before the next frame)
+    hideInstructions();
     event.preventDefault();
   });
   window.addEventListener('keyup', (event) => keysHeld.delete(event.code));
   window.addEventListener('blur', () => keysHeld.clear());
   window.addEventListener('pointerdown', (event) => {
-    if (event.target.closest('a')) return;
+    hideInstructions();
+    if (event.target.closest('a') || mouseTarget?.walkingOn) return;
     mouseTarget = groundPoint(event.clientX, event.clientY);
   });
 }
@@ -214,6 +239,7 @@ function moveMouse() {
   let held = (...codes) => (codes.some((code) => keysHeld.has(code)) ? 1 : 0);
   let right = held('ArrowRight', 'KeyD') - held('ArrowLeft', 'KeyA');
   let down = held('ArrowDown', 'KeyS') - held('ArrowUp', 'KeyW');
+  if (mouseTarget?.walkingOn) right = down = 0; // It always finishes walking on before it can be steered
   let stopped = false;
   if (right || down) {
     mouseTarget = null;
@@ -237,6 +263,7 @@ function moveMouse() {
         stopped = true;
       } else {
         if (mouseTarget.hole) dropIntoHole(mouseTarget.hole);
+        if (mouseTarget.walkingOn) showInstructions();
         mouseTarget = null;
       }
     } else {
@@ -270,8 +297,10 @@ function moveMouse() {
     let pushed = (Math.floor(mouse.walked) - before) * mouseStride * mouseScale * size;
     let along = Math.hypot(right, down);
     mouse.x = constrain(mouse.x + ((right / along) * pushed) / size, -edge, edge);
-    // Across the ground, the screen's pixels are worth less the further away they are
-    mouse.depth = Math.max(0, mouse.depth - ((down / along) * pushed) / (cameraHeight * size + curl * height));
+    // Across the ground, the screen's pixels are worth less the further away they are. It can't come any
+    // nearer than the bottom of the screen, unless it's still walking on from past there.
+    let nearest = Math.min(0, mouse.depth);
+    mouse.depth = Math.max(nearest, mouse.depth - ((down / along) * pushed) / (cameraHeight * size + curl * height));
   } else {
     mouse.walked = 0;
   }
@@ -284,6 +313,7 @@ function moveMouse() {
     mouseTarget = null;
   }
   mouse.overHole = over;
+  if (mouse.depth > mouseHome + 0.02) mouseWentForward = true;
 
   followMouse();
 }
@@ -605,6 +635,12 @@ function draw() {
       let size = bottom * Math.exp(view.depth - p.depth);
       let x = width / 2 + (((((along % span) + span) % span) - span / 2)) * size;
       let offTheScreen = x < -frameWidth * size || x > width + frameWidth * size;
+      // Anyone whose feet would be off the bottom of the screen stays away until the mouse goes forward.
+      // Then they wait to walk on like everyone else who's hidden, so that nobody pops into view.
+      if (!mouseWentForward && groundAt(size, bottom) > height) {
+        p.joined = false;
+        continue;
+      }
       if (!p.joined) {
         let across = (x - mouseLeft) / (width * crowdGapWide);
         let clear = offTheScreen || groundAt(size, bottom) < height * (1 - crowdGapTall * (1 - across * across));
