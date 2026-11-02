@@ -33,6 +33,11 @@ let rowJitter = 1.2; // How far forward or back of its row a figure can stray, i
 let walkSpeed = [60, 180]; // The slowest and fastest a figure can walk, in the frames' own pixels per second
 let stride = 7.5; // How far a planted foot slides back each frame of the walk cycle, in the frames' own pixels
 let offScreen = 100; // How far past the side of the screen a figure goes before wrapping round, in the frames' own pixels
+// Nobody starts inside this arc when the page opens: it rises from the bottom of the screen, over the mouse
+let crowdGapWide = 0.21; // How far out to each side it meets the bottom of the screen, as a share of the screen's width
+let crowdGapTall = 0.25; // How far up it goes in the middle, as a share of the screen's height
+let crowdOpening = true; // Is the first frame still being drawn?
+let crowdWalksOn = 0.3; // People bigger than this, compared to one at the bottom of the screen, stay hidden until they're off the screen, so they walk on; smaller ones are too far away to wait, and appear once they're clear of the mouse
 let alpha = 0.9; // How solid the figures are, near the bottom of the screen (1 = solid)
 let distanceFade = 0.2; // How quickly they fade toward the horizon (smaller = slower)
 
@@ -48,9 +53,11 @@ let rows = new Map(); // The rows of the crowd that have been seen lately, by nu
 let maxRows = 300; // How many of them to hold on to
 let holes = []; // A hole for each link on the page, in the ground out in the distance (see setupHoles() and placeHoles())
 let holeReach; // How far sideways the furthest hole is, in the frames' own pixels
-let holeBand = [0.35, 0.55]; // How far down the screen they're scattered with the camera where it starts (0 = the top, 1 = the bottom)
-let holeBandNarrow = [0.28, 0.62]; // ...and on narrow screens, where their signs need more room
-let holeNameRoom = { perLetter: 12, padding: 24, perLine: 22, gap: 30 }; // How much room a name's sign takes up, in pixels, for keeping them apart
+// How far down the screen they're scattered with the camera where it starts (0 = the top, 1 = the bottom).
+// A link can ask for the back or the front with data-row; any other can go anywhere.
+let holeBand = { back: [0.33, 0.42], front: [0.5, 0.64], any: [0.33, 0.64] };
+let holeBandNarrow = { back: [0.26, 0.38], front: [0.48, 0.66], any: [0.26, 0.66] }; // ...and on narrow screens, where their signs need more room
+let holeNameRoom = { perLetter: 12, padding: 24, perLine: 22, gap: 60 }; // How much room a name's sign takes up, in pixels, for keeping them apart
 let holeScatterWidth = 640; // How wide an area in the middle of the screen they're scattered over, in pixels, when the screen's wider than that
 let holeTries = 200; // How many places to try for each hole, keeping the one furthest from the others
 let holeWidth = 50; // How wide they are, in the frames' own pixels, which is about what the mouse needs to fit
@@ -64,6 +71,10 @@ let signPostPixels = [16, 70]; // ...but no shorter or taller than this, in pixe
 let holeTripTime = 3; // How many seconds the mouse tries to take to run to a hole that's been clicked
 let holeTripHurry = 3; // ...but it won't run more than this many times as fast as usual
 let holeFallTime = 0.3; // How many seconds it takes to drop into the hole, before the next page
+let tripStops = [1, 2]; // How many times it stops and changes direction on the way to a hole that's been clicked
+let tripSwerve = [0.2, 0.4]; // How far off the straight line it goes to each stop, compared to how long the trip is
+let tripPause = [0.2, 0.45]; // How many seconds it stops for
+let tripShortest = 40; // A trip shorter than this, in pixels, doesn't stop on the way
 let mouseSpot = { x: 0.5, y: 0.86 }; // Where the camera keeps the mouse, as a fraction of the screen's width and height
 let mouseScale = 0.5; // How big it's drawn, compared to the people at the same distance
 let mouseWeight = 6; // How thick its lines are, before it's shrunk to that size
@@ -143,6 +154,15 @@ function sizeAt(y) {
   return bottom * Math.exp(smallest);
 }
 
+// Where a point on the screen is on the ground, in the world
+function groundPoint(screenLeft, screenTop) {
+  let size = sizeAt(screenTop);
+  return {
+    x: constrain(view.x + (screenLeft - width / 2) / size, -cameraReach(), cameraReach()),
+    depth: Math.max(0, view.depth + Math.log(bottomSize() / size)),
+  };
+}
+
 // The arrow keys or WASD steer the mouse, and a click or a tap anywhere but a link sends it there
 function setupMouseControls() {
   let moveKeys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'KeyA', 'KeyD', 'KeyW', 'KeyS'];
@@ -156,12 +176,7 @@ function setupMouseControls() {
   window.addEventListener('blur', () => keysHeld.clear());
   window.addEventListener('pointerdown', (event) => {
     if (event.target.closest('a')) return;
-    // Where that is on the ground
-    let size = sizeAt(event.clientY);
-    mouseTarget = {
-      x: constrain(view.x + (event.clientX - width / 2) / size, -cameraReach(), cameraReach()),
-      depth: Math.max(0, view.depth + Math.log(bottomSize() / size)),
-    };
+    mouseTarget = groundPoint(event.clientX, event.clientY);
   });
 }
 
@@ -199,23 +214,31 @@ function moveMouse() {
   let held = (...codes) => (codes.some((code) => keysHeld.has(code)) ? 1 : 0);
   let right = held('ArrowRight', 'KeyD') - held('ArrowLeft', 'KeyA');
   let down = held('ArrowDown', 'KeyS') - held('ArrowUp', 'KeyW');
+  let stopped = false;
   if (right || down) {
     mouseTarget = null;
+  } else if (mouseTarget?.pause > 0) {
+    // Stopped on the way to a hole
+    mouseTarget.pause -= seconds;
+    stopped = true;
   } else if (mouseTarget) {
-    let targetSize = sizeOf(mouseTarget.depth);
-    let gapX = screenX(mouseTarget.x, targetSize) - screenX(mouse.x, size);
-    let gapY = groundAt(targetSize, bottom) - groundAt(size, bottom);
+    // Heading for the next stop on the way, if there is one
+    let aim = mouseTarget.stops?.[0] ?? mouseTarget;
+    let aimSize = sizeOf(aim.depth);
+    let gapX = screenX(aim.x, aimSize) - screenX(mouse.x, size);
+    let gapY = groundAt(aimSize, bottom) - groundAt(size, bottom);
     let gap = Math.hypot(gapX, gapY);
     // Running to a hole, it could be going far enough each frame to run straight past
     let oneFrame = mouseWalkSteps * hurry * seconds * mouseStride * mouseScale * size;
     if (gap < Math.max(6, oneFrame)) {
-      if (mouseTarget.hole) {
-        mouse.x = mouseTarget.x;
-        mouse.depth = mouseTarget.depth;
-        mouse.falling = 0;
-        mouse.fallingInto = mouseTarget.hole;
+      if (mouseTarget.stops?.length) {
+        mouseTarget.stops.shift();
+        mouseTarget.pause = random(tripPause[0], tripPause[1]);
+        stopped = true;
+      } else {
+        if (mouseTarget.hole) dropIntoHole(mouseTarget.hole);
+        mouseTarget = null;
       }
-      mouseTarget = null;
     } else {
       right = gapX / gap;
       down = gapY / gap;
@@ -225,7 +248,7 @@ function moveMouse() {
   let edge = cameraReach() + (width / 2 - 8) / size;
   if ((right < 0 && mouse.x <= -edge) || (right > 0 && mouse.x >= edge)) right = 0;
   if (down > 0 && mouse.depth <= 0) down = 0;
-  if (right === 0 && down === 0) mouseTarget = null;
+  if (right === 0 && down === 0 && !stopped) mouseTarget = null;
 
   // It faces the nearest of the ways it can, and carries on facing that way when it stops
   let going = right !== 0 || down !== 0;
@@ -253,7 +276,39 @@ function moveMouse() {
     mouse.walked = 0;
   }
 
+  // Walking onto a hole takes it down the hole too, unless it's running to a different one. It has to
+  // walk onto it, so that coming back to this page doesn't drop it straight back in.
+  let over = holeUnderMouse();
+  if (over && over !== mouse.overHole && mouse.walking && !mouseTarget?.hole) {
+    dropIntoHole(over);
+    mouseTarget = null;
+  }
+  mouse.overHole = over;
+
   followMouse();
+}
+
+// Start the mouse dropping into a hole
+function dropIntoHole(hole) {
+  mouse.x = hole.x;
+  mouse.depth = hole.depth;
+  mouse.falling = 0;
+  mouse.fallingInto = hole;
+  mouse.overHole = hole;
+}
+
+// The hole the mouse is standing on, if it's on one
+function holeUnderMouse() {
+  let bottom = bottomSize();
+  let size = sizeOf(mouse.depth);
+  for (let hole of holes) {
+    let holeSize = sizeOf(hole.depth);
+    let halfWide = (holeWidth * holeSize) / 2;
+    let gapX = (screenX(hole.x, holeSize) - screenX(mouse.x, size)) / halfWide;
+    let gapY = (groundAt(holeSize, bottom) - groundAt(size, bottom)) / (halfWide * holeShape);
+    if (gapX * gapX + gapY * gapY < 1) return hole;
+  }
+  return null;
 }
 
 // Find the holes' links on the page, and draw the holes
@@ -286,10 +341,11 @@ function setupHoles() {
 // random, but it's the same scattering each time. For each hole, it tries a number of places and keeps
 // the one with the most room around it.
 function standHoles() {
-  let band = width < 600 ? holeBandNarrow : holeBand;
+  let bands = width < 600 ? holeBandNarrow : holeBand;
   let widest = Math.max(width * 0.3, 190); // Past this, the names wrap (see .art-hole-name)
   let spots = [];
   holes.forEach((hole, i) => {
+    let band = bands[hole.link.dataset.row] ?? bands.any;
     let letters = hole.name.textContent.length;
     let wide = Math.min(widest, letters * holeNameRoom.perLetter + holeNameRoom.padding);
     let tall = Math.ceil((letters * holeNameRoom.perLetter) / widest) * holeNameRoom.perLine + holeNameRoom.gap;
@@ -315,19 +371,57 @@ function standHoles() {
 }
 
 // Send the mouse running to a hole, faster if it's a long way, the way the boat hurries to a gate on the
-// home page. It goes into the hole when it gets there (see moveMouse()).
+// home page. It stops and changes direction once or twice on the way, and goes into the hole when it
+// gets there (see moveMouse()).
 function sendMouseToHole(hole) {
   if (mouse.falling !== null) return;
-  let size = sizeOf(mouse.depth);
+  let stops = tripStopsTo(hole);
+  // How many steps it is, stop by stop
   let perStep = mouseStride * mouseScale;
-  let stepsSideways = Math.abs(hole.x - mouse.x) / perStep;
-  let stepsAlong = (Math.abs(hole.depth - mouse.depth) * (cameraHeight * size + curl * height)) / (perStep * size);
+  let size = sizeOf(mouse.depth);
+  let totalSteps = 0;
+  let from = mouse;
+  for (let to of [...stops, hole]) {
+    totalSteps += Math.abs(to.x - from.x) / perStep;
+    totalSteps += (Math.abs(to.depth - from.depth) * (cameraHeight * size + curl * height)) / (perStep * size);
+    from = to;
+  }
   mouseTarget = {
     x: hole.x,
     depth: hole.depth,
     hole,
-    hurry: constrain((stepsSideways + stepsAlong) / (mouseWalkSteps * holeTripTime), 1, holeTripHurry),
+    stops,
+    pause: 0,
+    hurry: constrain(totalSteps / (mouseWalkSteps * holeTripTime), 1, holeTripHurry),
   };
+}
+
+// The places on the ground it stops on the way to a hole: spaced along the line from the mouse to the
+// hole, and off to alternate sides of it, so that it changes direction at each.
+function tripStopsTo(hole) {
+  let bottom = bottomSize();
+  let mouseSize = sizeOf(mouse.depth);
+  let holeSize = sizeOf(hole.depth);
+  let fromX = screenX(mouse.x, mouseSize);
+  let fromY = groundAt(mouseSize, bottom);
+  let toX = screenX(hole.x, holeSize);
+  let toY = groundAt(holeSize, bottom);
+  let length = Math.hypot(toX - fromX, toY - fromY);
+  if (length < tripShortest) return [];
+
+  let count = Math.round(random(tripStops[0], tripStops[1]));
+  let side = random() < 0.5 ? -1 : 1;
+  let stops = [];
+  for (let i = 1; i <= count; i++) {
+    let along = (i + random(-0.15, 0.15)) / (count + 1);
+    let swerve = side * length * random(tripSwerve[0], tripSwerve[1]);
+    side = -side;
+    // Square to the line, and kept on the screen, and on the ground between the two ends
+    let x = lerp(fromX, toX, along) + (-(toY - fromY) / length) * swerve;
+    let y = lerp(fromY, toY, along) + ((toX - fromX) / length) * swerve;
+    stops.push(groundPoint(constrain(x, 20, width - 20), constrain(y, Math.min(fromY, toY), Math.max(fromY, toY))));
+  }
+  return stops;
 }
 
 // The same as the row of gates on the home page (see placeGate() in home/sketch.js): everything spreads
@@ -421,6 +515,7 @@ function buildRow(n) {
       stepsPerSecond: lerp(walkSpeed[0], walkSpeed[1], hash(person + 0.75)) / stride,
       start: hash(person) * span,
       firstStep: Math.floor(hash(person + 0.5) * steps),
+      joined: crowdOpening ? null : true, // Is it showing? Those in the first frame find out when it's drawn (null)
       seenFrom: null,
     });
   }
@@ -469,7 +564,9 @@ function draw() {
   let cellWidth = Math.round(frameWidth * resolution); // How wide a picture is on the full-size sheet
   let cellHeight = Math.round(frameHeight * resolution);
   let bottom = bottomSize();
-  let mouseGround = groundAt(sizeOf(mouse.depth), bottom);
+  let mouseSize = sizeOf(mouse.depth);
+  let mouseGround = groundAt(mouseSize, bottom);
+  let mouseLeft = screenX(mouse.x, mouseSize);
 
   // The rows in view, out to the furthest, and in to the last with anything still showing above the
   // bottom of the screen
@@ -507,7 +604,13 @@ function draw() {
       let along = p.start + walked * stride * row.direction - view.x;
       let size = bottom * Math.exp(view.depth - p.depth);
       let x = width / 2 + (((((along % span) + span) % span) - span / 2)) * size;
-      if (x < -frameWidth * size || x > width + frameWidth * size) continue;
+      let offTheScreen = x < -frameWidth * size || x > width + frameWidth * size;
+      if (!p.joined) {
+        let across = (x - mouseLeft) / (width * crowdGapWide);
+        let clear = offTheScreen || groundAt(size, bottom) < height * (1 - crowdGapTall * (1 - across * across));
+        p.joined = p.joined === null ? clear : offTheScreen || (clear && size < bottom * crowdWalksOn);
+      }
+      if (offTheScreen || !p.joined) continue;
 
       if (p.seenFrom !== view.depth) lookAt(p, near, bottom);
       let scaleDown = p.sheetScale / resolution;
@@ -524,6 +627,7 @@ function draw() {
     nextSign++;
   }
   if (!mouseShown) showMouse(ctx, seconds);
+  crowdOpening = false;
   // The holes go over everyone, in a way that shows them walking across, in white (see showHole())
   for (let hole of holes) showHole(ctx, hole);
   ctx.setTransform(density, 0, 0, density, 0, 0);

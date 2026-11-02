@@ -3,6 +3,12 @@ html, body {
   padding: 0;
 }
 
+/* The same crosshair as the home page's sketch, on every page. Links still get the pointing hand. */
+
+html {
+  cursor: crosshair;
+}
+
 * {
   box-sizing: border-box;
 }
