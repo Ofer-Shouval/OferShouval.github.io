@@ -67,9 +67,12 @@ const ringLongest = 20; // How many seconds into the stage it comes by itself, i
 const ringLead = 5; // How many seconds after it sets off the worm's head gets to it
 const ringWait = tailDistance + (headDistance - tailDistance) * (1 + ringLead / bodyTime); // How far away it waits, in the same units as headDistance
 const ringLabel = 'next sketch';
-const ringSmall = 0.2; // How big it is while it waits, compared to what it grows to by the time the worm gets there
+const ringSmall = 0.2; // How big it is while it waits, compared to what it would be at the worm's head
+const ringCovers = 9.7; // How many seconds after it sets off it's covered the screen
+const ringRush = 0.2; // How much its growth keeps speeding up on the way, so it never seems to slow (0 = steady, 1 = most of it at the end)
 const ringNearest = 0.05; // How near it can get, if the circle in its middle hasn't covered the screen by then
-const ringBehind = 0.1; // How far the camera is above the worm once it's right behind it, as a share of the screen's height
+const ringBehind = 0; // How far the camera is above the worm once it's right behind it, as a share of the screen's height
+const ringLinedUp = 5.2; // How far away the flower is when the camera's lined up with it, which is before the worm's head gets to it
 const ringWash = 160; // How quickly the paint fades while the ring's there, so that the ring doesn't leave a smear behind it
 const ringSize = 1.7; // How wide the circle in its middle is, compared to the widest the worm can be
 const wormFollow = 0.55; // How closely the worm follows the mouse, at most (1 = exactly, 0 = not at all)
@@ -539,7 +542,7 @@ export default function flow(p, container) {
   // The part of the worm beyond the ring is seen through its middle. It keeps its wobble, but is drawn in
   // as far as it takes to stay inside, which matters most on narrow screens.
   function insideRing(x, y, size, ring) {
-    const hole = ringHole(ring);
+    const hole = ringHole();
     const room = Math.max(hole - size / 2, hole * 0.1);
     const gap = Math.hypot(x - ring.x, y - ring.y);
     const keep = gap > 0 ? p.lerp(1, (room * Math.tanh(gap / room)) / gap, ringPull) : 1;
@@ -552,8 +555,12 @@ export default function flow(p, container) {
   }
 
   // The size of the circle in its middle
-  function ringHole(ring) {
-    return ((p.width / 8) * bodyScale * ringSize * ring.closer * p.lerp(ringSmall, 1, ringOpening())) / 2;
+  function ringHole() {
+    const start = ((p.width / 8) * bodyScale * ringSize * ringSmall) / (2 * ringWait);
+    if (ringWaiting) return start;
+    const going = (pathTime - (ringMeets - ringLead)) / ringCovers;
+    const covered = Math.hypot(p.width, p.height) * 0.55;
+    return start * Math.pow(covered / start, (1 - ringRush) * going + ringRush * going * going);
   }
 
   function bringRing() {
@@ -563,7 +570,7 @@ export default function flow(p, container) {
 
   function ringCoversScreen() {
     const ring = ringPlace(pathTime);
-    return ringHole(ring) > Math.hypot(Math.max(ring.x, p.width - ring.x), Math.max(ring.y, p.height - ring.y));
+    return ringHole() > Math.hypot(Math.max(ring.x, p.width - ring.x), Math.max(ring.y, p.height - ring.y));
   }
 
   // The flower the worm goes through. It's a flower like any other, with a black middle, which turns into
@@ -573,7 +580,7 @@ export default function flow(p, container) {
     const ground = stages.find(({ name }) => name === stages[current].through)?.settings.ground ?? 0;
     const shade = Math.round(ground * ringOpening());
     portal.middleColour = `rgb(${shade},${shade},${shade})`;
-    drawFlower(portal, ring.x, ring.y, (ringHole(ring) * 2) / portal.middle);
+    drawFlower(portal, ring.x, ring.y, (ringHole() * 2) / portal.middle);
   }
 
   // Where the place the worm's following was at a given time, in between the frames either side of it
@@ -856,7 +863,7 @@ export default function flow(p, container) {
     // Its label's there until the worm gets to it
     nextLabel.style.opacity = ringDistance === null ? 0 : 1 - ringOpening();
     nextLabel.disabled = !ringWaiting;
-    const coming = ringDistance === null || ringWaiting ? 0 : p.constrain((ringWait - ringDistance) / (ringWait - headDistance), 0, 1);
+    const coming = ringDistance === null || ringWaiting ? 0 : p.constrain((ringWait - ringDistance) / (ringWait - ringLinedUp), 0, 1);
     ringPull += (coming * coming * (3 - 2 * coming) - ringPull) * (1 - Math.exp((-dt * forwardMotion()) / (ringDistance === null ? 1.5 : 0.5)));
   };
 }
