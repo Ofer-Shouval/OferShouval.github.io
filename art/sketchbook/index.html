@@ -6,39 +6,16 @@
   <!-- @include head.html -->
 </head>
 
-<body bgcolor="#171717">
+<body bgcolor="black">
   <!-- @include navbar.html -->
 
-  <main class="page">
-    <a class="back-link" href="/art/">&larr; art</a>
-    <h1>sketchbook</h1>
-    <p>
-      Creative code sketches made over the years — many started as demos for my classes and grew from there.
-      They're all live: move your mouse over them, click, play.
-    </p>
-
-    <!--
-      One card per sketch. data-sketch is the file name in src/sketchbook/ (without .js),
-      and each sketch has its own page in art/sketchbook/ — copy sketch-template.html to start one.
-    -->
-    <div class="card-grid">
-      <div class="card">
-        <div class="sketch" data-sketch="psychworm"></div>
-        <div class="card-body">
-          <div class="card-meta">p5.js · YEAR</div>
-          <h3><a href="/art/sketchbook/psychworm.html">psychworm</a></h3>
-          <p>A rainbow worm that follows the mouse. Hold the mouse down to leave trails.</p>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-image placeholder">TODO: next sketch</div>
-        <div class="card-body">
-          <div class="card-meta">p5.js · YEAR</div>
-          <h3>sketch title</h3>
-          <p>TODO: one line about it.</p>
-        </div>
-      </div>
+  <!-- The stages, and how they turn into each other, are in src/sketchbook/flow.js -->
+  <main class="sketch sketch-flow" data-sketch="flow">
+    <div class="flow-welcome" role="dialog" aria-labelledby="flow-welcome-title">
+      <h1 id="flow-welcome-title">sketchbook</h1>
+      <p>For the best experience, turn on your camera and sound. The video stays on your device.</p>
+      <button class="flow-yes" disabled>turn them on</button>
+      <button class="flow-no" disabled>not now</button>
     </div>
   </main>
 

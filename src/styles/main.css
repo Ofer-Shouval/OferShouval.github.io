@@ -543,6 +543,147 @@ ul {
   border: 1px solid #ccc;
 }
 
+/* The sketchbook: one full-screen sketch that turns into the next (see src/sketchbook/flow.js) */
+
+.sketch-flow {
+  position: fixed;
+  inset: 0;
+  width: auto;
+  aspect-ratio: auto;
+  touch-action: none; /* So dragging on a phone plays the sketch rather than scrolling the page */
+}
+
+.flow-welcome {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1;
+  width: min(420px, calc(100% - 32px));
+  padding: 24px;
+  border: 1px solid #ccc;
+  background-color: #171717;
+  color: white;
+  font-family: 'Source Code Pro', monospace;
+  font-weight: 200;
+}
+
+.flow-welcome h1 {
+  display: block;
+  margin: 0 0 12px;
+  font-size: 24px;
+  font-weight: normal;
+}
+
+.flow-welcome p {
+  margin: 0 0 20px;
+  line-height: 1.5;
+}
+
+.flow-welcome button {
+  margin-right: 8px;
+  padding: 10px 14px;
+  border: 1px solid #ccc;
+  background: none;
+  color: white;
+  font: inherit;
+  cursor: pointer;
+}
+
+.flow-welcome button:hover:enabled {
+  background-color: rgba(100, 100, 100, 0.6);
+}
+
+.flow-welcome .flow-no {
+  border-color: transparent;
+}
+
+/* The names stay hidden until the box has been answered */
+.sketch-flow:not(.flow-begun) .flow-caption,
+.sketch-flow:not(.flow-begun) .flow-marks {
+  visibility: hidden;
+}
+
+.flow-caption,
+.flow-marks {
+  position: absolute;
+  left: 16px;
+  max-width: calc(100% - 32px);
+  z-index: 1;
+  margin: 0;
+  padding: 2px 10px;
+  color: white;
+  background-color: rgba(23, 23, 23, 0.8); /* Stays readable whatever's been painted behind it */
+  font-family: 'Source Code Pro', monospace;
+  font-weight: 200;
+  font-size: 14px;
+}
+
+.flow-caption {
+  bottom: 60px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media screen and (max-width: 500px) {
+  .flow-caption {
+    bottom: 92px; /* The marks wrap onto two lines */
+  }
+
+  .flow-caption-name {
+    display: block;
+  }
+}
+
+.flow-caption.showing {
+  animation: flow-caption 7s ease-in-out;
+}
+
+.flow-caption-name {
+  font-family: 'Major Mono Display', monospace;
+  font-size: 24px;
+  margin-right: 12px;
+}
+
+@keyframes flow-caption {
+  15%, 70% {
+    opacity: 1;
+  }
+}
+
+.flow-marks {
+  bottom: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+}
+
+.flow-marks button {
+  padding: 6px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  opacity: 0.65;
+  cursor: pointer;
+}
+
+.flow-marks button:hover,
+.flow-marks button:focus-visible,
+.flow-marks button[aria-current] {
+  opacity: 1;
+}
+
+.flow-marks button[aria-current] {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.flow-marks button:not(.flow-switch) + .flow-switch {
+  border-left: 1px solid #777;
+  padding-left: 18px;
+}
+
 .page .card h3 a {
   font-size: inherit;
   text-decoration: none;
