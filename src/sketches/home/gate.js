@@ -10,6 +10,10 @@ import { depth, flatness } from './perspective.js';
 
 const REFLECTION = 0.4; // How far its reflection hangs down, compared to its height
 export const NAME_FONT = 'Major Mono Display'; // The same as the navbar on the site's other pages
+const TAG_MARGIN = 40; // How far inside the edge of the screen the arrows of the tags are
+const TAG_SIZE = 16; // How big their names are
+const TAG_PADDING = 12; // How much room to spare around their names, for clicking on them
+const TAG_GAP = 4; // The least room between the click areas of two tags
 
 export default class Gate {
   constructor(url, label, place) {
@@ -26,6 +30,7 @@ export default class Gate {
     this.catchDistance = 0.5; // How close to the middle the boat has to get to go through (1 = the posts)
 
     this.labelArea = null; // Where the name was last drawn, so it can be clicked
+    this.tag = null; // Where its tag is, while it's off the screen (see findTag())
     this.passTime = 0; // Frames since the boat started going through (0 = not yet)
     this.boatSide = 0; // Which side of the gate the boat was on last frame (-1 = beyond it, 1 = in front)
     this.measure();
@@ -100,21 +105,42 @@ export default class Gate {
     return Math.min(1, this.passTime / 60);
   }
 
-  // While the gate is off the screen, show its name at the edge of the screen with an arrow
-  // pointing toward it
-  showTag() {
+  // While the gate is off the screen, its tag goes at the edge of the screen: where the line from
+  // the middle of the screen to the gate reaches the edge. Gates in much the same direction would
+  // land on top of each other, so spreadTags() then moves them apart along the edge.
+  findTag() {
+    this.tag = null;
     if (this.isOnScreen()) return;
-
-    // Head from the middle of the screen toward the gate, stopping just inside the edge
     let center = createVector(width / 2, height / 2);
     let direction = p5.Vector.sub(this.position, center);
-    let room = createVector(width / 2 - 40, height / 2 - 40);
-    let fit = Math.min(room.x / abs(direction.x), room.y / abs(direction.y));
-    let tag = p5.Vector.add(center, p5.Vector.mult(direction, fit));
-    let pointing = direction.copy().normalize();
+    let room = createVector(width / 2 - TAG_MARGIN, height / 2 - TAG_MARGIN);
+    let fitX = room.x / abs(direction.x);
+    let fitY = room.y / abs(direction.y);
+    let fit = Math.min(fitX, fitY);
+    push();
+    textFont(NAME_FONT);
+    textSize(TAG_SIZE);
+    let w = textWidth(this.label);
+    pop();
+    this.tag = {
+      x: center.x + direction.x * fit,
+      y: center.y + direction.y * fit,
+      slides: fitX < fitY ? 'y' : 'x', // On the left or right edge it moves up and down; on the top or bottom, across
+      nameX: fitX < fitY ? -Math.sign(direction.x) * (w / 2 + 12) : 0, // Where the name is, on the inside of the arrow
+      nameY: fitX < fitY ? 0 : -Math.sign(direction.y) * 18,
+      halfWidth: w / 2 + TAG_PADDING,
+      halfHeight: TAG_SIZE / 2 + TAG_PADDING,
+    };
+  }
+
+  // Show the tag: an arrow pointing to the gate from wherever the tag has ended up, and its name
+  showTag() {
+    if (!this.tag) return;
+    let { x, y, nameX, nameY } = this.tag;
+    let pointing = createVector(this.position.x - x, this.position.y - y).normalize();
 
     push();
-    translate(tag.x, tag.y);
+    translate(x, y);
     noStroke();
     fill(255, 220);
     // Long and narrow, so it can't be mistaken for pointing another way
@@ -122,13 +148,7 @@ export default class Gate {
     triangle(pointing.x * 16, pointing.y * 16, side.x, side.y, -side.x, -side.y);
     pop();
 
-    // Name, just on the inside of the arrow
-    push();
-    textFont(NAME_FONT);
-    textSize(16);
-    let gap = abs(pointing.x) * (textWidth(this.label) / 2 + 12) + abs(pointing.y) * 18;
-    pop();
-    this.drawName(tag.x - pointing.x * gap, tag.y - pointing.y * gap, 16, 18);
+    this.drawName(x + nameX, y + nameY, TAG_SIZE, TAG_PADDING);
   }
 
   // Draw the name like a link, centred on (x, y): underlined, and brighter with a
@@ -253,5 +273,45 @@ export default class Gate {
     for (let i = steps - 1; i >= 0; i--) point(x + w / 2, i / steps); // Back up the right post
     if (close) endShape(CLOSE);
     else endShape();
+  }
+}
+
+// Move the tags of all the gates apart along the edges of the screen, until each can be clicked
+// without touching another or the name of a gate that's on the screen. Each pair that overlaps is
+// nudged apart, again and again, which moves them smoothly as the gates move.
+export function spreadTags(gates) {
+  let tagged = gates.filter((gate) => gate.tag);
+  // Fixed: the names of gates on the screen, which tags have to go around
+  let fixed = gates.filter((gate) => !gate.tag && gate.labelArea).map((gate) => {
+    let a = gate.labelArea;
+    return { cx: (a.left + a.right) / 2, cy: (a.top + a.bottom) / 2, halfWidth: (a.right - a.left) / 2, halfHeight: (a.bottom - a.top) / 2 };
+  });
+  let boxOf = ({ tag }) => ({ cx: tag.x + tag.nameX, cy: tag.y + tag.nameY, halfWidth: tag.halfWidth, halfHeight: tag.halfHeight });
+  // How much to move a tag along its edge to clear a box (0 if they don't overlap)
+  let overlap = (box, other, axis) => {
+    let across = axis === 'y' ? Math.abs(box.cx - other.cx) - box.halfWidth - other.halfWidth : Math.abs(box.cy - other.cy) - box.halfHeight - other.halfHeight;
+    if (across >= TAG_GAP) return 0;
+    let apart = axis === 'y' ? box.cy - other.cy : box.cx - other.cx;
+    let needed = axis === 'y' ? box.halfHeight + other.halfHeight + TAG_GAP : box.halfWidth + other.halfWidth + TAG_GAP;
+    return Math.max(0, needed - Math.abs(apart)) * (apart < 0 ? -1 : 1);
+  };
+
+  for (let round = 0; round < 12; round++) {
+    for (let gate of tagged) {
+      let { tag } = gate;
+      let box = boxOf(gate);
+      let move = 0;
+      for (let other of tagged) {
+        // Half each, as the other one is moving the other way
+        if (other !== gate) move += overlap(box, boxOf(other), tag.slides) / 2;
+      }
+      for (let other of fixed) move += overlap(box, other, tag.slides);
+      tag[tag.slides] += move;
+    }
+    // Keep them on the screen, and the two kinds of edge out of each other's corners
+    for (let { tag } of tagged) {
+      if (tag.slides === 'y') tag.y = constrain(tag.y, TAG_MARGIN * 3, height - TAG_MARGIN * 2);
+      else tag.x = constrain(tag.x, tag.halfWidth + 10, width - tag.halfWidth - 10);
+    }
   }
 }

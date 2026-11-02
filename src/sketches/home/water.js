@@ -9,7 +9,8 @@
 // drags them along as it sails across them; they spring back afterwards (see pull()). Wherever
 // the boat pulls a line, ripples run outward along it both ways (see rippleAt()), further the
 // faster the boat's going, and tall enough to throw it across its neighbours. Under the wake,
-// the lines are only black or flickers of white.
+// the lines aren't drawn, which leaves the water dark, and its edges are drawn as curves through
+// the points where the lines stop (see showEdges()).
 //
 // The points along each line are fixed to the water, not the screen (every `step` pixels of
 // water), so a bit of line that's been dragged stays dragged as it scrolls past.
@@ -52,12 +53,16 @@ export default class Water {
     this.ripples = []; // { line, x (on the water), born (frameCount), strength (0 to 1), life }
     this.lastRipple = new Map(); // Line number -> when it last sent out a ripple
 
-    // Under the wake, short segments of the lines flicker on in white
-    this.segmentLengths = [1, 2, 4, 8]; // How many points are in a segment, from right behind the boat to the far end of the wake
-    this.flickerEvery = 24; // How many frames a segment holds before it can change (bigger = calmer)
-    this.whiteNear = 0; // How likely a segment is to be on, right behind the boat
-    this.whiteFar = 0; // ...and at the far end of the wake
-    this.ragged = 700; // The furthest (in pixels) a line reaches into the dark water from either side, at the far end of the wake
+    // The dark water under the wake
+    this.ragged = 250; // The furthest (in pixels) a line reaches into the dark water from either side, at the far end of the wake
+
+    // Where each line goes into the dark water and comes out again: one array for each side, in
+    // order of line number, of { n, x, y, shade, bright, weight }
+    this.tips = [[], []];
+    this.tipGap = 3; // The edges only join up across this many lines without a tip, or they break
+    this.tipSpan = 60; // Further apart than this (in pixels), the edge follows the wake from one tip to the next
+    this.edgeTightness = 0.15; // How tightly the edges bend at the tips, so they don't overshoot (0 = loosest, 1 = straight lines)
+    this.shortestPiece = 80; // Bits of line shorter than this (in pixels) left stranded in the dark water aren't drawn
 
     // How far each point of each line has been dragged by the boat. Keyed by line and point
     // number (see key()), so it sticks to the water; points that haven't been dragged (or have
@@ -257,6 +262,7 @@ export default class Water {
       else ripplesOn.set(r.line, [r]);
     }
 
+    this.tips = [[], []];
     push();
     noFill();
     for (let n = Math.ceil(this.travelled); ; n++) {
@@ -266,7 +272,9 @@ export default class Water {
       let bright = this.alpha * pow(near, this.distanceFade);
 
       // Thinner behind the boat, easing in just past it
-      strokeWeight(weight * near * lerp(1, this.thinnerBehind, constrain((y - boatY) / 60, 0, 1)));
+      let lineWeight = weight * near * lerp(1, this.thinnerBehind, constrain((y - boatY) / 60, 0, 1));
+      let tipIn = null; // Where this line first goes into the dark water...
+      let tipOut = null; // ...and last comes out
       let shade = (((n * 0.137) % 1) + 1) % 1; // Each line its own shade
       let lineRipples = ripplesOn.get(n);
       let style = lineRipples ? this.rippleStyle(n) : null;
@@ -282,15 +290,21 @@ export default class Water {
       // mostly not far, now and then a long way
       let reachLeft = this.ragged * this.hash(n + 0.6) ** 2;
       let reachRight = this.ragged * this.hash(n + 0.7) ** 2;
+      let isDark = (px, py) => {
+        if (!wake.isInside(px, py)) return false;
+        // It carries on into the dark water for a while, more the further behind the boat it is
+        let far = Math.min(1, Math.hypot(px - boatX, py - boatY) / wake.maxLength);
+        return wake.isInside(px - reachLeft * far, py) && wake.isInside(px + reachRight * far, py);
+      };
 
       // Tiny distant lines look just the same with half the points
       let stride = near < this.distantBelow ? 2 : 1;
       let start = stride === 2 ? Math.floor(first / 2) * 2 : first;
 
-      // The line is drawn in pieces, one for each stretch that's the same: plain line, a
-      // segment of white, or hidden under the wake
-      let pieceOn = -1; // Whether the piece being drawn shows: 1 or 0 (-1 = none yet)
-      let pieceWhite = null; // Which segment of white the piece being drawn is (null = none)
+      // The line is drawn in pieces, one for each stretch outside the dark water, each a list of
+      // x, y, x, y...
+      let pieces = [];
+      let piece = null;
       let hasPrevious = false;
       let previousX = 0;
       let previousY = 0;
@@ -313,53 +327,142 @@ export default class Water {
         wy = y + room * Math.tanh(moved / room);
         if (lineRipples) wy -= rippleRoom * Math.tanh((this.rippleAt(lineRipples, i * this.step, style) * near) / rippleRoom);
 
-        // Under the wake it's black or white, and much more likely to be white the further
-        // behind the boat it is. It flickers as one with the rest of its segment: segments are
-        // short right behind the boat, and longer further back.
-        let inside = wake.isInside(x, wy);
-        let far = inside ? Math.min(1, Math.hypot(x - boatX, wy - boatY) / wake.maxLength) : 0;
-        // It carries on into the dark water for a while, more the further behind the boat it is
-        if (inside) inside = wake.isInside(x - reachLeft * far, wy) && wake.isInside(x + reachRight * far, wy);
-        let on = 1;
-        let whitePiece = null;
-        if (inside) {
-          let sizes = this.segmentLengths;
-          let size = Math.min(Math.floor(far * sizes.length), sizes.length - 1);
-          let segmentKey = this.key(n, Math.floor(i / sizes[size]) * sizes.length + size);
-          // Each segment holds for a moment before it can change, at its own time, so it doesn't strobe
-          let beat = Math.floor((fc + this.hash(segmentKey) * this.flickerEvery) / this.flickerEvery);
-          if (this.hash(segmentKey + beat * 0.61) < lerp(this.whiteNear, this.whiteFar, far * far)) whitePiece = segmentKey;
-          else on = 0;
-        }
-
-        // Start a new piece of line whenever that changes, joined to the last point. Where the
-        // line goes into or comes out of the V, end or start it exactly on the V's arm.
-        if (on !== pieceOn || whitePiece !== pieceWhite) {
-          let onArm = hasPrevious && inside !== previousInside ? wake.crossing(previousX, previousY, x, wy) : null;
-          if (pieceOn > 0) {
-            if (onArm) vertex(onArm.x, onArm.y);
-            else vertex(x, wy);
-            endShape();
-          }
-          pieceOn = on;
-          pieceWhite = whitePiece;
-          if (on > 0) {
-            if (whitePiece !== null) stroke(255, bright);
-            else stroke(grey(shade, bright));
-            beginShape();
-            if (onArm) vertex(onArm.x, onArm.y);
-            else if (hasPrevious) vertex(previousX, previousY);
+        // Where the line goes into or comes out of the dark water, end or start it exactly on the edge
+        let inside = isDark(x, wy);
+        if (hasPrevious && inside !== previousInside) {
+          let edge = this.findEdge(isDark, previousX, previousY, x, wy, inside);
+          if (inside) {
+            tipIn = tipIn || edge;
+            piece.push(edge.x, edge.y);
+            piece = null;
+          } else {
+            tipOut = edge;
+            piece = [edge.x, edge.y];
+            pieces.push(piece);
           }
         }
-        if (on > 0) vertex(x, wy);
+        if (!inside) {
+          if (!piece) {
+            piece = [];
+            pieces.push(piece);
+          }
+          piece.push(x, wy);
+        }
         hasPrevious = true;
         previousX = x;
         previousY = wy;
         previousInside = inside;
       }
-      if (pieceOn > 0) endShape();
+      strokeWeight(lineWeight);
+      for (let k = 0; k < pieces.length; k++) {
+        let p = pieces[k];
+        // The first and last pieces run off the screen; any others are between bits of dark water
+        if (k > 0 && k < pieces.length - 1 && p[p.length - 2] - p[0] < this.shortestPiece) continue;
+        stroke(grey(shade, bright));
+        beginShape();
+        for (let v = 0; v < p.length; v += 2) vertex(p[v], p[v + 1]);
+        endShape();
+      }
+      if (tipIn) this.tips[0].push({ n, x: tipIn.x, y: tipIn.y, shade, bright, weight: lineWeight });
+      if (tipOut) this.tips[1].push({ n, x: tipOut.x, y: tipOut.y, shade, bright, weight: lineWeight });
     }
     pop();
+  }
+
+  // Where the dark water starts between two neighbouring points of a line, only one of which is
+  // in it, found by halving the gap a few times. So it moves smoothly from frame to frame, rather
+  // than from one point of the line to the next. endDark: whether it's the second point that's dark.
+  findEdge(isDark, ax, ay, bx, by, endDark) {
+    let lo = 0;
+    let hi = 1;
+    for (let i = 0; i < 5; i++) {
+      let mid = (lo + hi) / 2;
+      if (isDark(ax + (bx - ax) * mid, ay + (by - ay) * mid) === endDark) hi = mid;
+      else lo = mid;
+    }
+    let t = (lo + hi) / 2;
+    return { x: ax + (bx - ax) * t, y: ay + (by - ay) * t };
+  }
+
+  // The edges of the dark water behind the boat: a curve down each side, through the points where
+  // the lines stop, so each line looks like it bends round into the next. They start from the
+  // boat's corners. Call this after show(), which finds the points.
+  showEdges(wake, boat) {
+    push();
+    noFill();
+    // The first and last vertex of each shape only steer the curve, like the old curve()
+    splineProperty('ends', EXCLUDE);
+    splineProperty('tightness', this.edgeTightness);
+    for (let tips of this.tips) {
+      let chain = [];
+      for (let tip of tips) {
+        if (boat.isClear(tip.x, tip.y)) continue; // Hidden, or caught in the notches around the boat's tail
+        // On a hard turn, the next tip can be on the far side of the boat: that's two edges, not one
+        let previous = chain[chain.length - 1];
+        if (previous && (tip.n - previous.n > this.tipGap || boat.isClear((tip.x + previous.x) / 2, (tip.y + previous.y) / 2))) {
+          this.showEdge(chain, wake, boat);
+          chain = [];
+        }
+        chain.push(tip);
+      }
+      this.showEdge(chain, wake, boat);
+    }
+    pop();
+  }
+
+  // One run of a curve through some tips. Drawn in pieces, each between two neighbouring points, so
+  // it takes on their brightness and thickness as it goes.
+  showEdge(chain, wake, boat) {
+    if (chain.length < 2) return;
+    let points = this.followWake(this.fromBoat(chain, boat), wake);
+    for (let i = 0; i < points.length - 1; i++) {
+      let far = points[i + 1];
+      strokeWeight(far.weight);
+      stroke(grey(far.shade, far.bright));
+      beginShape();
+      for (let k = i - 1; k <= i + 2; k++) {
+        let p = points[constrain(k, 0, points.length - 1)];
+        splineVertex(p.x, p.y);
+      }
+      endShape();
+    }
+  }
+
+  // Where two points are a long way apart, which is where the wake runs nearly along the water's
+  // lines and few of them cross it, fill in the gap with the wake's own path, so the edge still
+  // curves with the wake rather than running straight across
+  followWake(points, wake) {
+    let filled = [points[0]];
+    for (let i = 1; i < points.length; i++) {
+      let a = points[i - 1];
+      let b = points[i];
+      if (Math.hypot(b.x - a.x, b.y - a.y) > this.tipSpan) {
+        for (let p of wake.pathBetween(a, b, this.tipSpan, 8)) filled.push({ ...b, x: p.x, y: p.y });
+      }
+      filled.push(b);
+    }
+    return filled;
+  }
+
+  // Add the boat's nearest corner to whichever end of a run of tips it's close to
+  fromBoat(chain, boat) {
+    let first = chain[0];
+    let last = chain[chain.length - 1];
+    let best = null;
+    let bestDistance = boat.length;
+    for (let corner of boat.corners) {
+      let c = boat.onScreen(corner.x, corner.y);
+      for (let end of [first, last]) {
+        let d = Math.hypot(c.x - end.x, c.y - end.y);
+        if (d < bestDistance) {
+          bestDistance = d;
+          best = { x: c.x, y: c.y, end };
+        }
+      }
+    }
+    if (!best) return chain;
+    let start = { ...best.end, x: best.x, y: best.y };
+    return best.end === first ? [start, ...chain] : [...chain, start];
   }
 
   // A number from 0 to 1 that's always the same for the same input, but looks random

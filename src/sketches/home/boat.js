@@ -43,6 +43,7 @@ export default class Boat {
     this.alpha = 200; // How bright its line is (255 = solid)
     this.wobble = 0.0042; // How far its line wobbles, compared to its length
     this.length = 400; // Its length in pixels, updated to fit the window
+    this.clearBehind = -0.8; // How far back the water behind it is kept clear (see clearAt()), along the boat in boat lengths
     this.cosAngle = cos(this.angle);
     this.sinAngle = sin(this.angle);
 
@@ -194,6 +195,20 @@ export default class Boat {
   // How far the water's kept clear either side of the boat, `along` it (in boat lengths)
   widthAt(along) {
     return hullWidth(constrain(along + 0.5, 0, 1), 0.18);
+  }
+
+  // How far the water behind and beside the boat is kept clear on one side, `along` it (in boat
+  // lengths). Behind its wide corner it stays as wide as the corner, rather than narrowing with the
+  // hull, so nothing gets caught in the notches around its tail. across: which side, by its sign.
+  clearAt(along, across) {
+    let corner = this.corners[0].y * across > 0 ? this.corners[0] : this.corners[1];
+    return along < corner.x ? Math.abs(corner.y) : this.widthAt(along);
+  }
+
+  // Is (x, y) under the boat, or in the clear water just behind it?
+  isClear(x, y) {
+    let { along, across } = this.onHull(x, y);
+    return along < 0.5 && along >= this.clearBehind && Math.abs(across) < this.clearAt(along, across);
   }
 
   // Across the boat, on the screen, squashed like the water

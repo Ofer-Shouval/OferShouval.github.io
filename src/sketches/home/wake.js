@@ -36,7 +36,9 @@ export default class Wake {
     this.edgeFade = 0.05; // ...fading out over this much of the height of the screen before that
     this.sampleEvery = 3; // pushAt() and the V's outline only use every this-many particles, which is much faster and still smooth
     this.hullMargin = 0.012; // How far outside the boat's sides they run, in boat lengths
+    this.hullPush = 0.25; // How much of the way out from under the boat they're pushed each frame, so they never jump
 
+    this.dropped = 0; // How many times particles have been dropped, to number them
     this.travelled = createVector(0, 0); // How far the boat has sailed, so the flow field moves with the water
     this.lines = [[], []]; // One array of particles per side, newest first
     this.sampled = []; // Every few particles, for pushAt()
@@ -53,6 +55,7 @@ export default class Wake {
     // Which way round is "outward and back" on the screen depends on which way the boat
     // is facing, so check which side of the sideways vector its velocity is on
     let handedness = Math.sign(sideways.x * velocity.y - sideways.y * velocity.x) || 1;
+    this.dropped++;
 
     for (let s = 0; s < 2; s++) {
       let side = s === 0 ? -1 : 1;
@@ -64,6 +67,7 @@ export default class Wake {
         cosSpin: Math.cos(spin),
         sinSpin: Math.sin(spin),
         side,
+        number: this.dropped, // Stays the same for life, so the same particles are always the ones sampled
         age: 0,
         behind: 0, // How far behind the boat it is
       });
@@ -109,15 +113,18 @@ export default class Wake {
     this.findShapes();
   }
 
-  // If a particle has slipped under the boat, push it back out to the nearest edge. (On a turn the
-  // boat can sweep over its own wake from either side, so that's not always the particle's own side.)
+  // If a particle has slipped under the boat, or into the clear water behind it, ease it back out
+  // to the nearest edge. (On a turn the boat can sweep over its own wake from either side, so that's
+  // not always the particle's own side.)
   keepOutside(particle, boat) {
     let p = particle.position;
     let { along, across } = boat.onHull(p.x, p.y);
-    if (Math.abs(along) >= 0.5) return; // In front of or behind the boat
-    let edge = boat.widthAt(along) + this.hullMargin;
+    if (along >= 0.5 || along < boat.clearBehind) return; // In front of or behind the boat
+    let edge = boat.clearAt(along, across) + this.hullMargin;
     if (Math.abs(across) >= edge) return; // Already outside
-    p.set(boat.onScreen(along, (Math.sign(across) || particle.side) * edge));
+    let out = boat.onScreen(along, (Math.sign(across) || particle.side) * edge);
+    p.x += (out.x - p.x) * this.hullPush;
+    p.y += (out.y - p.y) * this.hullPush;
   }
 
   // How far a particle is from where the lines have to end, near the edge of the screen
@@ -146,11 +153,13 @@ export default class Wake {
         if (p.y < top) top = p.y;
         if (p.y > bottom) bottom = p.y;
       }
-      for (let i = 0; i < line.length; i += this.sampleEvery) this.sampled.push(line[i]);
+      for (let particle of line) {
+        if (particle.number % this.sampleEvery === 0) this.sampled.push(particle);
+      }
       // (In order along the left line; back along the right one)
       let outline = [];
       for (let i = 0; i < line.length; i++) {
-        if (i % this.sampleEvery === 0 || i === line.length - 1) outline.push(line[i].position);
+        if (line[i].number % this.sampleEvery === 0 || i === 0 || i === line.length - 1) outline.push(line[i].position);
       }
       if (s === 1) outline.reverse();
       for (let p of outline) this.vShape.push(p);
@@ -255,27 +264,39 @@ export default class Wake {
     return inside;
   }
 
-  // Where the line from (ax, ay) to (bx, by) crosses the V's outline (the crossing nearest
-  // to the first point), or null if it doesn't
-  crossing(ax, ay, bx, by) {
-    let shape = this.vShape;
-    if (shape.length < 2) return null;
+  // The positions along the wake between two points on it, every `spacing` particles, in order
+  // from the first point to the second. Empty if they're not both near the same line.
+  pathBetween(from, to, reach, spacing) {
     let best = null;
-    let bestT = Infinity;
-    for (let i = 0, j = shape.length - 1; i < shape.length; j = i++) {
-      let p = shape[j];
-      let q = shape[i];
-      // Solve for where the two lines meet: t along a->b, u along p->q (both 0 to 1 if on both)
-      let denom = (bx - ax) * (q.y - p.y) - (by - ay) * (q.x - p.x);
-      if (denom === 0) continue; // Parallel
-      let t = ((p.x - ax) * (q.y - p.y) - (p.y - ay) * (q.x - p.x)) / denom;
-      let u = ((p.x - ax) * (by - ay) - (p.y - ay) * (bx - ax)) / denom;
-      if (t >= 0 && t <= 1 && u >= 0 && u <= 1 && t < bestT) {
-        bestT = t;
-        best = { x: ax + t * (bx - ax), y: ay + t * (by - ay) };
+    for (let line of this.lines) {
+      let i = this.nearestParticle(line, from);
+      let j = this.nearestParticle(line, to);
+      if (i < 0 || j < 0) continue;
+      let off = this.distanceTo(line[i], from) + this.distanceTo(line[j], to);
+      if (off < reach * 2 && (!best || off < best.off)) best = { line, i, j, off };
+    }
+    if (!best) return [];
+    let path = [];
+    let way = best.j > best.i ? 1 : -1;
+    for (let k = best.i + way * spacing; (best.j - k) * way > spacing / 2; k += way * spacing) path.push(best.line[k].position);
+    return path;
+  }
+
+  nearestParticle(line, point) {
+    let nearest = -1;
+    let nearestDistance = Infinity;
+    for (let i = 0; i < line.length; i++) {
+      let d = this.distanceTo(line[i], point);
+      if (d < nearestDistance) {
+        nearestDistance = d;
+        nearest = i;
       }
     }
-    return best;
+    return nearest;
+  }
+
+  distanceTo(particle, point) {
+    return Math.hypot(particle.position.x - point.x, particle.position.y - point.y);
   }
 
   // Slide the whole wake, e.g. when the window resizes and the boat moves to the new middle

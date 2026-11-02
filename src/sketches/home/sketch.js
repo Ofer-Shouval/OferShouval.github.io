@@ -8,7 +8,7 @@
 
 import p5 from 'p5';
 import Boat from './boat.js';
-import Gate, { NAME_FONT } from './gate.js';
+import Gate, { NAME_FONT, spreadTags } from './gate.js';
 import Wake from './wake.js';
 import Water from './water.js';
 import { depth } from './perspective.js';
@@ -17,9 +17,9 @@ import { depth } from './perspective.js';
 p5.disableFriendlyErrors = import.meta.env.PROD;
 
 const PAGES = [
-  ['/music/', 'music'],
-  ['/art/', 'art'],
   ['/teaching/', 'teaching'],
+  ['/art/', 'art'],
+  ['/music/', 'music'],
   ['/bio/', 'bio'],
 ];
 
@@ -34,6 +34,7 @@ let overGate = false; // Is the mouse over a gate or its name?
 let rowY = 90; // How far down the screen the row is, when it's furthest away (see fitToWindow())
 let rowForward = 0; // How far the boat has sailed toward it (0 = at the start, can't go back further)
 let rowSideways = 0; // How far the boat has sailed to the side of the middle of the row
+let rowReach = 1.5; // How far the boat can sail to the side of the middle of the row, in widths of the screen: far enough that every gate has gone off it
 let rowGateWidth = 26; // How wide (in pixels) a gate is in the row, when it's furthest away (see fitToWindow())
 let gateAtBoat = 1.4; // How wide a gate is when it reaches the boat, compared to the boat's length
 
@@ -53,7 +54,6 @@ let cameraTurn = 0; // How fast it's swinging right now, in radians per frame
 
 let wakeLength = 0.9; // How long the wake is, compared to the height of the screen
 let boatHome = 0.61; // How far down the screen the camera keeps the boat, which leaves the water behind it in view
-let wakeThinner = 0.8; // How thick the wake's lines are, compared to the water's in front of the boat
 
 function setup() {
   let canvas = createCanvas(windowWidth, windowHeight);
@@ -110,10 +110,10 @@ function rowScale() {
 }
 
 // Follow the boat: forward at the same rate as the water's lines (which move in proportion to
-// how far down the screen they are), and sideways, keeping to the width of the row
+// how far down the screen they are), and sideways, on past the ends of the row
 function moveRow() {
   rowForward = Math.max(0, rowForward - boat.scroll.y / boat.waterY());
-  rowSideways = constrain(rowSideways + boat.scroll.x, -width / 2, width / 2);
+  rowSideways = constrain(rowSideways + boat.scroll.x, -width * rowReach, width * rowReach);
 }
 
 function draw() {
@@ -122,12 +122,12 @@ function draw() {
   swingCamera();
   hurryToGate();
 
-  // The water, with the wake pushing its lines aside, then the wake on top
+  // The water, with the wake pushing its lines aside, then the edges of the dark water on top
   water.update(boat.scroll, boat.position.y);
   water.pull(boat);
   wake.update(boat.scroll, boat);
   water.show(wake, boat);
-  wake.show(boat.wakeWeight() * wakeThinner);
+  water.showEdges(wake, boat);
 
   // Update the gates, then draw the ones further away than the boat (higher up the screen)
   // behind it, and the nearer ones in front of it, so the boat can sail behind a gate
@@ -140,6 +140,8 @@ function draw() {
   for (let gate of gates) {
     if (gate.position.y > boatOnWater) gate.show(boat);
   }
+  for (let gate of gates) gate.findTag();
+  spreadTags(gates);
   for (let gate of gates) gate.showTag();
 
   // Stir up the water for next frame's wake (at no more than the boat's usual speed, so the
@@ -225,7 +227,7 @@ function swingCamera() {
   let boatX = boat.position.x;
   let boatY = boat.waterY();
   let slid = rowSideways - ((boatY - rowY * rowScale()) * turn) / rowScale();
-  if (Math.abs(slid) > width / 2) {
+  if (Math.abs(slid) > width * rowReach) {
     cameraTurn = 0;
     return;
   }
