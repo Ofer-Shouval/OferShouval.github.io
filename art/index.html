@@ -4,30 +4,20 @@
 <head>
   <title>Art – Ofer Shouval</title>
   <!-- @include head.html -->
-  <style>@view-transition { navigation: auto; }</style>
 </head>
 
 <body class="light">
   <!-- @include navbar.html -->
 
-  <!-- The gates, in a row across the top, in this order. Each lights up with data-light. -->
-  <a id="fade-link" class="gate" href="/art/luminin.html" data-light="/media/lumininSmear.mp4"><span class="gate-frame"><span class="gate-name">luminin</span></span></a>
-  <a class="gate" href="/art/band-visuals.html" data-light="/media/lumininSmear.mp4"><span class="gate-frame"><span class="gate-name">visuals for o. wake</span></span></a>
-  <a class="gate" href="/art/ghost-harp.html" data-light="/media/ghostHarp1_upflow.mp4"><span class="gate-frame"><span class="gate-name">ghost harp</span></span></a>
-  <a class="gate" href="/art/point-in-passing.html" data-light="/media/PiPWebsite1.mp4"><span class="gate-frame"><span class="gate-name">point in passing</span></span></a>
-  <a class="gate" href="/art/sun-deity.html" data-light="/media/sunDeity3_wideShot.jpg"><span class="gate-frame"><span class="gate-name">sun deity</span></span></a>
-  <a class="gate" href="/art/refracture.html" data-light="/media/refracture3_boxBoil.mp4"><span class="gate-frame"><span class="gate-name">refracture</span></span></a>
-  <a class="gate" href="/art/sketchbook/" data-light="/media/PsychWorm.png"><span class="gate-frame"><span class="gate-name">sketchbook</span></span></a>
-  <a class="gate" href="/art/animation.html" data-light="/media/gripgif_10.mp4"><span class="gate-frame"><span class="gate-name">animation</span></span></a>
-  <div id="gate-title" class="gate-title" aria-hidden="true"></div>
-  <div id="fade-background" class="fade-background">
-    <video src="/media/lumininSmear.mp4" muted loop playsinline preload="auto"></video>
-  </div>
+  <!-- The holes in the ground, scattered around in the distance -->
+  <a class="art-hole" href="/art/luminin.html"><span class="art-hole-name">luminin</span><span class="art-hole-mouth"></span></a>
+  <a class="art-hole" href="/art/interactive-installations.html"><span class="art-hole-name">interactive installations</span><span class="art-hole-mouth"></span></a>
+  <a class="art-hole" href="/art/film-animation.html"><span class="art-hole-name">film/animation</span><span class="art-hole-mouth"></span></a>
+  <a class="art-hole" href="/art/sketchbook/"><span class="art-hole-name">web art</span><span class="art-hole-mouth"></span></a>
 
   <a class="footer art-list-link" href="/art/all.html">see everything as a list</a>
 
   <script type="module" src="/src/sketches/art_walk.js"></script>
-  <script type="module" src="/src/scripts/fade_link.js"></script>
 </body>
 
 </html>

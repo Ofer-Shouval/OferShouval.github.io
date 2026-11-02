@@ -8,8 +8,8 @@
 //   turned a little every frame, outward and then back, so each line curls round as it
 //   slows (the two sides curl in mirror image)
 //   stirred by a Perlin noise "flow field", so the lines wobble like moving water
-// A line ends where it gets too far behind the boat, or too near the edge of the screen,
-// fading out on the way, so the whole of the wake is always in view.
+// A line ends where it gets too far behind the boat, or a little way past the edge of the
+// screen, fading out on the way, so the wake runs off the screen.
 //
 // The camera follows the boat, so every particle also scrolls back by however far the world
 // moved this frame. The water's lines ask the wake how to look: pushAt() pushes them aside,
@@ -20,9 +20,9 @@ import { grey } from './color.js';
 
 export default class Wake {
   constructor() {
-    this.lifespan = 140; // How many frames a particle lasts
+    this.lifespan = 300; // How many frames a particle lasts
     this.drag = 0.97; // How quickly the water calms down
-    this.spread = 1.5; // How hard particles are thrown sideways, compared to the boat's speed
+    this.spread = 2.5; // How hard particles are thrown sideways, compared to the boat's speed
     this.curl = 0.022; // How sharply the lines curl round, in radians per frame
     this.flowScale = 0.0025; // Size of the swirls in the water (smaller = bigger, smoother swirls)
     this.flowStrength = 0.02; // How hard the swirls push
@@ -32,8 +32,8 @@ export default class Wake {
     this.pushReach = 40; // How close (in pixels) the water's lines have to be to get pushed aside
     this.pushStrength = 7; // How far (in pixels) the wake pushes them
     this.maxLength = Infinity; // The longest the lines can get behind the boat, in pixels, however fast it's going
-    this.edgeMargin = 24; // How far (in pixels) from the edge of the screen the lines end
-    this.edgeFade = 0.2; // ...fading out over this much of the height of the screen before that
+    this.edgeMargin = -100; // How far (in pixels) from the edge of the screen the lines end (under 0 = past the edge, offscreen)
+    this.edgeFade = 0.05; // ...fading out over this much of the height of the screen before that
     this.sampleEvery = 3; // pushAt() and the V's outline only use every this-many particles, which is much faster and still smooth
     this.hullMargin = 0.012; // How far outside the boat's sides they run, in boat lengths
 
@@ -109,14 +109,15 @@ export default class Wake {
     this.findShapes();
   }
 
-  // If a particle has slipped under the boat, push it back out to the edge on its side
+  // If a particle has slipped under the boat, push it back out to the nearest edge. (On a turn the
+  // boat can sweep over its own wake from either side, so that's not always the particle's own side.)
   keepOutside(particle, boat) {
     let p = particle.position;
     let { along, across } = boat.onHull(p.x, p.y);
     if (Math.abs(along) >= 0.5) return; // In front of or behind the boat
     let edge = boat.widthAt(along) + this.hullMargin;
-    if (across * particle.side >= edge) return; // Already outside
-    p.set(boat.onScreen(along, particle.side * edge));
+    if (Math.abs(across) >= edge) return; // Already outside
+    p.set(boat.onScreen(along, (Math.sign(across) || particle.side) * edge));
   }
 
   // How far a particle is from where the lines have to end, near the edge of the screen

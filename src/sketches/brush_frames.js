@@ -10,6 +10,7 @@
 
 import * as brush from 'p5.brush/standalone';
 import Figure, { poses } from './figure.js';
+import { mousePose, mouseWidth, mouseHeight, mouseFeetX, mouseFeetY, mouseSteps, mouseViews, mouseActions } from './mouse.js';
 
 // How big each picture is, in the frames' own pixels, with room around the figure for the brush
 // to wander (a very scattered brush, like spray, could still get cut off at the edges)
@@ -19,7 +20,8 @@ export let frameHeight = 174;
 export let feetX = 45;
 export let feetY = 160;
 export let steps = poses.length * 2; // How many steps there are in the walk cycle
-export let gateMargin = 20; // Room around a gate's picture for the post holes and the pen to wander, in pixels
+export let holeMargin = 8; // Room around a hole's picture for its rim and the pen to wander, in pixels
+export let signMargin = 8; // Room around a sign's pictures for the pen to wander, in pixels
 let levels = 4; // How many sizes of the sheet to keep, each half the size of the last
 
 let figure = new Figure();
@@ -45,6 +47,7 @@ export function paintSheets(name, weights, resolution) {
       brush.clear();
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
+      brush.seed(row); // The same pen texture in every picture, so that the lines don't shimmer as they change
       paint(step, name, weight);
       brush.render();
       context.drawImage(canvas, step * canvas.width, row * canvas.height);
@@ -69,40 +72,164 @@ export function paintSheets(name, weights, resolution) {
   return sheets;
 }
 
-// Paint some gates' outlines (with no bottom) and post holes, like hand drawings: each line its own
-// stroke, not quite straight, running a little past the corners. Gives a canvas for each,
-// gateMargin bigger than the gate on every side, to be stretched to whatever size it's needed.
-export function paintGates(count, name, weight, width, height, holeWidth, density) {
-  let canvas = brush.createCanvas(width + gateMargin * 2, height + gateMargin * 2, { pixelDensity: density, parent: null });
+// Paint some holes in the ground, like hand drawings: a slightly uneven solid shape, gone round in pen.
+// Gives a canvas for each, holeMargin bigger than the hole on every side, to be stretched to whatever
+// size it's needed. They're white, to go over the crowd with a "difference" blend: on the white ground
+// they come out black, and anyone walking over them comes out white (see showHole() in art_walk.js).
+export function paintHoles(count, name, weight, width, height, density) {
+  let canvas = brush.createCanvas(width + holeMargin * 2, height + holeMargin * 2, { pixelDensity: density, parent: null });
   let gl = canvas.getContext('webgl2');
+  let scale = canvas.width / (width + holeMargin * 2);
 
-  // Everything's measured from the middle of the gate, as the brush does
-  let left = -width / 2;
-  let right = width / 2;
-  let top = -height / 2;
-  let bottom = height / 2;
   let pictures = [];
   for (let i = 0; i < count; i++) {
     brush.clear();
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
-    brush.set(name, '#000000', weight);
-    stroke(left, bottom, left, top - 3);
-    stroke(left - 3, top, right + 3, top);
-    stroke(right, top - 3, right, bottom);
-    for (let x of [left, right]) {
-      stroke(x - holeWidth / 2, bottom, x + holeWidth / 2, bottom);
+    // Everything's measured from the middle of the hole, as the brush does
+    let corners = [];
+    for (let n = 0; n < 11; n++) {
+      let angle = (n / 11) * Math.PI * 2;
+      let uneven = 1 + (Math.random() - 0.5) * 0.1;
+      corners.push([(Math.cos(angle) * uneven * width) / 2, (Math.sin(angle) * uneven * height) / 2]);
     }
+    brush.set(name, '#000000', weight);
+    brush.spline([...corners, corners[0], corners[1]], 1);
     brush.render();
 
     let picture = document.createElement('canvas');
     picture.width = canvas.width;
     picture.height = canvas.height;
-    picture.getContext('2d').drawImage(canvas, 0, 0);
-    makeBlack(picture);
+    let context = picture.getContext('2d');
+    context.drawImage(canvas, 0, 0);
+    context.globalCompositeOperation = 'source-in';
+    context.fillStyle = 'white';
+    context.fillRect(0, 0, picture.width, picture.height);
+
+    // The inside, under the line
+    let middle = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    context.setTransform(scale, 0, 0, scale, picture.width / 2, picture.height / 2);
+    context.globalCompositeOperation = 'destination-over';
+    context.beginPath();
+    context.moveTo(...middle(corners.at(-1), corners[0]));
+    corners.forEach((corner, n) => context.quadraticCurveTo(...corner, ...middle(corner, corners[(n + 1) % corners.length])));
+    context.fill();
     pictures.push(picture);
   }
   return pictures;
+}
+
+// A line that isn't quite straight, as if drawn quickly by hand, running a little past both its ends
+function handLine(x1, y1, x2, y2) {
+  let past = () => 1 + Math.random() * 3;
+  let length = Math.hypot(x2 - x1, y2 - y1);
+  let [alongX, alongY] = [(x2 - x1) / length, (y2 - y1) / length];
+  let bend = (Math.random() - 0.5) * 3;
+  brush.spline([
+    [x1 - alongX * past(), y1 - alongY * past()],
+    [(x1 + x2) / 2 - alongY * bend, (y1 + y2) / 2 + alongX * bend],
+    [x2 + alongX * past(), y2 + alongY * past()],
+  ], 1);
+}
+
+// Paint some signposts, like hand drawings: a board of four lines, with white behind them, and a crooked
+// post. Gives a { board, post } of canvases for each, signMargin bigger than the board or post on every
+// side, to be stretched to whatever size they're needed.
+export function paintSigns(count, name, weight, width, height, postLength, density) {
+  let paintAll = (w, h, paintOne) => {
+    let canvas = brush.createCanvas(w + signMargin * 2, h + signMargin * 2, { pixelDensity: density, parent: null });
+    let gl = canvas.getContext('webgl2');
+    let pictures = [];
+    for (let i = 0; i < count; i++) {
+      brush.clear();
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      brush.set(name, '#000000', weight);
+      paintOne(w / 2, h / 2);
+      brush.render();
+      let picture = document.createElement('canvas');
+      picture.width = canvas.width;
+      picture.height = canvas.height;
+      picture.getContext('2d').drawImage(canvas, 0, 0);
+      makeBlack(picture);
+      pictures.push(picture);
+    }
+    return pictures;
+  };
+
+  let boards = paintAll(width, height, (x, y) => {
+    handLine(-x, -y, x, -y);
+    handLine(x, -y, x, y);
+    handLine(x, y, -x, y);
+    handLine(-x, y, -x, -y);
+  });
+  // White behind the lines, so that a board hides whoever's behind it
+  for (let board of boards) {
+    let context = board.getContext('2d');
+    let scale = board.width / (width + signMargin * 2);
+    context.globalCompositeOperation = 'destination-over';
+    context.fillStyle = 'white';
+    context.fillRect(signMargin * scale, signMargin * scale, width * scale, height * scale);
+    context.globalCompositeOperation = 'source-over';
+  }
+
+  let posts = paintAll(0, postLength, (x, y) => {
+    let lean = (Math.random() - 0.5) * 4;
+    brush.spline([[lean / 2, -y], [lean, -y / 3], [-lean, y / 3], [lean / 2, y]], 1);
+  });
+  return boards.map((board, i) => ({ board, post: posts[i] }));
+}
+
+// Paint a mouse: a row of pictures of each thing it does, for each way it can be facing, one after
+// another (see mouse.js)
+export function paintMouse(name, weight, resolution) {
+  let canvas = brush.createCanvas(mouseWidth, mouseHeight, { pixelDensity: resolution, parent: null });
+  let gl = canvas.getContext('webgl2');
+  let rows = mouseViews * mouseActions;
+
+  let sheet = document.createElement('canvas');
+  sheet.width = canvas.width * mouseSteps;
+  sheet.height = canvas.height * rows;
+  let context = sheet.getContext('2d');
+  let eachPicture = (paintIt) => {
+    for (let row = 0; row < rows; row++) {
+      for (let step = 0; step < mouseSteps; step++) {
+        paintIt(mousePose(step, Math.floor(row / mouseActions), row % mouseActions), row, step);
+      }
+    }
+  };
+  // The brush measures from the middle of its canvas
+  let offsetX = mouseFeetX - mouseWidth / 2;
+  let offsetY = mouseFeetY - mouseHeight / 2;
+  eachPicture(({ lines }, row, step) => {
+    brush.clear();
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    brush.seed(1); // The same pen texture in every picture, so that its lines don't shimmer as they change
+    for (let { points, weight: lineWeight } of lines) {
+      brush.set(name, '#000000', weight * lineWeight);
+      brush.spline(points.map(([x, y]) => [x + offsetX, y + offsetY]), 0);
+    }
+    brush.render();
+    context.drawImage(canvas, step * canvas.width, row * canvas.height);
+  });
+  makeBlack(sheet);
+
+  let scale = canvas.width / mouseWidth;
+  // White inside its solid parts, under the lines, so they hide whoever's behind them
+  context.globalCompositeOperation = 'destination-over';
+  context.fillStyle = 'white';
+  eachPicture(({ fills }, row, step) => {
+    context.setTransform(scale, 0, 0, scale, (step * mouseWidth + mouseFeetX) * scale, (row * mouseHeight + mouseFeetY) * scale);
+    for (let outline of fills) {
+      context.beginPath();
+      outline.forEach(([x, y]) => context.lineTo(x, y));
+      context.fill();
+    }
+  });
+  context.setTransform(1, 0, 0, 1, 0, 0);
+  context.globalCompositeOperation = 'source-over';
+  return sheet;
 }
 
 // The brush leaves pale edges on its lines, which show on anything darker than white. Turn every
@@ -113,21 +240,6 @@ function makeBlack(canvas) {
   context.fillStyle = 'black';
   context.fillRect(0, 0, canvas.width, canvas.height);
   context.globalCompositeOperation = 'source-over';
-}
-
-// A straight line, as a shaky hand would draw it
-function stroke(x1, y1, x2, y2) {
-  let points = [];
-  let count = Math.max(2, Math.round(Math.hypot(x2 - x1, y2 - y1) / 35));
-  for (let i = 0; i <= count; i++) {
-    let along = i / count;
-    let shake = i === 0 || i === count ? 0.3 : 1;
-    points.push([
-      x1 + (x2 - x1) * along + (Math.random() - 0.5) * shake,
-      y1 + (y2 - y1) * along + (Math.random() - 0.5) * shake,
-    ]);
-  }
-  brush.spline(points, 0.6);
 }
 
 function paint(step, name, weight) {

@@ -2,7 +2,7 @@
 //
 // The water is a series of wavy lines (see Water), and the boat, drawn as a mouse pointer (see
 // Boat), trails two lines tracing out the V of its wake (see Wake), inside which the water
-// flickers in colour. The gates to the site's pages stand in a row in the distance (see Gate).
+// flickers in white. The gates to the site's pages stand in a row in the distance (see Gate).
 // Click one to sail there, or steer with the arrow keys. The boat stays near the middle of the
 // screen; the water moves past it.
 
@@ -51,7 +51,9 @@ let cameraEase = 0.05; // How gradually it starts and stops swinging (smaller = 
 let cameraDeadZone = 0.2; // Heading closer to sideways than this (0 to 1), the camera doesn't move
 let cameraTurn = 0; // How fast it's swinging right now, in radians per frame
 
-let wakeLength = 0.38; // How long the wake is, compared to the height of the screen
+let wakeLength = 0.9; // How long the wake is, compared to the height of the screen
+let boatHome = 0.61; // How far down the screen the camera keeps the boat, which leaves the water behind it in view
+let wakeThinner = 0.8; // How thick the wake's lines are, compared to the water's in front of the boat
 
 function setup() {
   let canvas = createCanvas(windowWidth, windowHeight);
@@ -60,7 +62,7 @@ function setup() {
   cursor(CROSS);
   document.fonts.load(`16px "${NAME_FONT}"`); // Nothing else on the page uses the gates' font, so ask for it
 
-  boat = new Boat(width / 2, height / 1.5);
+  boat = new Boat(width / 2, height * boatHome);
   wake = new Wake();
   water = new Water();
 
@@ -76,7 +78,7 @@ function setup() {
 function fitToWindow() {
   // The water's lines are further apart on a tall screen (each is this much as far down the
   // screen as the one below it)
-  water.ratio = 1 - 0.05 * Math.max(1, height / 900);
+  water.ratio = 1 - 0.046 * Math.max(1, height / 900);
   // A little more time to sail there on a big screen, which keeps its speed closer to a small
   // screen's (it never takes more than about 7 seconds, going through the gate included)
   sailTime = constrain(map(height, 500, 1440, 4.8, 5.8), 4.8, 5.8);
@@ -125,7 +127,7 @@ function draw() {
   water.pull(boat);
   wake.update(boat.scroll, boat);
   water.show(wake, boat);
-  wake.show(boat.wakeWeight());
+  wake.show(boat.wakeWeight() * wakeThinner);
 
   // Update the gates, then draw the ones further away than the boat (higher up the screen)
   // behind it, and the nearer ones in front of it, so the boat can sail behind a gate
@@ -262,7 +264,7 @@ function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
   fitToWindow();
   // Keep the boat where it was on the screen, and move everything on the water along with it
-  let shift = createVector(width / 2 - boat.home.x, height / 1.5 - boat.home.y);
+  let shift = createVector(width / 2 - boat.home.x, height * boatHome - boat.home.y);
   boat.home.add(shift);
   boat.position.add(shift);
   wake.shift(shift);

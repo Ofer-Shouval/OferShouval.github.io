@@ -1,18 +1,23 @@
 // Full-screen landing sketch for the art section, grown out of a week 6 homework (archive/week 6):
 // a crowd of stick figures walks across the screen, laid out like the water on the home page
 // (see home/water.js). They walk in rows that get closer together toward the horizon, so the crowd
-// stretches away into the distance. Swells of Perlin noise lift and drop the figures as they pass.
+// stretches away into the distance.
 //
 // A figure's feet are below the horizon by the camera's height at that figure's size. The view
 // is warped so that the ground curls upward as it goes away from the camera, like a road rising
 // up a wall: the further away, the more it lifts, and the more the figures tip back with it.
+//
+// There's a mouse to steer around, and the camera follows it, sliding sideways and moving along the
+// ground. The rows are spaced so that moving along the ground just makes everything bigger or
+// smaller by the same amount (see view).
 //
 // The figures are a walk cycle painted with a p5.brush brush when the page starts (see
 // brush_frames.js). There can be thousands of them, so everything about each one that doesn't
 // change is worked out once (see buildCrowd()), and each frame only works out where they've got to.
 
 import p5 from 'p5';
-import { paintSheets, paintGates, gateMargin, frameWidth, frameHeight, feetX, feetY, steps } from './brush_frames.js';
+import { paintSheets, paintHoles, paintSigns, paintMouse, holeMargin, signMargin, frameWidth, frameHeight, feetX, feetY, steps } from './brush_frames.js';
+import { mouseWidth, mouseHeight, mouseFeetX, mouseFeetY, mouseSteps, mouseStride, mouseViews, mouseSitting, mouseLowering, mouseWalking, mouseActions } from './mouse.js';
 
 // The friendly-error checker slows every p5 call; it's for development, not the live site.
 p5.disableFriendlyErrors = import.meta.env.PROD;
@@ -23,15 +28,11 @@ let curl = 0.1; // How much the ground curls upward with distance, as a fraction
 let curlTip = 0.12; // How much the figures tip back as the ground curls, so they look shorter in the distance (0 = not at all)
 let ratio = 0.9; // Each row is this much the size of the one in front of it (smaller = bunch up faster)
 let furthestSize = 0.005; // The rows carry on until they reach the top of the screen, or get this small, per 900 pixels of window height
-let rowsBelow = 0; // How many rows to draw with their feet below the bottom of the screen, since the rest of them still shows
 let spacing = 260; // How far apart the figures in a row are on average, in the frames' own pixels
 let rowJitter = 1.2; // How far forward or back of its row a figure can stray, in gaps between rows
 let walkSpeed = [60, 180]; // The slowest and fastest a figure can walk, in the frames' own pixels per second
 let stride = 7.5; // How far a planted foot slides back each frame of the walk cycle, in the frames' own pixels
 let offScreen = 100; // How far past the side of the screen a figure goes before wrapping round, in the frames' own pixels
-let waveScale = 0.004; // How long the swells are (smaller = longer swells)
-let waveSpeed = 0.5; // How quickly the swells change, per second
-let waveHeight = 28; // How tall the swells are, in pixels, near the bottom of the screen
 let alpha = 0.9; // How solid the figures are, near the bottom of the screen (1 = solid)
 let distanceFade = 0.2; // How quickly they fade toward the horizon (smaller = slower)
 
@@ -43,23 +44,42 @@ let weightJitter = 0.35; // How far a figure's lines stray from what's usual at 
 let density; // How many pixels of canvas for each pixel of window
 let resolution; // How many pixels of sheet for each of the frames' own pixels
 let sheets; // The walk cycle painted at each line weight, at each size (see brush_frames.js)
-let rows = []; // The crowd, the furthest row first (see buildCrowd())
-let gates = []; // A gate for each project, the furthest first (see setupGates() and standGates())
-let gateAlpha = 0.7; // How solid their white is (1 = hides everyone behind them)
-let gateWidth = 44; // How wide a gate is, in pixels
-let gateWidthTouch = 76; // ...and on touch screens, where the names stay on the gates and need room
-let gateGap = 14; // The space under the navbar, and between rows of gates if they don't all fit in one
-let gateShape = 1.43; // How tall a gate is, compared to how wide
-let gatePen = { width: 80, weight: 2.2, hole: 12 }; // How the outlines are drawn, before they're stretched to fit
-let lightTime = 0.5; // How many seconds a gate's light takes to come on or go off
-let lightColour = 0.5; // How strong the light's colours are (1 = as they are in the picture)
-let glowLength = 0.7; // How far the light reflects along the ground in front of a gate, compared to its height
-let glowWidth = 2.4; // How wide that reflection is, compared to the gate
-let glowAlpha = 0.75; // How strong it is, right at the gate's foot
-let glow; // A very small picture of the reflection, which goes soft when it's stretched out (see showGlow())
-let horizonDark = 0.12; // How dark the world gets at the horizon as a gate lights up (0 = not at all, 1 = black)
-let frontDark = 0; // ...and at the front
-let worldShade; // That darkness, as a gradient down the screen
+let rows = new Map(); // The rows of the crowd that have been seen lately, by number (see rowAt())
+let maxRows = 300; // How many of them to hold on to
+let holes = []; // A hole for each link on the page, in the ground out in the distance (see setupHoles() and placeHoles())
+let holeReach; // How far sideways the furthest hole is, in the frames' own pixels
+let holeBand = [0.35, 0.55]; // How far down the screen they're scattered with the camera where it starts (0 = the top, 1 = the bottom)
+let holeBandNarrow = [0.28, 0.62]; // ...and on narrow screens, where their signs need more room
+let holeNameRoom = { perLetter: 12, padding: 24, perLine: 22, gap: 30 }; // How much room a name's sign takes up, in pixels, for keeping them apart
+let holeScatterWidth = 640; // How wide an area in the middle of the screen they're scattered over, in pixels, when the screen's wider than that
+let holeTries = 200; // How many places to try for each hole, keeping the one furthest from the others
+let holeWidth = 50; // How wide they are, in the frames' own pixels, which is about what the mouse needs to fit
+let holeLinkSize = [32, 20]; // The smallest their links can be, in pixels, so that they can still be clicked from far away
+let holeShape = 0.42; // How tall they look, compared to how wide, seen from above
+let holePen = { width: 90, weight: 3 }; // How they're drawn, before they're stretched to fit
+let holeNameSize = [15, 24]; // The smallest and biggest their names can be, in pixels
+let signPen = { width: 160, height: 44, post: 80, weight: 2.6 }; // How the signposts are drawn, before they're stretched to fit
+let signPost = 110; // How tall a signpost's post is, in the frames' own pixels
+let signPostPixels = [16, 70]; // ...but no shorter or taller than this, in pixels, so that the sign's still readable from far away
+let holeTripTime = 3; // How many seconds the mouse tries to take to run to a hole that's been clicked
+let holeTripHurry = 3; // ...but it won't run more than this many times as fast as usual
+let holeFallTime = 0.3; // How many seconds it takes to drop into the hole, before the next page
+let mouseSpot = { x: 0.5, y: 0.86 }; // Where the camera keeps the mouse, as a fraction of the screen's width and height
+let mouseScale = 0.5; // How big it's drawn, compared to the people at the same distance
+let mouseWeight = 6; // How thick its lines are, before it's shrunk to that size
+let mouseSwings = 6; // How many pictures of its tail swinging it goes through per second, sitting
+let mouseWalkSteps = 36; // ...and of its walk, walking. This sets how fast it goes, since it only moves as far as its feet push it.
+let mouseBowTime = 0.12; // How many seconds it takes to get up and lower its head before it sets off, or to sit back up after it stops
+let mouseViewStick = 1.2; // How far past halfway to the next way of facing it has to be heading before it changes to that
+let mouseFollow = 5; // How quickly the camera catches up with it (bigger = quicker)
+let mouseSheet; // The mouse standing and walking (see brush_frames.js)
+let mouse; // Where it is in the world and what it's doing (see placeMouse() and moveMouse())
+let mouseHome; // How far away it is when it's where the camera keeps it (in the units of mouse.depth)
+let mouseTarget = null; // The point in the world it's walking to, after a click or a tap
+let keysHeld = new Set(); // Which of the keys that move it are down
+// The camera. x is how far it's gone sideways, in the frames' own pixels. depth is how far it's gone
+// along the ground, as the log of how much bigger that's made everything, so it's 0 where it starts.
+let view = { x: 0, depth: 0 };
 
 function setup() {
   density = Math.min(2, window.devicePixelRatio); // Sharp enough, and any more is slow on phones
@@ -69,7 +89,9 @@ function setup() {
   canvas.style('z-index', '-1');
   // Sharp enough for the biggest figures on this screen, and no bigger
   resolution = constrain(bottomSize() * 1.1 * density, 1, 3);
-  setupGates(); // (Before the sheets, since painting those finishes with the brush)
+  setupHoles(); // (Before the sheets, since painting those finishes with the brush)
+  mouseSheet = paintMouse(brushName, mouseWeight, resolution * mouseScale);
+  setupMouseControls();
   sheets = paintSheets(brushName, lineWeights, resolution);
   buildCrowd();
 }
@@ -79,195 +101,417 @@ function bottomSize() {
   return (height * (1 - horizon)) / cameraHeight;
 }
 
-// Work out everything about the crowd that doesn't change from frame to frame
+// Get ready for the size of the screen. The rows themselves get built when they first come into view.
 function buildCrowd() {
-  worldShade = drawingContext.createLinearGradient(0, 0, 0, height);
-  worldShade.addColorStop(0, `rgba(0, 0, 0, ${horizonDark})`);
-  worldShade.addColorStop(1, `rgba(0, 0, 0, ${frontDark})`);
-  let bottom = bottomSize();
-  let smallestSize = (furthestSize * height) / 900;
-  let furthest = 0;
-  while (groundAt(bottom * pow(ratio, furthest), bottom) > 0 && bottom * pow(ratio, furthest) > smallestSize) {
-    furthest++;
-  }
-  rows = [];
-  // The furthest row first, so the nearer ones walk in front of it
-  for (let n = furthest; n >= -rowsBelow; n--) {
-    rows.push(buildRow(n, bottom * pow(ratio, n), bottom));
-  }
-  standGates();
+  rows = new Map();
+  standHoles();
+  mouseHome = Math.log(bottomSize() / sizeAt(mouseSpot.y * height));
+  // Start the mouse off, or leave it where it is in the world if the screen has changed
+  if (!mouse) mouse = { x: 0, depth: mouseHome, view: 0, facing: 1, bow: 0, walked: 0, walking: false, falling: null };
+  mouseTarget = null;
 }
 
-// Find the gates on the page, draw their outlines, and get ready to light them up on hover
-function setupGates() {
-  let links = [...document.querySelectorAll('.gate')];
-  let title = document.getElementById('gate-title');
-  let pictures = paintGates(links.length, brushName, gatePen.weight, gatePen.width, gatePen.width * gateShape, gatePen.hole, density * 1.5);
-  gates = links.map((link, i) => {
-    let gate = {
-      link,
-      frame: link.querySelector('.gate-frame'),
-      name: link.querySelector('.gate-name'),
-      light: 0,
-      picture: pictures[i],
-      media: null,
+// Row number n, built the first time it's needed. They come out the same if they're built again, so
+// the ones that have been walked away from can go, however far the mouse walks.
+function rowAt(n) {
+  if (rows.size > maxRows) rows.clear();
+  if (!rows.has(n)) rows.set(n, buildRow(n));
+  return rows.get(n);
+}
+
+// How big something at this depth in the world looks, from where the camera is
+function sizeOf(depth) {
+  return bottomSize() * Math.exp(view.depth - depth);
+}
+
+// Where something in the world is on the screen, given how big it looks from here
+function screenX(x, size) {
+  return width / 2 + (x - view.x) * size;
+}
+
+// How big something looks if its feet are this far down the screen. The ground only ever gets lower
+// down the screen as things get bigger, so this homes in on it.
+function sizeAt(y) {
+  let bottom = bottomSize();
+  let smallest = -14;
+  let biggest = 3;
+  for (let i = 0; i < 30; i++) {
+    let middle = (smallest + biggest) / 2;
+    if (groundAt(bottom * Math.exp(middle), bottom) < y) smallest = middle;
+    else biggest = middle;
+  }
+  return bottom * Math.exp(smallest);
+}
+
+// The arrow keys or WASD steer the mouse, and a click or a tap anywhere but a link sends it there
+function setupMouseControls() {
+  let moveKeys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'KeyA', 'KeyD', 'KeyW', 'KeyS'];
+  window.addEventListener('keydown', (event) => {
+    if (!moveKeys.includes(event.code) || event.metaKey || event.ctrlKey || event.altKey) return;
+    keysHeld.add(event.code);
+    mouseTarget = null; // (Here, since a quick tap can be over before the next frame)
+    event.preventDefault();
+  });
+  window.addEventListener('keyup', (event) => keysHeld.delete(event.code));
+  window.addEventListener('blur', () => keysHeld.clear());
+  window.addEventListener('pointerdown', (event) => {
+    if (event.target.closest('a')) return;
+    // Where that is on the ground
+    let size = sizeAt(event.clientY);
+    mouseTarget = {
+      x: constrain(view.x + (event.clientX - width / 2) / size, -cameraReach(), cameraReach()),
+      depth: Math.max(0, view.depth + Math.log(bottomSize() / size)),
     };
-    link.addEventListener('mouseenter', () => {
-      startLight(gate);
-      title.textContent = gate.name.textContent;
-      title.classList.add('showing');
-    });
-    link.addEventListener('mouseleave', () => {
-      if (gate.media?.pause && !document.body.classList.contains('fading')) gate.media.pause();
-      title.classList.remove('showing');
-    });
-    return gate;
   });
 }
 
-// What lights up a gate only gets loaded once the mouse goes over it. The gate that sets off the
-// transition (see fade_link.js) shares its video.
-function startLight(gate) {
-  if (!gate.media) {
-    let source = gate.link.dataset.light;
-    if (gate.link.id === 'fade-link') {
-      gate.media = document.querySelector('#fade-background video');
-    } else if (source.endsWith('.mp4')) {
-      gate.media = document.createElement('video');
-      gate.media.muted = true;
-      gate.media.loop = true;
-      gate.media.playsInline = true;
-      gate.media.src = source;
+// How far sideways the camera can go, which is as far as the furthest hole
+function cameraReach() {
+  return holeReach;
+}
+
+// Walk the mouse however it's being told to, and bring the camera along after it. The camera stops at
+// the end of its reach, or where it started when going back, so the holes never go out of reach.
+// The mouse can carry on across the screen from there, as far as its edge.
+function moveMouse() {
+  let seconds = Math.min(deltaTime / 1000, 0.1); // (The frames can be far apart if the page has been in the background)
+  let bottom = bottomSize();
+  let size = sizeOf(mouse.depth);
+  let hurry = mouseTarget?.hurry ?? 1;
+  let follow = 1 - Math.exp(-seconds * mouseFollow * hurry);
+  let followMouse = () => {
+    view.x += (constrain(mouse.x, -cameraReach(), cameraReach()) - view.x) * follow;
+    view.depth += (Math.max(0, mouse.depth - mouseHome) - view.depth) * follow;
+  };
+
+  // Dropping into a hole, and then on to its page
+  if (mouse.falling !== null) {
+    mouse.falling += seconds / holeFallTime;
+    if (mouse.falling >= 1) {
+      let { href } = mouse.fallingInto.link;
+      mouse.falling = null; // (So that it's back if the browser's back button returns to this page as it was)
+      window.location.href = href;
+    }
+    followMouse();
+    return;
+  }
+
+  let held = (...codes) => (codes.some((code) => keysHeld.has(code)) ? 1 : 0);
+  let right = held('ArrowRight', 'KeyD') - held('ArrowLeft', 'KeyA');
+  let down = held('ArrowDown', 'KeyS') - held('ArrowUp', 'KeyW');
+  if (right || down) {
+    mouseTarget = null;
+  } else if (mouseTarget) {
+    let targetSize = sizeOf(mouseTarget.depth);
+    let gapX = screenX(mouseTarget.x, targetSize) - screenX(mouse.x, size);
+    let gapY = groundAt(targetSize, bottom) - groundAt(size, bottom);
+    let gap = Math.hypot(gapX, gapY);
+    // Running to a hole, it could be going far enough each frame to run straight past
+    let oneFrame = mouseWalkSteps * hurry * seconds * mouseStride * mouseScale * size;
+    if (gap < Math.max(6, oneFrame)) {
+      if (mouseTarget.hole) {
+        mouse.x = mouseTarget.x;
+        mouse.depth = mouseTarget.depth;
+        mouse.falling = 0;
+        mouse.fallingInto = mouseTarget.hole;
+      }
+      mouseTarget = null;
     } else {
-      gate.media = new Image();
-      gate.media.src = source;
+      right = gapX / gap;
+      down = gapY / gap;
     }
   }
-  if (gate.media.play && !matchMedia('(prefers-reduced-motion: reduce)').matches) gate.media.play();
+
+  let edge = cameraReach() + (width / 2 - 8) / size;
+  if ((right < 0 && mouse.x <= -edge) || (right > 0 && mouse.x >= edge)) right = 0;
+  if (down > 0 && mouse.depth <= 0) down = 0;
+  if (right === 0 && down === 0) mouseTarget = null;
+
+  // It faces the nearest of the ways it can, and carries on facing that way when it stops
+  let going = right !== 0 || down !== 0;
+  if (going) {
+    let eighth = Math.PI / 4;
+    let angle = Math.atan2(Math.abs(right), -down);
+    if (Math.abs(angle - mouse.view * eighth) > (eighth / 2) * mouseViewStick) mouse.view = Math.round(angle / eighth);
+    if (right !== 0) mouse.facing = Math.sign(right);
+  }
+
+  // It sets off once its head's down
+  mouse.bow = constrain(mouse.bow + ((going ? 1 : -1) * seconds) / mouseBowTime, 0, 1);
+  mouse.walking = going && mouse.bow === 1;
+  if (mouse.walking) {
+    // It only moves when its walk cycle moves on, by exactly as far as its planted foot slides back
+    // on the screen, the same as the crowd (see draw()), so that foot stays put on the ground
+    let before = Math.floor(mouse.walked);
+    mouse.walked += mouseWalkSteps * hurry * seconds;
+    let pushed = (Math.floor(mouse.walked) - before) * mouseStride * mouseScale * size;
+    let along = Math.hypot(right, down);
+    mouse.x = constrain(mouse.x + ((right / along) * pushed) / size, -edge, edge);
+    // Across the ground, the screen's pixels are worth less the further away they are
+    mouse.depth = Math.max(0, mouse.depth - ((down / along) * pushed) / (cameraHeight * size + curl * height));
+  } else {
+    mouse.walked = 0;
+  }
+
+  followMouse();
 }
 
-// Stand the gates in a row across the top of the screen (or two, if they don't fit), each on the row
-// of people nearest to where it goes, so they all line up
-function standGates() {
-  let target = matchMedia('(hover: hover)').matches ? gateWidth : gateWidthTouch;
-  let perRow = width < gates.length * (target + 8) ? Math.ceil(gates.length / 2) : gates.length;
-  let wide = Math.min(target, width / perRow - 8);
-  let high = wide * gateShape;
-  let top = document.querySelector('.navbar').getBoundingClientRect().bottom + gateGap;
-
-  document.querySelectorAll('.gate').forEach((link, i) => {
-    let gate = gates.find((g) => g.link === link);
-    let foot = top + (high + gateGap) * Math.floor(i / perRow) + high;
-    let row = rows.reduce((best, r) => (Math.abs(r.ground - foot) < Math.abs(best.ground - foot) ? r : best));
-    gate.left = (((i % perRow) + 0.5) / perRow) * width - wide / 2;
-    gate.top = row.ground - high;
-    gate.width = wide;
-    gate.height = high;
-    gate.bottom = row.ground;
-
-    gate.link.style.left = `${gate.left + wide / 2}px`;
-    gate.link.style.top = `${gate.top}px`;
-    gate.frame.style.width = `${wide}px`;
-    gate.frame.style.height = `${high}px`;
-    // Small enough for its longest word to fit across the gate
-    let longest = Math.max(...gate.name.textContent.split(' ').map((word) => word.length));
-    gate.name.style.fontSize = `${Math.min(18, (wide * 0.85) / (longest * 0.68))}px`;
+// Find the holes' links on the page, and draw the holes
+function setupHoles() {
+  let links = [...document.querySelectorAll('.art-hole')];
+  let pictures = paintHoles(links.length, brushName, holePen.weight, holePen.width, holePen.width * holeShape, density * 3);
+  let signs = paintSigns(links.length, brushName, signPen.weight, signPen.width, signPen.height, signPen.post, density * 2);
+  holes = links.map((link, i) => ({
+    link,
+    mouth: link.querySelector('.art-hole-mouth'),
+    name: link.querySelector('.art-hole-name'),
+    picture: pictures[i],
+    sign: signs[i],
+    fontSize: null,
+    postLength: null,
+  }));
+  // How big their signs need to be depends on their font, so measure again once that's loaded
+  document.fonts.ready.then(() => holes.forEach((hole) => { hole.fontSize = null; }));
+  holes.forEach((hole) => {
+    hole.link.addEventListener('click', (event) => {
+      // Opening it in a new tab, or asking for less motion, just follows the link
+      if (event.metaKey || event.ctrlKey || event.shiftKey || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      event.preventDefault();
+      sendMouseToHole(hole);
+    });
   });
-  gates.sort((a, b) => a.bottom - b.bottom);
 }
 
-// Row number n, with its figures drawn at this size
-function buildRow(n, size, bottom) {
-  let near = size / bottom; // 1 at the bottom of the screen, smaller in the distance
+// Scatter the holes for the size of the screen, keeping their signs apart and on the screen. It looks
+// random, but it's the same scattering each time. For each hole, it tries a number of places and keeps
+// the one with the most room around it.
+function standHoles() {
+  let band = width < 600 ? holeBandNarrow : holeBand;
+  let widest = Math.max(width * 0.3, 190); // Past this, the names wrap (see .art-hole-name)
+  let spots = [];
+  holes.forEach((hole, i) => {
+    let letters = hole.name.textContent.length;
+    let wide = Math.min(widest, letters * holeNameRoom.perLetter + holeNameRoom.padding);
+    let tall = Math.ceil((letters * holeNameRoom.perLetter) / widest) * holeNameRoom.perLine + holeNameRoom.gap;
+    let best = null;
+    let bestRoom = -1;
+    for (let attempt = 0; attempt < holeTries; attempt++) {
+      let x = width / 2 + (hash(i * 1000 + attempt + 0.1) - 0.5) * (Math.min(width, holeScatterWidth) - wide);
+      let y = height * lerp(band[0], band[1], hash(i * 1000 + attempt + 0.2));
+      let roomHere = Math.min(Infinity, ...spots.map((spot) => Math.max(Math.abs(x - spot.x) / ((wide + spot.wide) / 2), Math.abs(y - spot.y) / ((tall + spot.tall) / 2))));
+      if (roomHere > bestRoom) {
+        best = { x, y, wide, tall };
+        bestRoom = roomHere;
+      }
+    }
+    spots.push(best);
+    hole.size = sizeAt(best.y);
+    hole.inRow = (best.x - width / 2) / (width / 2); // Where it is across the screen: -1 is the left, 1 the right
+    hole.x = (hole.inRow * (width / 2)) / hole.size;
+    hole.depth = Math.log(bottomSize() / hole.size);
+  });
+  holeReach = Math.max(...holes.map((hole) => Math.abs(hole.x)));
+  holes.sort((a, b) => b.depth - a.depth); // The furthest first, for drawing their signs among the crowd
+}
 
-  // The row is a strip a little wider than the screen, which the figures wrap round. It's
-  // worked out from the smallest a figure in this row can be, so they always wrap off screen.
-  let smallest = size * (1 - (rowJitter * (1 - ratio)) / 2);
+// Send the mouse running to a hole, faster if it's a long way, the way the boat hurries to a gate on the
+// home page. It goes into the hole when it gets there (see moveMouse()).
+function sendMouseToHole(hole) {
+  if (mouse.falling !== null) return;
+  let size = sizeOf(mouse.depth);
+  let perStep = mouseStride * mouseScale;
+  let stepsSideways = Math.abs(hole.x - mouse.x) / perStep;
+  let stepsAlong = (Math.abs(hole.depth - mouse.depth) * (cameraHeight * size + curl * height)) / (perStep * size);
+  mouseTarget = {
+    x: hole.x,
+    depth: hole.depth,
+    hole,
+    hurry: constrain((stepsSideways + stepsAlong) / (mouseWalkSteps * holeTripTime), 1, holeTripHurry),
+  };
+}
+
+// The same as the row of gates on the home page (see placeGate() in home/sketch.js): everything spreads
+// out from the middle of the screen as the camera goes forward, and slides as it goes sideways, by how
+// far away each hole is. How far down the screen comes from this page's ground, so they stay put on it
+// among the crowd.
+function placeHoles() {
+  let scale = Math.exp(view.depth);
+  let bottom = bottomSize();
+  for (let hole of holes) {
+    let rowSideways = view.x * hole.size;
+    let size = hole.size * scale;
+    hole.width = holeWidth * size;
+    hole.height = hole.width * holeShape;
+    hole.left = width / 2 + (hole.inRow * (width / 2) - rowSideways) * scale - hole.width / 2;
+    hole.ground = groundAt(size, bottom);
+
+    let linkHeight = Math.max(hole.height, holeLinkSize[1]);
+    hole.link.style.left = `${hole.left + hole.width / 2}px`;
+    hole.link.style.top = `${hole.ground + linkHeight / 2}px`;
+    hole.mouth.style.width = `${Math.max(hole.width, holeLinkSize[0])}px`;
+    hole.mouth.style.height = `${linkHeight}px`;
+
+    // Its name's on a sign, on a post coming up from the back of the hole. Only measuring when the
+    // name changes size, since that's slow.
+    let postLength = Math.round(constrain(signPost * size, signPostPixels[0], signPostPixels[1]));
+    if (postLength !== hole.postLength) {
+      hole.postLength = postLength;
+      hole.name.style.marginBottom = `${postLength}px`;
+    }
+    let fontSize = Math.round(constrain(hole.width * 0.4, holeNameSize[0], holeNameSize[1]) * 2) / 2;
+    if (fontSize !== hole.fontSize) {
+      hole.fontSize = fontSize;
+      hole.name.style.fontSize = `${fontSize}px`;
+      hole.signWidth = hole.name.offsetWidth;
+      hole.signHeight = hole.name.offsetHeight;
+    }
+    hole.signBottom = hole.ground - linkHeight / 2 - postLength;
+  }
+}
+
+// A hole's signpost, standing at the back of the hole. Its name goes on top, as the link on the page.
+function showSign(ctx, hole) {
+  let middle = hole.left + hole.width / 2;
+  let holeBack = hole.ground - hole.height / 2;
+  let scale = hole.signWidth / signPen.width;
+  ctx.setTransform(density, 0, 0, density, 0, 0);
+  ctx.globalAlpha = 1;
+  let postHeight = holeBack - hole.signBottom;
+  let postMargin = (signMargin * postHeight) / signPen.post;
+  ctx.drawImage(hole.sign.post, middle - signMargin * scale, hole.signBottom - postMargin, signMargin * 2 * scale, postHeight + postMargin * 2);
+  let marginX = signMargin * scale;
+  let marginY = (signMargin * hole.signHeight) / signPen.height;
+  ctx.drawImage(
+    hole.sign.board,
+    middle - hole.signWidth / 2 - marginX, hole.signBottom - hole.signHeight - marginY,
+    hole.signWidth + marginX * 2, hole.signHeight + marginY * 2,
+  );
+}
+
+// A hole, with its middle on the ground where it is. Its picture's white, and a "difference" blend makes
+// it black on the white ground, while anyone walking over it comes out white.
+function showHole(ctx, hole) {
+  let margin = (holeMargin * hole.width) / holePen.width;
+  ctx.setTransform(density, 0, 0, density, 0, 0);
+  ctx.globalAlpha = alpha * Math.min(1, pow(hole.width / holeWidth / bottomSize(), distanceFade)); // The same fade as the crowd's
+  ctx.globalCompositeOperation = 'difference';
+  ctx.drawImage(hole.picture, hole.left - margin, hole.ground - hole.height / 2 - margin, hole.width + margin * 2, hole.height + margin * 2);
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+// Row number n: the figures that are this many rows further away than the bottom of the screen, with
+// the camera where it starts. What depends on where the camera is gets worked out when they're drawn.
+function buildRow(n) {
+  let size = bottomSize() * pow(ratio, n);
+
+  // The row is a strip wider than the screen, which the figures wrap round. It's worked out from the
+  // smallest a figure can look with its row in view, so they always wrap off screen.
+  let smallest = furthestInView() * (1 - (rowJitter * (1 - ratio)) / 2);
   let span = width / smallest + offScreen * 2;
   let count = Math.round(span / spacing);
 
   let people = [];
   for (let i = 0; i < count; i++) {
-    let person = n * 1000 + i;
+    let person = n * 10000 + i;
     // Stepping out of the row toward the camera makes a figure bigger, as well as lower down
     let stray = 1 + (hash(person + 0.25) - 0.5) * rowJitter * (1 - ratio);
-    let personSize = size * stray;
-
-    // The further away the ground has curled, the more the figures tip back with it
-    let distance = Math.max(0, Math.log(bottom / personSize));
-    let tipped = Math.cos(Math.min(distance * curlTip, 1.2));
-
-    // Thicker lines toward the front, and a little different for each figure
-    let thickness = Math.sqrt(Math.min(1, near)) + (hash(person + 0.35) - 0.5) * weightJitter;
-    let weight = constrain(Math.round(thickness * (lineWeights.length - 1)), 0, lineWeights.length - 1);
-
-    // The smallest size of the sheet that's still sharp for this figure
-    let level = constrain(Math.floor(Math.log2(resolution / (personSize * density))), 0, sheets.length - 1);
-    let sheetScale = resolution / 2 ** level;
-
     people.push({
-      size: personSize,
-      tipped,
-      ground: groundAt(personSize, bottom),
+      depth: Math.log(bottomSize() / (size * stray)),
+      weightStray: (hash(person + 0.35) - 0.5) * weightJitter,
       stepsPerSecond: lerp(walkSpeed[0], walkSpeed[1], hash(person + 0.75)) / stride,
       start: hash(person) * span,
       firstStep: Math.floor(hash(person + 0.5) * steps),
-      sheet: sheets[level],
-      sheetScale,
-      sheetY: weight * Math.round(frameHeight * resolution) / 2 ** level,
+      seenFrom: null,
     });
   }
 
   return {
     people,
     span,
+    depth: Math.log(bottomSize() / size),
     direction: n % 2 === 0 ? 1 : -1, // Every other row walks the other way
-    ground: groundAt(size, bottom),
-    size,
-    alpha: alpha * Math.min(1, pow(near, distanceFade)),
-    swell: waveHeight * near,
-    noiseRow: n * 0.3 + 100,
   };
 }
 
+// Work out how a figure looks from where the camera is now
+function lookAt(p, near, bottom) {
+  p.size = bottom * Math.exp(view.depth - p.depth);
+
+  // The further away the ground has curled, the more the figures tip back with it
+  let distance = Math.max(0, Math.log(bottom / p.size));
+  p.tipped = Math.cos(Math.min(distance * curlTip, 1.2));
+  p.ground = groundAt(p.size, bottom);
+
+  // Thicker lines toward the front, and a little different for each figure
+  let thickness = Math.sqrt(Math.min(1, near)) + p.weightStray;
+  let weight = constrain(Math.round(thickness * (lineWeights.length - 1)), 0, lineWeights.length - 1);
+
+  // The smallest size of the sheet that's still sharp for this figure
+  let level = constrain(Math.floor(Math.log2(resolution / (p.size * density))), 0, sheets.length - 1);
+  p.sheet = sheets[level];
+  p.sheetScale = resolution / 2 ** level;
+  p.sheetY = weight * Math.round(frameHeight * resolution) / 2 ** level;
+  p.seenFrom = view.depth;
+}
+
+// How big the figures in the furthest row in view look: it's either off the top of the screen or too
+// small to see
+function furthestInView() {
+  return Math.max(sizeAt(0), (furthestSize * height) / 900);
+}
+
 function draw() {
-  updateGateLights();
+  moveMouse();
+  placeHoles();
   background(255);
   let seconds = millis() / 1000;
   let ctx = drawingContext;
-  let brightest = Math.max(...gates.map((gate) => gate.light));
-  if (brightest > 0) {
-    ctx.setTransform(density, 0, 0, density, 0, 0);
-    ctx.globalAlpha = brightest;
-    ctx.fillStyle = worldShade;
-    ctx.fillRect(0, 0, width, height);
-  }
-  let swellTime = seconds * waveSpeed;
   let cellWidth = Math.round(frameWidth * resolution); // How wide a picture is on the full-size sheet
   let cellHeight = Math.round(frameHeight * resolution);
+  let bottom = bottomSize();
+  let mouseGround = groundAt(sizeOf(mouse.depth), bottom);
 
-  let nextGate = 0;
-  for (let row of rows) {
-    // Everyone drawn so far is further away than the foot of the next gate, so behind it
-    while (nextGate < gates.length && row.ground > gates[nextGate].bottom - 1) {
-      showGate(ctx, gates[nextGate]);
-      nextGate++;
+  // The rows in view, out to the furthest, and in to the last with anything still showing above the
+  // bottom of the screen
+  let sizeOfRow = (n) => bottom * Math.exp(view.depth + n * Math.log(ratio));
+  let middleRow = Math.ceil(view.depth / -Math.log(ratio));
+  let furthest = middleRow;
+  while (sizeOfRow(furthest) > furthestInView()) furthest++;
+  let nearest = middleRow;
+  while (groundAt(sizeOfRow(nearest), bottom) - feetY * sizeOfRow(nearest) < height) nearest--;
+
+  let mouseShown = false;
+  let nextSign = 0;
+  // The furthest row first, so the nearer ones walk in front of it
+  for (let n = furthest; n >= nearest; n--) {
+    let row = rowAt(n);
+    let rowSize = sizeOf(row.depth);
+    let rowGround = groundAt(rowSize, bottom);
+    let near = rowSize / bottom; // 1 at the bottom of the screen, smaller in the distance
+    // Everyone drawn so far is further away than the next signpost, so behind it
+    while (nextSign < holes.length && rowGround > holes[nextSign].ground) {
+      showSign(ctx, holes[nextSign]);
+      nextSign++;
     }
-    ctx.globalAlpha = row.alpha;
+    // Likewise for the mouse
+    if (!mouseShown && rowGround > mouseGround) {
+      showMouse(ctx, seconds);
+      mouseShown = true;
+    }
+    ctx.globalAlpha = alpha * Math.min(1, pow(near, distanceFade));
     let span = row.span;
     for (let p of row.people) {
       // Each figure walks at its own speed, and only moves when its walk cycle moves on, by
       // exactly as far as its planted foot slides back, so that foot stays put on the ground
       let walked = Math.floor(p.stepsPerSecond * seconds);
-      let along = p.start + walked * stride * row.direction;
-      let x = width / 2 + ((((along % span) + span) % span) - span / 2) * p.size;
+      let along = p.start + walked * stride * row.direction - view.x;
+      let size = bottom * Math.exp(view.depth - p.depth);
+      let x = width / 2 + (((((along % span) + span) % span) - span / 2)) * size;
+      if (x < -frameWidth * size || x > width + frameWidth * size) continue;
 
-      // Figures in the far distance are too small for the swells to show
-      let feet = p.ground;
-      if (row.swell > 1) feet += (noise(x * waveScale + 100, row.noiseRow, swellTime) - 0.5) * 2 * row.swell;
-
+      if (p.seenFrom !== view.depth) lookAt(p, near, bottom);
       let scaleDown = p.sheetScale / resolution;
-      ctx.setTransform(row.direction * p.size * density, 0, 0, p.size * p.tipped * density, x * density, feet * density);
+      ctx.setTransform(row.direction * size * density, 0, 0, size * p.tipped * density, x * density, p.ground * density);
       ctx.drawImage(
         p.sheet,
         ((walked + p.firstStep) % steps) * cellWidth * scaleDown, p.sheetY, cellWidth * scaleDown, cellHeight * scaleDown,
@@ -275,109 +519,28 @@ function draw() {
       );
     }
   }
-  while (nextGate < gates.length) {
-    showGate(ctx, gates[nextGate]);
-    nextGate++;
+  while (nextSign < holes.length) {
+    showSign(ctx, holes[nextSign]);
+    nextSign++;
   }
+  if (!mouseShown) showMouse(ctx, seconds);
+  // The holes go over everyone, in a way that shows them walking across, in white (see showHole())
+  for (let hole of holes) showHole(ctx, hole);
   ctx.setTransform(density, 0, 0, density, 0, 0);
   ctx.globalAlpha = 1;
 }
 
-// Fade each gate's light on while the mouse is over it, and off when it isn't. As the transition's
-// video fades in behind everything (see fade_link.js), the lights fade out at the same pace, since
-// the white then lets the video through anyway.
-function updateGateLights() {
-  let fading = document.body.classList.contains('fading');
-  let change = deltaTime / 1000 / (fading ? 4.5 : lightTime);
-  for (let gate of gates) {
-    let on = !fading && gate.link.matches(':hover');
-    gate.light = constrain(gate.light + (on ? change : -change), 0, 1);
-  }
-}
-
-// How wide and tall a video or image is, once it's ready to be drawn (or null until then)
-function mediaSize(media) {
-  if (!media) return null;
-  if (media.videoWidth) return media.readyState >= 2 ? { width: media.videoWidth, height: media.videoHeight } : null;
-  return media.naturalWidth ? { width: media.naturalWidth, height: media.naturalHeight } : null;
-}
-
-// A gate: see-through white with its light inside, its outline and post holes on top, and the
-// light's reflection on the ground in front of it
-function showGate(ctx, gate) {
-  ctx.setTransform(density, 0, 0, density, 0, 0);
-  ctx.globalAlpha = gateAlpha;
-  ctx.fillStyle = 'white';
-  ctx.fillRect(gate.left, gate.top, gate.width, gate.height);
-
-  let size = mediaSize(gate.media);
-  if (gate.light > 0 && size) {
-    // The middle of the picture, keeping its proportions, to fill the gate
-    let fit = Math.max(gate.width / size.width, gate.height / size.height);
-    let crop = { width: gate.width / fit, height: gate.height / fit };
-    crop.x = (size.width - crop.width) / 2;
-    crop.y = (size.height - crop.height) / 2;
-    ctx.globalAlpha = gate.light * lightColour;
-    ctx.drawImage(gate.media, crop.x, crop.y, crop.width, crop.height, gate.left, gate.top, gate.width, gate.height);
-    paintGlow(gate, crop);
-    showGlow(ctx, gate);
-  }
-
-  let margin = (gateMargin * gate.width) / gatePen.width;
+// The mouse, drawn facing whichever way it's going (see moveMouse())
+function showMouse(ctx, seconds) {
+  let bigger = sizeOf(mouse.depth);
+  let action = mouse.walking ? mouseWalking : mouse.bow > 0 ? mouseLowering : mouseSitting;
+  let step = mouse.walking ? mouse.walked : action === mouseLowering ? mouse.bow * (mouseSteps - 1) : seconds * mouseSwings;
+  let cellWidth = mouseSheet.width / mouseSteps;
+  let cellHeight = mouseSheet.height / (mouseViews * mouseActions);
+  let size = bigger * mouseScale * (1 - (mouse.falling ?? 0)); // Dropping into a hole, it gets smaller
   ctx.globalAlpha = 1;
-  ctx.drawImage(gate.picture, gate.left - margin, gate.top - margin, gate.width + margin * 2, gate.height + margin * 2);
-  ctx.globalAlpha = 1;
-}
-
-// The light reflecting off the ground: the bottom half of what's in the gate, upside down, fading
-// out into the distance from its foot and off to the sides
-function paintGlow(gate, crop) {
-  if (!glow) {
-    glow = document.createElement('canvas').getContext('2d');
-    glow.canvas.width = 64;
-    glow.canvas.height = 32;
-  }
-  let w = glow.canvas.width;
-  let h = glow.canvas.height;
-  glow.globalCompositeOperation = 'source-over';
-  glow.clearRect(0, 0, w, h);
-  glow.save();
-  glow.translate(0, h);
-  glow.scale(1, -1);
-  glow.drawImage(gate.media, crop.x, crop.y + crop.height / 2, crop.width, crop.height / 2, 0, 0, w, h);
-  glow.restore();
-
-  glow.save();
-  glow.globalCompositeOperation = 'destination-in';
-  glow.translate(w / 2, 0);
-  glow.scale(w / 2, h);
-  let fade = glow.createRadialGradient(0, 0, 0, 0, 0, 1);
-  fade.addColorStop(0, 'rgba(0, 0, 0, 1)');
-  fade.addColorStop(0.25, 'rgba(0, 0, 0, 0.45)');
-  fade.addColorStop(0.6, 'rgba(0, 0, 0, 0.1)');
-  fade.addColorStop(1, 'rgba(0, 0, 0, 0)');
-  glow.fillStyle = fade;
-  glow.fillRect(-1, 0, 2, 1);
-  glow.restore();
-
-  // It starts as wide as the gate's foot, and spreads out from there
-  let foot = (w * (1 - 1 / glowWidth)) / 2;
-  glow.globalCompositeOperation = 'destination-out';
-  glow.beginPath();
-  glow.moveTo(0, 0);
-  glow.lineTo(foot, 0);
-  glow.lineTo(0, h * 0.7);
-  glow.moveTo(w, 0);
-  glow.lineTo(w - foot, 0);
-  glow.lineTo(w, h * 0.7);
-  glow.fill();
-}
-
-// Draw the reflection out from a gate's foot, along the ground in front of it
-function showGlow(ctx, gate) {
-  let spread = gate.width * glowWidth;
-  ctx.globalAlpha = gate.light * glowAlpha;
-  ctx.drawImage(glow.canvas, gate.left + (gate.width - spread) / 2, gate.bottom, spread, gate.height * glowLength);
+  ctx.setTransform(mouse.facing * size * density, 0, 0, size * density, screenX(mouse.x, bigger) * density, groundAt(bigger, bottomSize()) * density);
+  ctx.drawImage(mouseSheet, (Math.floor(step) % mouseSteps) * cellWidth, (mouse.view * mouseActions + action) * cellHeight, cellWidth, cellHeight, -mouseFeetX, -mouseFeetY, mouseWidth, mouseHeight);
 }
 
 // How far down the screen the ground is under a figure of this size.

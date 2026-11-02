@@ -12,7 +12,7 @@
 import p5 from 'p5';
 import { boatGrey } from './color.js';
 
-const TILT = 0.35; // How far above the water we're looking from (radians)
+const TILT = 0.4; // How far above the water we're looking from (radians)
 const SIN_TILT = Math.sin(TILT);
 
 export default class Boat {
@@ -168,7 +168,7 @@ export default class Boat {
     // Keep the boat a sensible size for the window, and shrink it as it moves away up the screen
     let further = this.position.y / this.home.y; // Under 1 = further away than home, over 1 = closer
     let shrink = constrain(1 + (further - 1) * this.depthShrink, 0.5, 1.5);
-    this.length = Math.min(width, height / 2, 1100) * 0.59 * shrink;
+    this.length = Math.min(width, height / 2, 1100) * 0.5 * shrink;
 
     this.stern = this.onScreen(-0.45, 0);
     this.bow = this.onScreen(0.45, 0);

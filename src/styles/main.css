@@ -164,67 +164,42 @@ ul {
 }
 
 
-/* The link in the middle of the art landing page: pressing it fades a video in behind the crowd
-   (see src/scripts/fade_link.js) */
+/* The holes in the art landing page's ground, with their signposts: the sketch draws them (see
+   showHole() and showSign() in art_walk.js), and moves these links to match */
 
-.gate {
+.art-hole {
   position: fixed;
   z-index: 1;
-  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: max-content;
+  transform: translate(-50%, -100%);
   color: black;
   font-family: 'Major Mono Display', monospace;
   text-decoration: none;
 }
 
-/* The gates: the sketch draws them, here, among the crowd (see showGate() in art_walk.js), and
-   sizes these to match */
-
-.gate-frame {
-  display: block;
-  padding: 10% 6% 0;
+.art-hole-name {
+  padding: 0.35em 0.7em;
+  max-width: max(30vw, 190px);
+  line-height: 1.2;
   text-align: center;
 }
 
-.gate-name {
+.art-hole:hover .art-hole-name,
+.art-hole:focus-visible .art-hole-name {
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
-  line-height: 1.3;
 }
 
-/* With a mouse, a gate's name shows in the middle of the screen while it's over it. Without one,
-   there's no hovering, so the names stay on the gates. */
-
-.gate-title {
-  position: fixed;
-  top: 50%;
-  left: 0;
-  right: 0;
-  transform: translateY(-50%);
-  z-index: 1;
-  padding: 0 16px;
-  color: black;
-  font-family: 'Major Mono Display', monospace;
-  font-size: clamp(32px, 5vw, 72px);
-  text-align: center;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.3s;
+.art-hole-mouth {
+  display: block;
 }
 
-.gate-title.showing {
-  opacity: 1;
-}
 
-@media (hover: hover) {
-  .gate-name {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-  }
-}
+/* Fades a video in behind the crowd (see src/scripts/fade_link.js) */
 
 .fade-background {
   position: fixed;
@@ -248,13 +223,10 @@ ul {
 
 .fading .navbar,
 .fading .navbar a,
-.fading .gate,
 .fading .art-list-link {
   transition: background-color 1.5s, border-color 1.5s, color 1.5s, opacity 1.5s;
 }
 
-.fading.leaving .gate-title,
-.fading.leaving .gate,
 .fading.leaving .art-list-link {
   opacity: 0;
   pointer-events: none;

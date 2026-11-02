@@ -8,13 +8,14 @@
 // the camera. The wake pushes them aside where it passes (see Wake.pushAt()), and the boat
 // drags them along as it sails across them; they spring back afterwards (see pull()). Wherever
 // the boat pulls a line, ripples run outward along it both ways (see rippleAt()), further the
-// faster the boat's going. Under the wake, the lines are only black or flickers of colour.
+// faster the boat's going, and tall enough to throw it across its neighbours. Under the wake,
+// the lines are only black or flickers of white.
 //
 // The points along each line are fixed to the water, not the screen (every `step` pixels of
 // water), so a bit of line that's been dragged stays dragged as it scrolls past.
 
 import p5 from 'p5';
-import { grey, colour } from './color.js';
+import { grey } from './color.js';
 import { depth } from './perspective.js';
 
 export default class Water {
@@ -29,6 +30,7 @@ export default class Water {
     this.step = 10; // Pixels between the points along each line
     this.distantBelow = 0.25; // Lines nearer the horizon than this (0 to 1) only need every other point
     this.top = 40; // No lines higher than this up the screen
+    this.thinnerBehind = 0.8; // How thick the lines behind the boat are, compared to if they kept growing toward the camera
     this.band = 0.45; // How far a line can move toward its neighbours (0.5 = halfway, so under that they never cross)
     this.pullStrength = 2.5; // How hard the boat drags the lines along with it
     this.maxPull = 500; // Furthest (in pixels) a bit of line can be dragged
@@ -37,19 +39,25 @@ export default class Water {
 
     // Ripples that run along a line, outward both ways from where the boat pulled it
     this.rippleSpeed = 5; // Pixels per frame
-    this.rippleWavelength = 50; // Pixels from one crest to the next
-    this.rippleLength = 150; // How long each run of ripples is, in pixels
-    this.rippleHeight = 12; // How tall, in pixels, near the bottom of the screen
+    this.rippleWavelength = 90; // Pixels from one crest to the next
+    this.rippleLength = 220; // How long each run of ripples is, in pixels
+    this.rippleHeight = 22; // How tall, in pixels, near the bottom of the screen
+    this.rippleHeadStart = 10; // How far along its length a ripple already is when it starts, so the waves are at full height close to the boat
     this.rippleLife = 120; // How many frames until they've died away, with the boat at its usual top speed (faster goes further)
     this.rippleEvery = 4; // While the boat keeps pulling a line, a new ripple this often (frames)
+    this.rippleVariety = 0.18; // How different each line's ripples are from its neighbours' (0 = all the same)
+    this.rippleChop = 0.2; // How tall the smaller, faster waves on top of the ripples are, compared to the ripples
+    this.rippleGusts = 0.012; // How long the stretches of bigger and smaller ripples are (smaller = longer)
+    this.rippleRoom = 0.7; // How far ripples can lift a line, in gaps between lines (over 0.5, they cross its neighbours)
     this.ripples = []; // { line, x (on the water), born (frameCount), strength (0 to 1), life }
     this.lastRipple = new Map(); // Line number -> when it last sent out a ripple
 
-    // Under the wake, short segments of the lines flicker on in colour
+    // Under the wake, short segments of the lines flicker on in white
     this.segmentLengths = [1, 2, 4, 8]; // How many points are in a segment, from right behind the boat to the far end of the wake
-    this.flickerEvery = 12; // How many frames a segment holds before it can change (bigger = calmer)
-    this.colourNear = 0.04; // How likely a segment is to be in colour, right behind the boat
-    this.colourFar = 0.8; // ...and at the far end of the wake
+    this.flickerEvery = 24; // How many frames a segment holds before it can change (bigger = calmer)
+    this.whiteNear = 0; // How likely a segment is to be on, right behind the boat
+    this.whiteFar = 0; // ...and at the far end of the wake
+    this.ragged = 700; // The furthest (in pixels) a line reaches into the dark water from either side, at the far end of the wake
 
     // How far each point of each line has been dragged by the boat. Keyed by line and point
     // number (see key()), so it sticks to the water; points that haven't been dragged (or have
@@ -168,28 +176,46 @@ export default class Water {
   // The boat sends out a ripple every few frames while it's on a line. Each one spreads out
   // both ways from where it started (it only depends on the distance from there), swelling
   // up and fading over its length, and dying away as it gets older. Together they add up to
-  // one steady train of waves, because they all share the same rhythm: the waves are timed
-  // by frameCount, not by when each ripple started.
+  // one steady train of waves, because on any one line they all share the same rhythm: the
+  // waves are timed by frameCount, not by when each ripple started.
   //
   // That's what makes an angled crossing look natural. The starting point slides along the
   // line with the boat, so the waves ahead of it (the way it's heading) get bunched up, and
   // the ones behind get stretched out, like the sound of a passing car (the Doppler effect).
-  rippleAt(lineRipples, wx) {
+  //
+  // Each line has its own speed, wavelength, height and starting phase (see rippleStyle()), so
+  // neighbouring lines are out of step, and noise makes them swell and die along the way, which
+  // together is what makes the water look churned up rather than combed.
+  rippleAt(lineRipples, wx, style) {
     // Ripples overlap a lot, so each one only adds a share, sized so that together they make
     // waves about rippleHeight tall
-    let share = (PI * this.rippleEvery * this.rippleSpeed) / (2 * this.rippleLength);
+    let share = (PI * this.rippleEvery * style.speed) / (2 * this.rippleLength);
     let lift = 0;
     for (let r of lineRipples) {
       let age = frameCount - r.born;
       let distance = Math.abs(wx - r.x);
-      let behindFront = age * this.rippleSpeed - distance; // How far behind the leading edge
+      let behindFront = age * style.speed + this.rippleHeadStart - distance; // How far behind the leading edge
       if (behindFront <= 0 || behindFront > this.rippleLength) continue;
       let swell = Math.sin((PI * behindFront) / this.rippleLength);
       let fade = 1 - age / r.life;
-      let wave = Math.sin((TWO_PI * (frameCount * this.rippleSpeed - distance)) / this.rippleWavelength);
+      let crest = (frameCount * style.speed - distance) / style.wavelength;
+      let wave = Math.sin(TWO_PI * crest + style.phase) + this.rippleChop * Math.sin(TWO_PI * crest * 1.6 - style.phase);
       lift += wave * swell * fade * r.strength * share;
     }
-    return lift * this.rippleHeight;
+    let gust = 2 * noise(wx * this.rippleGusts, style.seed, frameCount * 0.015);
+    return lift * style.height * gust * gust;
+  }
+
+  // What makes line number n's ripples different from its neighbours'
+  rippleStyle(n) {
+    let vary = (salt) => 1 + (this.hash(n + salt) * 2 - 1) * this.rippleVariety;
+    return {
+      speed: this.rippleSpeed * vary(0.1),
+      wavelength: this.rippleWavelength * vary(0.2),
+      height: this.rippleHeight * vary(0.3),
+      phase: this.hash(n + 0.4) * TWO_PI,
+      seed: n * 0.7,
+    };
   }
 
   // Line number n's height on the screen: the bottom of the screen when n equals
@@ -239,24 +265,32 @@ export default class Water {
       let near = depth(y) / 0.8; // 1 at the bottom of the screen, smaller in the distance
       let bright = this.alpha * pow(near, this.distanceFade);
 
-      strokeWeight(weight * near);
+      // Thinner behind the boat, easing in just past it
+      strokeWeight(weight * near * lerp(1, this.thinnerBehind, constrain((y - boatY) / 60, 0, 1)));
       let shade = (((n * 0.137) % 1) + 1) % 1; // Each line its own shade
       let lineRipples = ripplesOn.get(n);
+      let style = lineRipples ? this.rippleStyle(n) : null;
 
       // This line's band: it can move up or down a little under halfway to the lines either
       // side of it. Every line keeps to its own band, so they never cross, however hard the
-      // boat drags them or the waves and ripples lift them.
+      // boat drags them or the waves lift them. Only ripples can carry it out of its band.
       let roomUp = (y - this.lineY(n + 1)) * this.band;
       let roomDown = (this.lineY(n - 1) - y) * this.band;
+      let rippleRoom = ((roomUp + roomDown) / (2 * this.band)) * this.rippleRoom;
+
+      // How far this line reaches into the dark water from each side, so its edge is uneven:
+      // mostly not far, now and then a long way
+      let reachLeft = this.ragged * this.hash(n + 0.6) ** 2;
+      let reachRight = this.ragged * this.hash(n + 0.7) ** 2;
 
       // Tiny distant lines look just the same with half the points
       let stride = near < this.distantBelow ? 2 : 1;
       let start = stride === 2 ? Math.floor(first / 2) * 2 : first;
 
       // The line is drawn in pieces, one for each stretch that's the same: plain line, a
-      // segment of colour, or hidden under the wake
+      // segment of white, or hidden under the wake
       let pieceOn = -1; // Whether the piece being drawn shows: 1 or 0 (-1 = none yet)
-      let pieceColour = null; // Which segment of colour the piece being drawn is (null = none)
+      let pieceWhite = null; // Which segment of white the piece being drawn is (null = none)
       let hasPrevious = false;
       let previousX = 0;
       let previousY = 0;
@@ -265,7 +299,6 @@ export default class Water {
         let x = this.pointX(i);
         let wave = (noise(i * this.step * this.waveScale, n * 0.3, fc * this.waveSpeed) - 0.5) * 2;
         let wy = y + wave * this.waveHeight * near;
-        if (lineRipples) wy -= this.rippleAt(lineRipples, i * this.step) * near;
         // Dragged along by the boat, and pushed aside by the wake
         let offset = this.dragged.get(this.key(n, i));
         if (offset) {
@@ -278,27 +311,30 @@ export default class Water {
         let moved = wy - y;
         let room = moved < 0 ? roomUp : roomDown;
         wy = y + room * Math.tanh(moved / room);
+        if (lineRipples) wy -= rippleRoom * Math.tanh((this.rippleAt(lineRipples, i * this.step, style) * near) / rippleRoom);
 
-        // Under the wake it's black or colour, and much more likely to be in colour the further
+        // Under the wake it's black or white, and much more likely to be white the further
         // behind the boat it is. It flickers as one with the rest of its segment: segments are
         // short right behind the boat, and longer further back.
         let inside = wake.isInside(x, wy);
+        let far = inside ? Math.min(1, Math.hypot(x - boatX, wy - boatY) / wake.maxLength) : 0;
+        // It carries on into the dark water for a while, more the further behind the boat it is
+        if (inside) inside = wake.isInside(x - reachLeft * far, wy) && wake.isInside(x + reachRight * far, wy);
         let on = 1;
-        let colourPiece = null;
+        let whitePiece = null;
         if (inside) {
-          let far = Math.min(1, Math.hypot(x - boatX, wy - boatY) / wake.maxLength);
           let sizes = this.segmentLengths;
           let size = Math.min(Math.floor(far * sizes.length), sizes.length - 1);
           let segmentKey = this.key(n, Math.floor(i / sizes[size]) * sizes.length + size);
           // Each segment holds for a moment before it can change, at its own time, so it doesn't strobe
           let beat = Math.floor((fc + this.hash(segmentKey) * this.flickerEvery) / this.flickerEvery);
-          if (this.hash(segmentKey + beat * 0.61) < lerp(this.colourNear, this.colourFar, far * far)) colourPiece = segmentKey;
+          if (this.hash(segmentKey + beat * 0.61) < lerp(this.whiteNear, this.whiteFar, far * far)) whitePiece = segmentKey;
           else on = 0;
         }
 
         // Start a new piece of line whenever that changes, joined to the last point. Where the
         // line goes into or comes out of the V, end or start it exactly on the V's arm.
-        if (on !== pieceOn || colourPiece !== pieceColour) {
+        if (on !== pieceOn || whitePiece !== pieceWhite) {
           let onArm = hasPrevious && inside !== previousInside ? wake.crossing(previousX, previousY, x, wy) : null;
           if (pieceOn > 0) {
             if (onArm) vertex(onArm.x, onArm.y);
@@ -306,9 +342,9 @@ export default class Water {
             endShape();
           }
           pieceOn = on;
-          pieceColour = colourPiece;
+          pieceWhite = whitePiece;
           if (on > 0) {
-            if (colourPiece !== null) stroke(colour(this.hash(colourPiece), bright));
+            if (whitePiece !== null) stroke(255, bright);
             else stroke(grey(shade, bright));
             beginShape();
             if (onArm) vertex(onArm.x, onArm.y);
