@@ -2,15 +2,52 @@
 <html>
 
 <head>
-  <title>Installations – Ofer Shouval</title>
+  <title>Selected Installations – Ofer Shouval</title>
   <!-- @include head.html -->
 </head>
 
 <body bgcolor="#171717">
   <!-- @include navbar.html -->
 
+  <!-- After what was projected in Sun Deity (see src/sketches/sun_deity.js) -->
+  <section class="sun-opening">
+    <canvas class="sun-field" aria-hidden="true"></canvas>
+    <h1>selected installations</h1>
+  </section>
+
   <main class="page">
-    <h1>installations</h1>
+    <section class="feature">
+      <h2>sun deity</h2>
+      <p>
+        “Sun Deity” is an interactive installation that puts the audience in charge of an algorithmically generated ‘sun’.
+      </p>
+      <p>
+        Using a gestural controller, the user can manipulate the movement and flow of the particle field
+        which is projected onto a fluorescent acrylic sheet that hangs from the ceiling.
+      </p>
+      <p>
+        'Sun Deity’ is about the thrill of creation, the burning sense of power that
+        occurs when an artist (or any variety of creative human) senses that they’ve accessed something interesting.
+      </p>
+      <p>
+        However, its two-dimensional form and artificial materiality serve to undercut these notions, suggesting instead that this
+        particular set of human experiences can sometimes prove flatter and more vapid than we like to think.
+      </p>
+      <dl class="specs">
+        <dt>year</dt>
+        <dd>2019</dd>
+        <dt>type</dt>
+        <dd>interactive installation</dd>
+        <dt>materials</dt>
+        <dd>fluorescent acrylic sheet, projector, handheld gestural controller</dd>
+        <dt>software</dt>
+        <dd>TouchDesigner</dd>
+      </dl>
+      <div class="container">
+        <iframe class="responsive-iframe" data-vimeo="569220387" title="Sun Deity (2019)" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>
+      </div>
+    </section>
+
 
     <div class="card-grid">
       <a class="card" href="/art/ghost-harp.html">
@@ -41,6 +78,7 @@
       </a>
     </div>
   </main>
+  <script type="module" src="/src/sketches/sun_deity.js"></script>
 </body>
 
 </html>
