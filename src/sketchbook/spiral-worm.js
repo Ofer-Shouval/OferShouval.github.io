@@ -343,6 +343,8 @@ export default function spiralWorm(p, container) {
     canvas.mouseReleased(roseBurst);
   };
 
+  p.windowResized = () => p.resizeCanvas(container.clientWidth, container.clientHeight);
+
   p.draw = () => {
     const dt = Math.min(p.deltaTime / 1000, 0.1);
     seconds += dt;

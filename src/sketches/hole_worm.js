@@ -33,7 +33,8 @@ const ease = (amount) => amount * amount * (3 - 2 * amount);
 
 if (noteWasLeft() && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
   const canvas = document.createElement('canvas');
-  canvas.style.cssText = 'position:fixed;inset:0;z-index:2;pointer-events:none';
+  // As big as the window, whatever its pixels (it has more of them on a sharp screen, so it'd be shown bigger otherwise)
+  canvas.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;z-index:2;pointer-events:none';
   document.body.append(canvas);
   const context = canvas.getContext('2d');
   const density = window.devicePixelRatio || 1;

@@ -1,4 +1,5 @@
 import p5 from 'p5';
+import spiralWorm from './spiral-worm.js';
 import { soundButton, startAudio, soundWanted, onSoundChange } from '../scripts/sound.js';
 
 // The sketchbook as one continuous piece: old sketches that turn into each other on the same canvas.
@@ -8,9 +9,10 @@ import { soundButton, startAudio, soundWanted, onSoundChange } from '../scripts/
 // closes in as a circle from the corners, like a tunnel, more quickly if the worm's boosting. The flowers and the
 // worm carry on as they were while shrinking away, into the array, with the worm's head pulled more and more to the
 // middle and the array getting closer to static. When the worm's a few pixels wide, the array absorbs it, and it cuts
-// to the noisy spiral bursting out, white on black, with lightning, some of it in the colours of the Luminin. It grows
-// off the screen as its lines pile up, until the screen's white, and then it's on to the art page, which is white too.
-// The skip link at the bottom goes straight there.
+// to the noisy spiral bursting out, white on black, with lightning, some of it in the colours of the Luminin. That last
+// stage is a sketch of its own, spiral-worm.js, which this hands the screen over to: the spiral unwinds into a worm,
+// which flies into a portal, and then it's on to the art page. The skip link at the bottom goes straight there.
+// (The noisy spiral's drawing here, and its ending, growing off the screen to white, aren't used any more.)
 //
 // Playing moves it along (see screensToNext), and it carries on slowly by itself if nobody's playing
 // (see secondsToNext). Psychworm moves on when it's clicked, by flying through a flower: each of its segments turns into
@@ -51,7 +53,8 @@ const stages = [
   },
   {
     name: 'noisy spiral',
-    hint: 'let go of the mouse for a rose',
+    hint: 'click for lightning, let go for a rose',
+    sketch: spiralWorm, // The stage is this sketch, which takes over the screen (see handOver())
     settings: { length: 70, flat: 0, box: 0, scatter: 0, wash: 255, washHeld: 255, low: 100, whiteHeld: 0, body: 0, grid: 0, bloom: 0, ground: 0, space: 0, spiral: 1, pixels: 0, curves: 0, coil: 1, noisy: 1 },
   },
 ];
@@ -319,6 +322,7 @@ export default function flow(p, container) {
   let seconds = 0;
   let leaving = false; // Has it gone on to the art page?
   let begun = false; // Has someone pressed to begin, past the welcome?
+  let handedOver = false; // Has a stage that's a sketch of its own taken over the screen? (see handOver())
   let formAt = null; // Where it was pressed, while the worm's forming there (see formRound)
   let formStart = 0;
   let headSeen = null; // Where the worm's head was going to be last frame, before being moved to where it's forming
@@ -1035,6 +1039,7 @@ export default function flow(p, container) {
   }
 
   function goTo(index) {
+    if (handedOver) return; // Another sketch has the screen now
     if (index >= stages.length) {
       if (!leaving) location.href = after;
       leaving = true;
@@ -1075,6 +1080,21 @@ export default function flow(p, container) {
 
     if (begun) showCaption(name, hintWithoutCamera && !cameraReady() ? hintWithoutCamera : hint);
     history.replaceState(null, '', `#${slug(name)}`);
+    if (stages[current].sketch) handOver(stages[current].sketch);
+  }
+
+  // A stage that's a sketch of its own takes over the screen: this one stops, and that one starts in its place, with
+  // the captions, the sound switch and the skip link staying as they are
+  function handOver(sketch) {
+    handedOver = true;
+    clip.pause();
+    // Once this frame's done. The page keeps resizing this one (see src/scripts/sketchbook.js), so that's turned off,
+    // and the next one keeps itself the size of the screen.
+    requestAnimationFrame(() => {
+      p.resizeCanvas = () => {};
+      p.remove();
+      new p5((next) => sketch(next, container), container);
+    });
   }
 
 
@@ -1497,6 +1517,7 @@ export default function flow(p, container) {
   };
 
   p.draw = () => {
+    if (handedOver) return;
     const dt = Math.min(p.deltaTime / 1000, 0.1); // So coming back to the tab doesn't jump ahead
     seconds += dt;
     pathTime += dt * p.lerp(1, fieldPace, Math.max(now.bloom, tunnel)) * forwardMotion();
