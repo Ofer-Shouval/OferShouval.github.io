@@ -1,4 +1,5 @@
 import p5 from 'p5';
+import { soundButton, startAudio, soundWanted, onSoundChange } from '../scripts/sound.js';
 
 // The sketchbook as one continuous piece: old sketches that turn into each other on the same canvas.
 //
@@ -8,19 +9,23 @@ import p5 from 'p5';
 // worm carry on as they were while shrinking away, into the array, with the worm's head pulled more and more to the
 // middle and the array getting closer to static. When the worm's a few pixels wide, the array absorbs it, and it cuts
 // to the noisy spiral bursting out, white on black, with lightning, some of it in the colours of the Luminin. It grows
-// off the screen as its lines pile up, until the screen's white, and the curves come in on that. They fade into the
-// water where it began.
+// off the screen as its lines pile up, until the screen's white, and then it's on to the art page, which is white too.
+// The skip link at the bottom goes straight there.
 //
 // Playing moves it along (see screensToNext), and it carries on slowly by itself if nobody's playing
 // (see secondsToNext). Psychworm moves on when it's clicked, by flying through a flower: each of its segments turns into
 // a flower as it passes through, and it carries on through a field of them. Each sketch also has its own file in this folder (wake.js, psychworm.js,
-// flowers.js, pixel-array.js, noisy-spiral.js, and curves.js and finger-aulos.js, which are one stage here). Boxyworm and linear boil aren't stages at the
+// flowers.js, pixel-array.js, noisy-spiral.js, and curves.js and finger-aulos.js). Curves, boxyworm and linear boil aren't stages at the
 // moment, but their settings and drawing are still here. This file has its own blended version of them, so changing
 // one of those files doesn't change this piece.
 //
-// The line in art/sketchbook/index.html offers the camera and sound on the first stage, until it's
-// answered. Any stage can use them: cameraReady() says whether `video` has a picture, and `sound` is
-// an AudioContext once it's been turned on, which stays silent while it's switched off.
+// It opens on the first stage with a welcome that fades in and out (see .flow-intro in main.css), and waits there
+// until someone presses, anywhere, which begins the journey into the next stage.
+//
+// The speaker at the bottom turns the sound on and off, for the whole site (see src/scripts/sound.js). Any stage
+// can use it: `sound` is an AudioContext once it's been turned on, which stays silent while it's switched off. The camera isn't offered at the
+// moment, but cameraReady() says whether `video` has a picture, for stages that use it (curves, linear boil).
+// They work without it.
 
 const stages = [
   {
@@ -49,17 +54,26 @@ const stages = [
     hint: 'let go of the mouse for a rose',
     settings: { length: 70, flat: 0, box: 0, scatter: 0, wash: 255, washHeld: 255, low: 100, whiteHeld: 0, body: 0, grid: 0, bloom: 0, ground: 0, space: 0, spiral: 1, pixels: 0, curves: 0, coil: 1, noisy: 1 },
   },
-  {
-    name: 'curves',
-    hint: 'open and close your fingers to play, with the sound on',
-    hintWithoutCamera: 'turn the camera on to play it with your hands',
-    settings: { length: 70, flat: 0, box: 0, scatter: 0, wash: 255, washHeld: 255, low: 100, whiteHeld: 0, body: 0, grid: 0, bloom: 0, ground: 255, space: 0, spiral: 0, pixels: 0, curves: 1, coil: 0, noisy: 0 },
-  },
 ];
+// The curves stage, played with your hands, for when it's put back in:
+// {
+//   name: 'curves',
+//   hint: 'open and close your fingers to play, with the sound on',
+//   hintWithoutCamera: 'turn the camera on to play it with your hands',
+//   settings: { length: 70, flat: 0, box: 0, scatter: 0, wash: 255, washHeld: 255, low: 100, whiteHeld: 0, body: 0, grid: 0, bloom: 0, ground: 255, space: 0, spiral: 0, pixels: 0, curves: 1, coil: 0, noisy: 0 },
+// },
+const after = '/art/'; // Where it goes after the last stage
 
 const morphTime = 2.5; // How quickly the settings drift to the next stage's, in seconds (bigger = slower)
+// Pressing to begin forms the worm where it was pressed: the wake's scattered all over the screen, so first it gathers
+// into a circle around there, then into the worm, which then drifts off from there on its own way
+const formRound = 0.3; // How far into turning into the worm the wake's become a circle, from 0 to 1
+const formRadius = 0.45; // How big the circle is, as a share of the smaller side of the screen
+const formTime = 7; // How many seconds the worm takes to drift from where it formed onto its own way
 const screensToNext = 25; // How far the pointer travels to reach the next stage, in lengths of the screen's diagonal
-const secondsToNext = 45; // How long a stage lasts if nobody plays with it
+const stageSeconds = 15; // Roughly how long each stage lasts if nobody plays with it (the first waits to be pressed). The
+// stages that end in their own ways are timed to it: see ringLongest, arrayTime, wormShrink and stageSeconds below.
+const secondsToNext = stageSeconds; // How long a stage lasts if nobody plays with it, unless it has its own `seconds`
 const idleTime = 5; // How many seconds after the pointer stops before the sketch starts moving by itself
 // In space, the worm weaves along by itself and the camera follows just above and behind it
 const weaveSpeed = 0.2; // How quickly it weaves (smaller = slower)
@@ -76,12 +90,12 @@ const cameraAbove = 0.5; // How far the camera is above it, as a share of the sc
 const bodyScale = 2; // How big it's drawn, compared to its size when it isn't in space
 // In space a flower waits up ahead, labelled, with the next stage to be seen through its middle. A click, or
 // enough time going by, brings it toward the camera, the worm goes through its middle, and that leads to the next stage.
-const ringLongest = 20; // How many seconds into the stage it comes by itself, if nobody's clicked
 const ringLead = 5; // How many seconds after it sets off the worm's head gets to it
 const ringWait = tailDistance + (headDistance - tailDistance) * (1 + ringLead / bodyTime); // How far away it waits, in the same units as headDistance
 const ringLabel = 'next sketch';
 const ringSmall = 0.2; // How big it is while it waits, compared to what it would be at the worm's head
 const ringCovers = 9.7; // How many seconds after it sets off it's covered the screen
+const ringLongest = Math.max(0, stageSeconds - ringCovers); // How many seconds into the stage it comes by itself, if nobody's clicked, so it's gone through after stageSeconds
 const ringRush = 0.2; // How much its growth keeps speeding up on the way, so it never seems to slow (0 = steady, 1 = most of it at the end)
 const ringFade = 3; // How slowly the next stage's ground fades from the colour of the flower's middle, in seconds (bigger = slower)
 const ringSpin = 0.25; // How quickly it turns, in radians per second
@@ -137,8 +151,10 @@ const explodeSpeed = [2, 9]; // How quickly a flower flies out, at the least and
 const explodeReturn = [0.7, 2.6]; // How slowly a flower comes back, in seconds, at the least and the most
 const explodeGrow = 0.5; // How much of its lost size a flower gets back while it's exploding (1 = all of it)
 const coilSpin = 0.3; // How quickly the spiral turns while it's still smooth, in radians per second
-const wormShrink = 14; // How slowly the worm shrinks away, once the tunnel's started, in seconds (bigger = slower). Boosting speeds it up.
+const wormShrink = 6; // How slowly the worm shrinks away, once the tunnel's started, in seconds (bigger = slower), so it's absorbed about stageSeconds into the pixel array. Boosting speeds it up.
 const wormAbsorbedAt = 5; // How wide the worm is, in pixels, when the pixel array absorbs it and the noisy spiral bursts out
+const wormStretch = 4; // How many times longer the worm's stretched by the end of the pixel array, as it nears the noisy spiral
+const wormThin = 0.25; // ...and how much thinner it is by then (1 = not at all)
 const wormAbsorbTime = 0.35; // How many seconds it takes to go from there
 const spiralTicks = 12; // How many times a second the noisy spiral changes, however fast the rest is drawn
 const spiralStep = 0.05; // How far around it goes between one line and the next, in radians
@@ -154,7 +170,7 @@ const spiralTightest = 300; // ...which it tightens up to, more and more, as the
 const spiralSettling = 0.05; // How quickly it gets back to that after a click changes it, each time it changes
 // In the flowers, the pixel array closes in as a circle from the corners, like a tunnel, until it's taken over
 const arrayDelay = 4.5; // How many seconds into the stage it starts
-const arrayTime = 35; // How many seconds it takes to cover the screen, at the worm's usual speed. Boosting speeds it up by as much.
+const arrayTime = stageSeconds - arrayDelay; // How many seconds it takes to cover the screen, at the worm's usual speed, so the flowers last stageSeconds. Boosting speeds it up by as much.
 const arraySoft = 0.4; // How wide its soft edge is, as a share of the distance from a corner to the middle
 // It moves by itself, as if a mouse were spiralling out from the middle and then going around the edges of the screen
 const pathTurns = 1.5; // How many times it goes around on the way out. Any faster and every pixel changes every frame, which flashes.
@@ -301,13 +317,23 @@ export default function flow(p, container) {
   let pointer = { x: 0, y: 0, down: false, lastMoved: -Infinity, travelled: 0 };
   let lastPointer = { x: 0, y: 0 };
   let seconds = 0;
+  let leaving = false; // Has it gone on to the art page?
+  let begun = false; // Has someone pressed to begin, past the welcome?
+  let formAt = null; // Where it was pressed, while the worm's forming there (see formRound)
+  let formStart = 0;
+  let headSeen = null; // Where the worm's head was going to be last frame, before being moved to where it's forming
+  // Coming back from there with the browser's Back button can restore it just as it was left, all white, so start
+  // it fresh instead
+  window.addEventListener('pageshow', (event) => {
+    if (event.persisted) location.reload();
+  });
 
   const video = document.createElement('video');
   video.playsInline = true;
   video.muted = true;
   let cameraWanted = false;
   let sound = null;
-  let cameraSwitch, soundSwitch;
+  let soundSwitch;
 
   // Linear boil's grid: a small copy of whatever was on the canvas, one pixel to a square
   const small = document.createElement('canvas');
@@ -323,7 +349,12 @@ export default function flow(p, container) {
 
   const marks = document.createElement('nav');
   marks.className = 'flow-marks';
-  marks.setAttribute('aria-label', 'sketches');
+  marks.setAttribute('aria-label', 'skip');
+  const soundSpot = document.createElement('div');
+  soundSpot.className = 'flow-sound-spot';
+  const welcome = document.createElement('div');
+  welcome.className = 'flow-intro';
+  welcome.innerHTML = '<span>welcome to my<br>sketchbook.</span><span>press anywhere<br>to begin your journey.</span>';
   const caption = document.createElement('p');
   caption.className = 'flow-caption';
   caption.setAttribute('aria-live', 'polite');
@@ -386,7 +417,6 @@ export default function flow(p, container) {
 
   async function startCamera() {
     cameraWanted = true;
-    cameraSwitch.setAttribute('aria-checked', 'true');
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       if (!cameraWanted) {
@@ -408,18 +438,14 @@ export default function flow(p, container) {
     cameraWanted = false;
     video.srcObject?.getTracks().forEach((track) => track.stop());
     video.srcObject = null;
-    cameraSwitch.setAttribute('aria-checked', 'false');
   }
 
   function startSound() {
-    sound ??= new AudioContext();
-    sound.resume();
-    soundSwitch.setAttribute('aria-checked', 'true');
+    sound = startAudio() ?? sound;
   }
 
   function stopSound() {
     sound?.suspend();
-    soundSwitch.setAttribute('aria-checked', 'false');
   }
 
   function newFlower() {
@@ -558,7 +584,8 @@ export default function flow(p, container) {
     else if (pixels) wormSize *= Math.exp(-dt / wormShrink); // Bursting it here doesn't hurry it away
     else if (!noisy) wormSize = 1;
     if (wormSize === 1) wormAbsorbed = 0;
-    else if (wormWide < wormAbsorbedAt || wormAbsorbed > 0) wormAbsorbed = Math.min(1, wormAbsorbed + dt / wormAbsorbTime);
+    // ...when it's small enough, or after stageSeconds of the pixel array anyway
+    else if (wormWide < wormAbsorbedAt || wormAbsorbed > 0 || (pixels && seconds - stageStart > stageSeconds)) wormAbsorbed = Math.min(1, wormAbsorbed + dt / wormAbsorbTime);
     return arrayOpening;
   }
 
@@ -1008,8 +1035,12 @@ export default function flow(p, container) {
   }
 
   function goTo(index) {
+    if (index >= stages.length) {
+      if (!leaving) location.href = after;
+      leaving = true;
+      return;
+    }
     current = (index + stages.length) % stages.length;
-    if (current !== 0) closeWelcome(); // The offer of the camera and sound is only on the first stage
     progress = 0;
     stageStart = seconds;
     ringDistance = null;
@@ -1042,27 +1073,10 @@ export default function flow(p, container) {
       firstStrikes = strikesFirst;
     }
 
-    [...marks.children].forEach((mark, i) => {
-      if (i === current) mark.setAttribute('aria-current', 'step');
-      else mark.removeAttribute('aria-current');
-    });
-    showCaption(name, hintWithoutCamera && !cameraReady() ? hintWithoutCamera : hint);
+    if (begun) showCaption(name, hintWithoutCamera && !cameraReady() ? hintWithoutCamera : hint);
     history.replaceState(null, '', `#${slug(name)}`);
   }
 
-  // The slider itself is drawn in main.css
-  function newSwitch(name) {
-    const button = document.createElement('button');
-    button.className = 'flow-switch';
-    button.textContent = name;
-    button.setAttribute('role', 'switch');
-    button.setAttribute('aria-checked', 'false');
-    return button;
-  }
-
-  function closeWelcome() {
-    container.querySelector('.flow-welcome').hidden = true;
-  }
 
   function moveWorm(dt) {
     const idle = seconds - pointer.lastMoved > idleTime;
@@ -1224,6 +1238,11 @@ export default function flow(p, container) {
     const white = pointer.down && now.whiteHeld > 0.5;
     const camera = cameraAt(pathTime);
 
+    // Through the pixel array it stretches out, longer and thinner, as it nears the noisy spiral
+    const stretching = stages[current].settings.pixels ? ease(Math.min(1, (seconds - stageStart) / stageSeconds)) : 0;
+    const longer = p.lerp(1, wormStretch, stretching);
+    const thinner = p.lerp(1, wormThin, stretching);
+
     // From behind, the nearest has to go on top, which means the tail last
     const inSpace = now.space > 0.5;
     // As the tunnel closes, its head's pulled more and more toward the middle, and the rest of it shrinks toward its head
@@ -1267,17 +1286,32 @@ export default function flow(p, container) {
         const sizeInSpace = size * round * bodyScale * seen.closer;
         let inView = keepOnScreen(seen.x, seen.y);
         if (ringDistance !== null && distance > ringDistance) inView = insideRing(seen.x, seen.y, sizeInSpace, ringPlace(pathTime));
-        seenX = p.lerp(x, inView.x, now.space);
-        seenY = p.lerp(y, inView.y, now.space);
+        let fromX = x;
+        let fromY = y;
+        if (formAt) {
+          if (i === trail.length - 1) headSeen = { ...inView };
+          // The wake gathers into a circle around where it was pressed...
+          const rounding = ease(Math.min(1, now.space / formRound));
+          const across = (x / p.width) * 2 - 1;
+          const down = (y / p.height) * 2 - 1;
+          const radius = formRadius * Math.min(p.width, p.height);
+          fromX = p.lerp(x, formAt.x + across * Math.sqrt(Math.max(0, 1 - (down * down) / 2)) * radius, rounding);
+          fromY = p.lerp(y, formAt.y + down * Math.sqrt(Math.max(0, 1 - (across * across) / 2)) * radius, rounding);
+          // ...and the worm forms there, then drifts off on its own way
+          const away = 1 - ease(Math.min(1, (seconds - formStart) / formTime));
+          if (headSeen) inView = { x: inView.x + (formAt.x - headSeen.x) * away, y: inView.y + (formAt.y - headSeen.y) * away };
+        }
+        seenX = p.lerp(fromX, inView.x, now.space);
+        seenY = p.lerp(fromY, inView.y, now.space);
         w = p.lerp(w, sizeInSpace, now.space);
         h = p.lerp(h, sizeInSpace, now.space);
       }
       // It carries on as it was while the whole of it gets smaller
       if (tunnel > 0.001 || wormSize < 1) {
-        seenX = wormFront.x + (seenX - head.x) * wormSize;
-        seenY = wormFront.y + (seenY - head.y) * wormSize;
-        w *= wormSize * (1 - wormAbsorbed);
-        h *= wormSize * (1 - wormAbsorbed);
+        seenX = wormFront.x + (seenX - head.x) * wormSize * longer;
+        seenY = wormFront.y + (seenY - head.y) * wormSize * longer;
+        w *= wormSize * thinner * (1 - wormAbsorbed);
+        h *= wormSize * thinner * (1 - wormAbsorbed);
         left = Math.min(left, seenX - w / 2);
         right = Math.max(right, seenX + w / 2);
         top = Math.min(top, seenY - h / 2);
@@ -1303,8 +1337,14 @@ export default function flow(p, container) {
       } else if (now.box < 0.01) p.ellipse(seenX, seenY, w, h);
       else p.rect(seenX, seenY, w, h, (Math.min(w, h) / 2) * (1 - now.box));
     }
+    if (formAt && seconds - formStart > formTime && now.space > 0.999) formAt = null;
     // (Its trail's still short when the page has only just opened, which would make it look tiny)
     wormWide = wormSize < 1 && trail.length >= length ? Math.max(right - left, bottom - top) : Infinity;
+  }
+
+  // Smooth at both ends
+  function ease(amount) {
+    return amount * amount * (3 - 2 * amount);
   }
 
   // Stars streaking past behind the worm, so that it looks like it's flying forward through space. They
@@ -1384,33 +1424,34 @@ export default function flow(p, container) {
     focus = { ...at };
     steer = { ...at };
 
-    stages.forEach(({ name }, i) => {
-      const mark = document.createElement('button');
-      mark.textContent = name;
-      mark.addEventListener('click', () => goTo(i));
-      marks.append(mark);
-    });
-    cameraSwitch = newSwitch('camera');
-    cameraSwitch.addEventListener('click', () => (cameraWanted ? stopCamera() : startCamera()));
-    soundSwitch = newSwitch('sound');
-    soundSwitch.addEventListener('click', () => (sound?.state === 'running' ? stopSound() : startSound()));
-    marks.append(cameraSwitch, soundSwitch);
-    container.append(caption, nextLabel, marks);
+    soundSwitch = soundButton();
+    onSoundChange((on) => (on ? startSound() : stopSound()));
+    const skip = document.createElement('a');
+    skip.className = 'flow-skip';
+    skip.href = after;
+    skip.textContent = 'skip';
+    marks.append(skip);
+    soundSpot.append(soundSwitch);
+    container.append(welcome, caption, nextLabel, marks, soundSpot);
 
-    const yes = container.querySelector('.flow-yes');
-    const no = container.querySelector('.flow-no');
-    yes.addEventListener('click', () => {
-      closeWelcome();
-      startSound();
-      startCamera();
-    });
-    no.addEventListener('click', closeWelcome);
-    yes.disabled = no.disabled = false;
+    // Pressing anywhere, or a key, gets past the welcome and on to the next stage, with the worm forming at (x, y)
+    function begin(x = p.width / 2, y = p.height / 2) {
+      if (begun) return;
+      begun = true;
+      formAt = { x, y };
+      formStart = seconds;
+      if (soundWanted()) startSound();
+      welcome.classList.add('gone');
+      goTo(current + 1);
+    }
 
     let pressedAt = null;
     canvas.elt.addEventListener('pointerdown', (event) => {
+      const box = container.getBoundingClientRect();
+      const beginning = !begun;
+      begin(event.clientX - box.left, event.clientY - box.top);
       pointer.down = true;
-      pressedAt = { x: event.clientX, y: event.clientY };
+      pressedAt = beginning ? null : { x: event.clientX, y: event.clientY }; // The press that begins isn't a click on the next stage
       heldFrom = seconds;
     });
     // A click, rather than a drag, brings the flower that's waiting
@@ -1437,13 +1478,21 @@ export default function flow(p, container) {
       pointer.lastMoved = seconds;
     });
     window.addEventListener('keydown', (event) => {
+      if (!begun) {
+        if (!event.metaKey && !event.ctrlKey && event.key !== 'Tab') begin();
+        return;
+      }
       if (event.key === 'ArrowRight') goTo(current + 1);
       if (event.key === 'ArrowLeft') goTo(current - 1);
       if (stages[current].settings.noisy && spiralShapes[event.key - 1]) changeSpiral(spiralShapes[event.key - 1]);
     });
 
     const named = stages.findIndex(({ name }) => `#${slug(name)}` === location.hash);
-    if (named > 0) Object.assign(now, stages[named].settings);
+    if (named > 0) {
+      Object.assign(now, stages[named].settings);
+      begun = true; // Straight to a stage, past the welcome
+      welcome.remove();
+    }
     goTo(Math.max(0, named));
   };
 
@@ -1491,7 +1540,8 @@ export default function flow(p, container) {
     // Playing moves things along. Left alone, it carries on by itself, unless motion's been turned down
     progress += pointer.travelled / Math.hypot(p.width, p.height) / screensToNext;
     pointer.travelled = 0;
-    if (!calm) progress += dt / secondsToNext;
+    if (!calm) progress += dt / (stages[current].seconds ?? secondsToNext);
+    if (!begun) progress = 0; // The welcome waits for a press
     const { through } = stages[current];
     const usesRing = through && !calm;
     // The flowers last until the tunnel's closed, so there's nothing for the pixel array to fade in over
@@ -1502,9 +1552,7 @@ export default function flow(p, container) {
       goTo(current + 1);
     } else if (bloom ? arrayOpening >= 1 : !pixels && progress >= 1 && !usesRing) {
       if (bloom) now.pixels = 1;
-      const whitedOut = stages[current].settings.noisy; // It's already white
       goTo(current + 1);
-      if (whitedOut) now.ground = 255;
     }
 
     // The flower waits for a click, and going through it leads to the next stage

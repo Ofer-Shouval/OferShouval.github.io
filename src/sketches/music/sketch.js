@@ -1,10 +1,10 @@
-// Full-screen background sketch for the home page, another take on "Wake" (2019).
+// Full-screen background sketch for the music page, another take on "Wake" (2019).
 //
 // The water is a series of wavy lines (see Water), and the boat, drawn as a mouse pointer (see
 // Boat), trails two lines tracing out the V of its wake (see Wake), inside which the water
-// flickers in white. The gates to the site's pages stand in a row in the distance (see Gate).
-// Click one to sail there, or steer with the arrow keys. The boat stays near the middle of the
-// screen; the water moves past it.
+// flickers in white. The gates to the music pages stand in a row in the distance (see Gate).
+// Click one to sail there, or steer with the arrow keys. The boat sails on from below the screen
+// at the start, and from then on it stays in much the same place on the screen; the water moves past it.
 
 import p5 from 'p5';
 import Boat from './boat.js';
@@ -17,18 +17,47 @@ import { depth } from './perspective.js';
 p5.disableFriendlyErrors = import.meta.env.PROD;
 
 const PAGES = [
-  ['/teaching/', 'teaching'],
-  ['/art/', 'art'],
-  ['/music/', 'music'],
-  ['/bio/', 'bio'],
+  ['/music/live.html', 'live'],
+  ['/music/recordings.html', 'recordings'],
+  ['/music/videos.html', 'music videos'],
+  ['/music/info.html', 'info'],
 ];
 
 let boat;
 let wake;
 let water;
 let gates = [];
-let hintAlpha = 230; // The hint at the bottom of the screen, which fades away
+let hintAlpha = 0; // The hint in the middle of the screen, which fades in slowly once the page has opened, then away
+let hintFadeIn = 1.5; // How much brighter it gets each frame, fading in (out of 255)
+let hintMost = 210; // How bright it gets (255 = solid; 210 is the same as the gates' names)
+let hintShown = 10; // How many seconds it stays, unless a gate's clicked first
+let hintGone = false; // Has it started fading away?
+// Once the boat's through a gate, the screen fades to black, and the band's name comes up with the gate's,
+// before going to its page
+const BAND_FONT = 'Pixeled 2';
+let bandName = 'o. wake';
+let gateDarkTime = 1; // How many seconds fading to black takes
+let gateNamesTime = 1; // ...then how many the names take to fade in
+let gateHold = 1.2; // ...and how many seconds they stay before the page changes
+// The page opens the same way in reverse, on black: the band's name fades in and stays, then fades out as
+// the water fades in and the boat sails on
+let introIn = 0.8; // How many seconds the name takes to fade in
+let introHold = 1.2; // ...how many it stays
+let introOut = 1.5; // ...and how many it takes to fade out, while the water fades in
+let introStart = 0; // When the page started, in milliseconds
+const HINT_FONT = 'Source Code Pro'; // Thin, like the notes on the site's other pages
+let hintHeight = 0.5; // How far down the screen it is (0 = the top, 1 = the bottom)
 let overGate = false; // Is the mouse over a gate or its name?
+
+
+// The way home: a tag at the bottom of the screen, like the ones pointing to gates that are off the screen, as
+// if home's back the way the boat came. It fades in once the boat's sailed on, and stays. Clicking it turns the
+// boat round to sail back off the bottom of the screen, and it all fades to the white of the home page.
+let homeAlpha = 0; // How much it's showing, from 0 to 1
+let homeArea = null; // Where its name was last drawn, so it can be clicked
+let homeWhiteLatest = 8; // How many seconds after setting off for home it fades to white anyway, if the boat never quite gets off the screen
+let homeWhiteTime = 2.5; // How many seconds that takes
+let homeHurry = 1.3; // How many times its usual speed the boat sails home
 
 // The row of gates in the distance
 let rowY = 90; // How far down the screen the row is, when it's furthest away (see fitToWindow())
@@ -53,7 +82,8 @@ let cameraDeadZone = 0.2; // Heading closer to sideways than this (0 to 1), the 
 let cameraTurn = 0; // How fast it's swinging right now, in radians per frame
 
 let wakeLength = 0.9; // How long the wake is, compared to the height of the screen
-let boatHome = 0.61; // How far down the screen the camera keeps the boat, which leaves the water behind it in view
+let arriveFrom = 0.3; // How far below the bottom of the screen the boat starts, sailing on, compared to the screen's height
+let boatHome = 0.7; // How far down the screen the camera keeps the boat, which leaves the water behind it in view
 
 function setup() {
   let canvas = createCanvas(windowWidth, windowHeight);
@@ -61,8 +91,12 @@ function setup() {
   canvas.style('z-index', '-1');
   cursor(CROSS);
   document.fonts.load(`16px "${NAME_FONT}"`); // Nothing else on the page uses the gates' font, so ask for it
+  document.fonts.load(`200 14px "${HINT_FONT}"`); // ...or the hint's
+  new FontFace(BAND_FONT, 'url("/media/Pixeled%202.ttf")').load().then((font) => document.fonts.add(font)); // The band's name, in the gates (see showArrival())
 
   boat = new Boat(width / 2, height * boatHome);
+  introStart = millis();
+  boat.sailOn(height * arriveFrom, introIn + introHold);
   wake = new Wake();
   water = new Water();
 
@@ -148,23 +182,159 @@ function draw() {
   // wake doesn't fan out wildly when it's in a hurry)
   wake.emit(boat, boat.velocity.copy().limit(boat.maxspeed * boat.fit()));
 
+  showHome();
+  fadeHome();
+  showArrival();
+  showIntro();
+
   // A pointing hand over the gates and their names, since clicking one sails the boat there
-  let over = gates.some((gate) => gate.isLabelAt(mouseX, mouseY) || gate.isGateAt(mouseX, mouseY));
+  let over = gates.some((gate) => gate.isLabelAt(mouseX, mouseY) || gate.isGateAt(mouseX, mouseY)) || isHomeAt(mouseX, mouseY);
   if (over !== overGate) {
     overGate = over;
     cursor(over ? HAND : CROSS);
   }
 
-  // A hint at the bottom of the screen, which fades once a gate is clicked (or after ten seconds)
-  if (boat.destination || frameCount > 600) hintAlpha = Math.max(0, hintAlpha - 4);
-  if (hintAlpha > 0) {
-    push();
+  // A hint in the middle of the screen, which fades once a gate is clicked (or after ten seconds)
+  // ...once the page has opened
+  let sinceOpened = (millis() - introStart) / 1000 - introIn - introHold - introOut;
+  if (boat.destination || sinceOpened > hintShown) hintGone = true;
+  if (hintGone) hintAlpha = Math.max(0, hintAlpha - 4);
+  else if (sinceOpened > 0) hintAlpha = Math.min(hintMost, hintAlpha + hintFadeIn);
+  if (hintAlpha > 0) showHint(width / 2, height * hintHeight);
+}
+
+// The hint, in the thin monospace font the site uses for small notes, on two lines, in a box that
+// keeps it readable over the water (like the sketchbook's captions)
+function showHint(x, y) {
+  let lines = ['click to sail', 'arrow keys to steer'];
+  let leading = 20;
+  push();
+  textFont(HINT_FONT);
+  textSize(14);
+  textWeight(200);
+  textAlign(CENTER, CENTER);
+  let w = Math.max(...lines.map((line) => textWidth(line))) + 24;
+  let h = leading * lines.length + 12;
+  stroke(204, hintAlpha); // The same light grey as the navbar's border
+  strokeWeight(1);
+  fill(23, (hintAlpha / hintMost) * 110);
+  rect(x - w / 2, y - h / 2, w, h);
+  noStroke();
+  fill(255, hintAlpha);
+  lines.forEach((line, i) => text(line, x, y + (i - (lines.length - 1) / 2) * leading));
+  pop();
+}
+
+// After going through a gate: the screen fades to black, then the band's name, in outline, and the gate's
+// name under it fade in, and then it's that gate's page
+function showArrival() {
+  let gate = gates.find((gate) => gate.doneAt);
+  if (!gate) return;
+  let t = (millis() - gate.doneAt) / 1000;
+  showNames(ease(constrain(t / gateDarkTime, 0, 1)), ease(constrain((t - gateDarkTime) / gateNamesTime, 0, 1)), gate.label);
+  if (t > gateDarkTime + gateNamesTime + gateHold && !gate.left) {
+    gate.left = true;
+    window.location.href = gate.url;
+  }
+}
+
+// The page opening: the name on black, then the name and the black fading out together (see introIn)
+function showIntro() {
+  let t = (millis() - introStart) / 1000;
+  if (t > introIn + introHold + introOut) return;
+  let out = ease(constrain((t - introIn - introHold) / introOut, 0, 1));
+  showNames(1 - out, t < introIn ? ease(t / introIn) : 1 - out);
+}
+
+// Is the page still opening, before the black's begun to lift?
+function opening() {
+  return (millis() - introStart) / 1000 < introIn + introHold;
+}
+
+// Smooth at both ends, for fading
+function ease(amount) {
+  return amount * amount * (3 - 2 * amount);
+}
+
+// Black over everything, by `dark` (0 to 1), and the band's name in outline, with `label` under it if
+// there is one, by `names`
+function showNames(dark, names, label) {
+  push();
+  noStroke();
+  fill(0, dark * 255);
+  rect(0, 0, width, height);
+  textAlign(CENTER, CENTER);
+  let size = constrain(width * 0.07, 32, 80);
+  if (document.fonts.check(`16px "${BAND_FONT}"`)) {
+    textFont(BAND_FONT);
+    textSize(size);
+    noFill();
+    stroke(255, names * 255);
+    strokeWeight(1);
+    text(bandName, width / 2, label ? height / 2 - size * 0.3 : height / 2);
+  }
+  if (label) {
+    textFont(NAME_FONT);
+    textSize(constrain(size * 0.35, 16, 26));
     noStroke();
-    fill(255, hintAlpha);
-    textAlign(CENTER, BOTTOM);
-    textSize(14);
-    text('click a gate to sail there, or steer with the arrow keys', width / 2, height - 24);
-    pop();
+    fill(255, names * 255);
+    text(label, width / 2, height / 2 + size * 0.75);
+  }
+  pop();
+}
+
+// The way home, drawn like a gate's tag (see Gate.showTag()): an arrow pointing down off the screen,
+// with its name above it
+function showHome() {
+  if (!boat.arriving) homeAlpha = Math.min(1, homeAlpha + 0.02);
+  if (homeAlpha < 0.01) {
+    homeArea = null;
+    return;
+  }
+  let x = width / 2;
+  let y = height - 30;
+  let hovered = isHomeAt(mouseX, mouseY) || boat.leaving;
+  push();
+  noStroke();
+  fill(255, 220 * homeAlpha);
+  triangle(x, y + 16, x - 4, y, x + 4, y);
+
+  textFont(NAME_FONT);
+  textSize(16);
+  textAlign(CENTER, CENTER);
+  let w = textWidth('home');
+  let nameY = y - 18;
+  fill(255, (hovered ? 255 : 210) * homeAlpha);
+  text('home', x, nameY);
+  stroke(255, (hovered ? 255 : 130) * homeAlpha);
+  strokeWeight(1);
+  line(x - w / 2, nameY + 11, x + w / 2, nameY + 11);
+  pop();
+  homeArea = { left: x - w / 2 - 12, right: x + w / 2 + 12, top: nameY - 20, bottom: height };
+}
+
+// Is (x, y) on the way home, while it's showing?
+function isHomeAt(x, y) {
+  let a = homeArea;
+  return a !== null && homeAlpha > 0.5 && x > a.left && x < a.right && y > a.top && y < a.bottom;
+}
+
+// Once the boat's all the way off the bottom of the screen on its way home, everything fades to white, and then
+// it's the home page
+function fadeHome() {
+  if (!boat.leaving) return;
+  let off = boat.stern.y > height + boat.length * 0.05 || millis() - boat.leaving.at > homeWhiteLatest * 1000;
+  if (off && !boat.leaving.whiteFrom) boat.leaving.whiteFrom = millis();
+  if (!boat.leaving.whiteFrom) return;
+  let white = constrain((millis() - boat.leaving.whiteFrom) / 1000 / homeWhiteTime, 0, 1);
+  push();
+  noStroke();
+  fill(255, white * white * (3 - 2 * white) * 255);
+  rect(0, 0, width, height);
+  pop();
+  if (white >= 1 && !boat.leaving.gone) {
+    boat.leaving.gone = true;
+    window.location.href = '/';
   }
 }
 
@@ -172,7 +342,7 @@ function draw() {
 // sail (forward, and to the side), over however long is left, easing down as it nears the gate
 function hurryToGate() {
   if (!boat.destination) {
-    boat.hurry = 1;
+    boat.hurry = boat.leaving ? homeHurry : 1;
     sailStart = null;
     sailPeak = 1;
     return;
@@ -206,7 +376,7 @@ function hurryToGate() {
 // and the row of gates, which all share a height, so turning just slides them sideways.
 function swingCamera() {
   // Hold still while the boat's going through a gate, so the gate stays put around it
-  if (boat.sinking) {
+  if (boat.sinking || boat.leaving) {
     cameraTurn = 0;
     return;
   }
@@ -254,6 +424,11 @@ function swingCamera() {
 }
 
 function mousePressed() {
+  if (boat.leaving || opening()) return; // On its way home already, or the page hasn't opened yet
+  if (isHomeAt(mouseX, mouseY)) {
+    boat.goHome(width / 2);
+    return;
+  }
   // Clicking a gate or its name sends the boat sailing there by itself;
   // clicking anywhere else takes back control
   boat.destination = null;

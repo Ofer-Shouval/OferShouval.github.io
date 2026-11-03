@@ -14,11 +14,12 @@ function includePartials(html) {
   );
 }
 
-// Marks the navbar link for the page's top-level section (e.g. /art/ for art/luminin.html).
+// Marks the navbar link for the page's top-level section (e.g. /art/ for art/luminin.html). The
+// links say which section they're for, since the art link goes through the sketchbook first.
 function markCurrentSection(html, filename) {
   const [first, ...rest] = relative(root, filename).split('/');
   const section = rest.length ? `/${first}/` : '/';
-  return html.replace(`<a href="${section}">`, `<a href="${section}" aria-current="page">`);
+  return html.replace(`data-section="${section}"`, `data-section="${section}" aria-current="page"`);
 }
 
 function htmlPartials() {

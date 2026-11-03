@@ -598,9 +598,9 @@ ul {
   touch-action: none; /* So dragging on a phone plays the sketch rather than scrolling the page */
 }
 
-.flow-welcome,
 .flow-caption,
-.flow-marks {
+.flow-marks,
+.flow-sound-spot {
   position: absolute;
   left: 16px;
   max-width: calc(100% - 32px);
@@ -614,27 +614,58 @@ ul {
   font-size: 14px;
 }
 
+/* The welcome on the first stage: "welcome to my sketchbook." fades in and out, then "press anywhere..." fades in
+   in its place and stays, until someone presses to begin (see flow.js) */
+.flow-intro {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  padding: 0 16px;
+  color: white;
+  font-family: 'Major Mono Display', monospace;
+  font-size: 20px;
+  line-height: 1.6;
+  text-align: center;
+  pointer-events: none; /* Presses go through it to the sketch */
+  transition: opacity 1s;
+}
+
+.flow-intro.gone {
+  opacity: 0;
+}
+
+.flow-intro span {
+  grid-area: 1 / 1; /* Both in the middle */
+  opacity: 0;
+  animation: flow-intro-welcome 4.5s ease-in-out forwards;
+}
+
+.flow-intro span + span {
+  animation: flow-intro-press 1.5s ease-in-out 4.8s forwards;
+}
+
+@keyframes flow-intro-welcome {
+  33%,
+  78% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes flow-intro-press {
+  to {
+    opacity: 0.8;
+  }
+}
+
 .flow-caption {
   bottom: 60px;
   opacity: 0;
   pointer-events: none;
-}
-
-/* The offer of the camera and sound, just under the navbar */
-.flow-welcome {
-  top: 62px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: max-content;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  align-items: baseline;
-  gap: 0 14px;
-}
-
-.flow-welcome[hidden] {
-  display: none;
 }
 
 /* The label of the flower that leads to the next sketch */
@@ -668,34 +699,7 @@ ul {
   text-underline-offset: 4px;
 }
 
-.flow-welcome button {
-  padding: 6px 0;
-  border: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-
-.flow-welcome .flow-yes {
-  text-decoration: underline;
-  text-underline-offset: 4px;
-}
-
-.flow-welcome .flow-no {
-  opacity: 0.65;
-}
-
-.flow-welcome .flow-no:hover,
-.flow-welcome .flow-no:focus-visible {
-  opacity: 1;
-}
-
 @media screen and (max-width: 500px) {
-  .flow-caption {
-    bottom: 92px; /* The marks wrap onto two lines */
-  }
-
   .flow-caption-name {
     display: block;
   }
@@ -724,7 +728,8 @@ ul {
   gap: 4px 18px;
 }
 
-.flow-marks button {
+.flow-marks button,
+.flow-marks a {
   padding: 6px 0;
   border: 0;
   background: none;
@@ -736,42 +741,96 @@ ul {
 
 .flow-marks button:hover,
 .flow-marks button:focus-visible,
-.flow-marks button[aria-current] {
+.flow-marks a:hover,
+.flow-marks a:focus-visible {
   opacity: 1;
 }
 
-.flow-marks button[aria-current] {
-  text-decoration: underline;
-  text-underline-offset: 4px;
+/* Straight to the art page, past the rest of the sketchbook */
+.flow-marks .flow-skip {
+  text-decoration: none;
 }
 
-.flow-marks button:not(.flow-switch) + .flow-switch {
-  border-left: 1px solid #777;
-  padding-left: 18px;
+/* The sound switch, in the middle at the bottom */
+.flow-sound-spot {
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
-.flow-switch {
+/* The site's sound switch (see src/scripts/sound.js): a speaker, with waves while it's on and a cross while it's
+   off. Until it's been tried, it pulses gently, with "sound?" beside it. */
+.sound-button {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  padding: 6px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  opacity: 0.65;
+  cursor: pointer;
 }
 
-.flow-switch::after {
-  content: '';
-  box-sizing: border-box;
-  width: 28px;
-  height: 16px;
-  border: 1px solid currentColor;
-  border-radius: 8px;
-  background: radial-gradient(circle at 7px 50%, currentColor 4.5px, transparent 5px);
-}
-
-.flow-marks .flow-switch[aria-checked='true'] {
+.sound-button:hover,
+.sound-button:focus-visible,
+.sound-button[aria-pressed='true'] {
   opacity: 1;
 }
 
-.flow-switch[aria-checked='true']::after {
-  background: radial-gradient(circle at calc(100% - 7px) 50%, #171717 4.5px, currentColor 5px);
+.sound-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.sound-waves,
+.sound-button[aria-pressed='true'] .sound-off,
+.sound-ask {
+  display: none;
+}
+
+.sound-button[aria-pressed='true'] .sound-waves {
+  display: inline;
+}
+
+.sound-button.nudging .sound-ask {
+  display: inline;
+  font-family: 'Source Code Pro', monospace;
+  font-weight: 200;
+  font-size: 13px;
+}
+
+.sound-button.nudging {
+  animation: sound-nudge 2.4s ease-in-out infinite;
+}
+
+@keyframes sound-nudge {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Where it goes on the full-screen pages: the bottom left corner */
+.sound-corner {
+  position: fixed;
+  left: 16px;
+  bottom: 8px;
+  z-index: 3;
+  color: white;
+}
+
+.light .sound-corner {
+  color: black;
 }
 
 .page .card h3 a {

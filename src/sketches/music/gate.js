@@ -1,7 +1,7 @@
 // Gate class
 // A gate standing in the sea: a simple frame (two posts and a beam across the top) that the boat
 // sails through. When the boat reaches it, the opening fills with light, the boat passes
-// through, and the page goes to `url`. Its position and size are set by the sketch each frame
+// through, and it's done (the sketch then fades to white and goes to `url`). Its position and size are set by the sketch each frame
 // (see placeGate()). When it's off the screen, a tag at the edge of the screen points the way.
 
 import p5 from 'p5';
@@ -89,15 +89,12 @@ export default class Gate {
     // Cut the boat off between the posts, on the far side of the gate (see Boat.cutAtGate())
     boat.gateCut = { left: this.position.x - this.rx, width: this.rx * 2, y: this.position.y, cameFrom: this.cameFrom };
 
-    // Is the back of the boat through yet? Then it's all gone: change page a moment later
+    // Is the back of the boat through yet? Then it's all gone: done a moment later
     // (or after a few seconds, just in case)
     let sternThrough = this.cameFrom === 1 ? boat.stern.y < this.position.y : boat.stern.y > this.position.y;
     if (sternThrough && !this.allThroughAt) this.allThroughAt = this.passTime;
     let done = (this.allThroughAt && this.passTime > this.allThroughAt + 10) || this.passTime > 150;
-    if (done && !this.leaving) {
-      this.leaving = true;
-      window.location.href = this.url;
-    }
+    if (done && !this.doneAt) this.doneAt = millis();
   }
 
   // How far the gate has filled with light since the boat reached it: 0 to 1

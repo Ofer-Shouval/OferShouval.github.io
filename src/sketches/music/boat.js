@@ -33,6 +33,9 @@ export default class Boat {
     this.sinking = false; // Set by a gate when the boat starts going through it
     this.gateCut = null; // Set by a gate while the boat goes through it: where to cut the boat off
     this.destination = null; // A gate to sail to by itself (see sailTo())
+    this.arriving = false; // Sailing on from below the screen, while the camera waits (see sailOn())
+    this.leaving = null; // Turning round and sailing off the bottom of the screen, for home (see goHome())
+    this.uTurnTime = 1.5; // How many seconds turning round takes
     this.arcAmount = 0.15; // How wide the boat swings out on its way there (radians at the start)
     this.waveAmount = 0.6; // How far it curves from side to side on the way there (radians at the start)
     this.waveTime = 5; // How long each wave takes, roughly, in seconds
@@ -53,6 +56,24 @@ export default class Boat {
     let grid = pointerGrid();
     this.outline = pointerOutline(grid);
     this.corners = [grid[1], grid[6]]; // Its two wide corners, for the wake to start from
+  }
+
+  // Start `below` the bottom of the screen, wait `wait` seconds, then head up and sail on to home by itself
+  sailOn(below, wait = 0) {
+    this.position.set(this.home.x, height + below);
+    this.arriving = true;
+    this.arriveAt = millis() + wait * 1000;
+    this.setOff = false;
+  }
+
+  // Turn round and sail off the bottom of the screen by itself, toward x, while the camera waits.
+  // It turns whichever way is shorter, or toward the middle of the screen if it's facing straight up.
+  goHome(x) {
+    let span = (((HALF_PI - this.angle) % TWO_PI) + TWO_PI) % TWO_PI; // How far round to face down, turning clockwise
+    let side = span < PI - 0.2 ? 1 : span > PI + 0.2 ? -1 : this.position.x < width / 2 ? 1 : -1;
+    this.leaving = { x, at: millis(), from: this.angle, turn: side === 1 ? span : span - TWO_PI };
+    this.destination = null;
+    this.arriving = false;
   }
 
   run() {
@@ -96,6 +117,25 @@ export default class Boat {
 
   // Turn keyboard / mouse input into a force
   steer() {
+    // Waiting to sail on: still, whatever's pressed
+    if (this.arriving && millis() < this.arriveAt) {
+      this.velocity.set(0, 0);
+      return;
+    }
+    if (this.arriving && !this.setOff) {
+      this.setOff = true;
+      this.velocity.set(0, -this.maxspeed * this.fit());
+    }
+    // Going home: round, then down and off the screen, whatever's pressed
+    if (this.leaving) {
+      let { x, at, from, turn } = this.leaving;
+      let t = Math.min(1, (millis() - at) / 1000 / this.uTurnTime);
+      let force = t < 1 ? p5.Vector.fromAngle(from + turn * t) : createVector(x - this.position.x, height + this.length * 10 - this.position.y);
+      force.setMag(this.maxforce);
+      this.applyForce(force);
+      return;
+    }
+
     if (this.sinking) return; // Going through a gate: no more steering
     let force = createVector(0, 0);
     if (keyIsDown(LEFT_ARROW)) force.x -= 1;
@@ -105,6 +145,10 @@ export default class Boat {
 
     // Steering with the keys takes back control from sailing by itself
     if (force.mag() > 0) this.destination = null;
+
+    // Sailing on: straight up the screen until it's home, unless someone takes over
+    if (this.arriving && (force.mag() > 0 || this.destination || mouseIsPressed || this.position.y <= this.home.y)) this.arriving = false;
+    if (this.arriving) force.set(0, -1);
 
     // The keys steer relative to the camera, so once it's swung round behind the boat they
     // carry straight on, rather than pushing it back off to the side. Pressing a different
@@ -153,7 +197,7 @@ export default class Boat {
     // The camera eases toward the boat: slide the world (and the boat) back by a small part
     // of how far the boat is from home (keeping up when it's in a hurry, so it doesn't run
     // away up the screen)
-    let follow = 1 - pow(1 - Math.min(0.5, this.followSpeed * this.hurry), this.dt);
+    let follow = this.arriving || this.leaving ? 0 : 1 - pow(1 - Math.min(0.5, this.followSpeed * this.hurry), this.dt);
     this.scroll.set((this.position.x - this.home.x) * follow, (this.position.y - this.home.y) * follow);
     this.position.sub(this.scroll);
 

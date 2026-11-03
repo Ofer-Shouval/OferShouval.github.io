@@ -1,6 +1,6 @@
-// Full-screen landing sketch for the art section, grown out of a week 6 homework (archive/week 6):
-// a crowd of stick figures walks across the screen, laid out like the water on the home page
-// (see home/water.js). They walk in rows that get closer together toward the horizon, so the crowd
+// Full-screen landing sketch for the home page and the art section, grown out of a week 6 homework (archive/week 6):
+// a crowd of stick figures walks across the screen, laid out like the water on the music page
+// (see music/water.js). They walk in rows that get closer together toward the horizon, so the crowd
 // stretches away into the distance. It starts with very few of them, and more arrive as time goes on.
 //
 // A figure's feet are below the horizon by the camera's height at that figure's size. The view
@@ -458,7 +458,7 @@ function tripStopsTo(hole) {
   return stops;
 }
 
-// The same as the row of gates on the home page (see placeGate() in home/sketch.js): everything spreads
+// The same as the row of gates on the music page (see placeGate() in music/sketch.js): everything spreads
 // out from the middle of the screen as the camera goes forward, and slides as it goes sideways, by how
 // far away each hole is. How far down the screen comes from this page's ground, so they stay put on it
 // among the crowd.

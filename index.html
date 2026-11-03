@@ -6,8 +6,21 @@
   <!-- @include head.html -->
 </head>
 
-<body>
-  <script type="module" src="/src/sketches/home/sketch.js"></script>
+<body class="light">
+  <p class="art-instructions">
+    <span class="art-instructions-mouse">Use the arrow keys or click to walk the mouse into a hole.</span>
+    <span class="art-instructions-touch">Tap to walk the mouse into a hole.</span>
+  </p>
+
+  <!-- The holes in the ground, scattered around in the distance. Art goes through the sketchbook first. -->
+  <a class="art-hole" data-row="back" href="/teaching/"><span class="art-hole-name">teaching</span><span class="art-hole-mouth"></span></a>
+  <a class="art-hole" data-row="front" href="/art/sketchbook/"><span class="art-hole-name">art</span><span class="art-hole-mouth"></span></a>
+  <a class="art-hole" data-row="front" href="/music/"><span class="art-hole-name">music</span><span class="art-hole-mouth"></span></a>
+  <a class="art-hole" data-row="back" href="/bio/"><span class="art-hole-name">bio</span><span class="art-hole-mouth"></span></a>
+
+  <div class="sound-corner" data-sound></div>
+  <script type="module" src="/src/scripts/sound.js"></script>
+  <script type="module" src="/src/sketches/art_walk.js"></script>
 </body>
 
 </html>
