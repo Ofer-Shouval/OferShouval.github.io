@@ -750,6 +750,30 @@ ul {
   padding-left: 18px;
 }
 
+.flow-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.flow-switch::after {
+  content: '';
+  box-sizing: border-box;
+  width: 28px;
+  height: 16px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  background: radial-gradient(circle at 7px 50%, currentColor 4.5px, transparent 5px);
+}
+
+.flow-marks .flow-switch[aria-checked='true'] {
+  opacity: 1;
+}
+
+.flow-switch[aria-checked='true']::after {
+  background: radial-gradient(circle at calc(100% - 7px) 50%, #171717 4.5px, currentColor 5px);
+}
+
 .page .card h3 a {
   font-size: inherit;
   text-decoration: none;

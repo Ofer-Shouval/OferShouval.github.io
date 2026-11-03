@@ -1,7 +1,7 @@
 // Full-screen landing sketch for the art section, grown out of a week 6 homework (archive/week 6):
 // a crowd of stick figures walks across the screen, laid out like the water on the home page
 // (see home/water.js). They walk in rows that get closer together toward the horizon, so the crowd
-// stretches away into the distance.
+// stretches away into the distance. It starts with very few of them, and more arrive as time goes on.
 //
 // A figure's feet are below the horizon by the camera's height at that figure's size. The view
 // is warped so that the ground curls upward as it goes away from the camera, like a road rising
@@ -37,7 +37,11 @@ let offScreen = 100; // How far past the side of the screen a figure goes before
 let crowdGapWide = 0.21; // How far out to each side it meets the bottom of the screen, as a share of the screen's width
 let crowdGapTall = 0.25; // How far up it goes in the middle, as a share of the screen's height
 let crowdOpening = true; // Is the first frame still being drawn?
-let crowdWalksOn = 0.3; // People bigger than this, compared to one at the bottom of the screen, stay hidden until they're off the screen, so they walk on; smaller ones are too far away to wait, and appear once they're clear of the mouse
+let crowdFade = 1; // How many seconds someone takes to fade in when they arrive
+let crowdFirst = 0.005; // The share of the crowd that's there when the page opens (1 = everyone)
+let crowdFillTime = 7.5; // How many seconds until everyone's arrived
+let crowdHere = crowdFirst; // The share of the crowd that's allowed on now (see draw())
+let crowdStarted = null; // When the first frame was drawn, in seconds, since painting the crowd takes a while
 let alpha = 0.9; // How solid the figures are, near the bottom of the screen (1 = solid)
 let distanceFade = 0.2; // How quickly they fade toward the horizon (smaller = slower)
 
@@ -545,8 +549,10 @@ function buildRow(n) {
       stepsPerSecond: lerp(walkSpeed[0], walkSpeed[1], hash(person + 0.75)) / stride,
       start: hash(person) * span,
       firstStep: Math.floor(hash(person + 0.5) * steps),
-      joined: crowdOpening ? null : true, // Is it showing? Those in the first frame find out when it's drawn (null)
+      arrives: hash(person + 0.85), // Its place in the queue: it can come on once crowdHere gets past this
+      joined: crowdOpening ? null : hash(person + 0.85) < crowdHere, // Is it showing? Those in the first frame find out when it's drawn (null)
       seenFrom: null,
+      fadingFrom: null, // When it started fading in, if it has
     });
   }
 
@@ -590,6 +596,9 @@ function draw() {
   placeHoles();
   background(255);
   let seconds = millis() / 1000;
+  crowdStarted ??= seconds;
+  // It grows by the same share of itself all the way, so that they keep arriving at a pace that shows
+  crowdHere = crowdFirst * pow(1 / crowdFirst, Math.min(1, (seconds - crowdStarted) / crowdFillTime));
   let ctx = drawingContext;
   let cellWidth = Math.round(frameWidth * resolution); // How wide a picture is on the full-size sheet
   let cellHeight = Math.round(frameHeight * resolution);
@@ -625,7 +634,7 @@ function draw() {
       showMouse(ctx, seconds);
       mouseShown = true;
     }
-    ctx.globalAlpha = alpha * Math.min(1, pow(near, distanceFade));
+    let rowAlpha = alpha * Math.min(1, pow(near, distanceFade));
     let span = row.span;
     for (let p of row.people) {
       // Each figure walks at its own speed, and only moves when its walk cycle moves on, by
@@ -636,7 +645,7 @@ function draw() {
       let x = width / 2 + (((((along % span) + span) % span) - span / 2)) * size;
       let offTheScreen = x < -frameWidth * size || x > width + frameWidth * size;
       // Anyone whose feet would be off the bottom of the screen stays away until the mouse goes forward.
-      // Then they wait to walk on like everyone else who's hidden, so that nobody pops into view.
+      // Then they fade in like everyone else who's arriving, so that nobody pops into view.
       if (!mouseWentForward && groundAt(size, bottom) > height) {
         p.joined = false;
         continue;
@@ -644,12 +653,24 @@ function draw() {
       if (!p.joined) {
         let across = (x - mouseLeft) / (width * crowdGapWide);
         let clear = offTheScreen || groundAt(size, bottom) < height * (1 - crowdGapTall * (1 - across * across));
-        p.joined = p.joined === null ? clear : offTheScreen || (clear && size < bottom * crowdWalksOn);
+        let arrived = p.arrives < crowdHere;
+        let firstFrame = p.joined === null;
+        p.joined = arrived && clear;
+        if (p.joined && !firstFrame && !offTheScreen) p.fadingFrom = seconds; // Anyone off the screen just walks on
       }
       if (offTheScreen || !p.joined) continue;
 
       if (p.seenFrom !== view.depth) lookAt(p, near, bottom);
       let scaleDown = p.sheetScale / resolution;
+      let faded = 1;
+      if (p.fadingFrom !== null) {
+        faded = (seconds - p.fadingFrom) / crowdFade;
+        if (faded >= 1) {
+          faded = 1;
+          p.fadingFrom = null;
+        }
+      }
+      ctx.globalAlpha = rowAlpha * faded;
       ctx.setTransform(row.direction * size * density, 0, 0, size * p.tipped * density, x * density, p.ground * density);
       ctx.drawImage(
         p.sheet,
