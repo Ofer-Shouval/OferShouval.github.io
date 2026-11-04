@@ -5,7 +5,8 @@ import { relative, resolve } from 'node:path';
 const root = import.meta.dirname;
 const partialsDir = resolve(root, 'src/partials');
 const includePattern = /<!--\s*@include\s+(\S+)\s*-->/g;
-const ignoredDirs = ['node_modules', 'dist', 'archive', 'src', 'public', '.git'];
+// teaching/ is left out of the site for now: it still runs in `npm run dev`, but isn't built or published.
+const ignoredDirs = ['node_modules', 'dist', 'archive', 'src', 'public', '.git', 'teaching'];
 
 // Replaces <!-- @include name.html --> with the contents of src/partials/name.html (recursively).
 function includePartials(html) {

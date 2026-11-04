@@ -1,5 +1,5 @@
-// A little worm that comes up out of the sketchbook hole on the art page, when the page has been come to through the
-// sketchbook (see the end of src/sketchbook/spiral-worm.js, which leaves a note in sessionStorage saying so). It's the
+// A little worm that comes up out of the home hole on the art page, when the page has been come to through the
+// wormhole (see the end of src/wormhole/spiral-worm.js, which leaves a note in sessionStorage saying so). It's the
 // spiral worm, small: a line coiling round and round its body, in black on the white page. It rises out of the hole,
 // and then wafts smoothly about the screen, on and on. It's drawn on a canvas of its own over the page, which lets
 // presses through.
@@ -45,7 +45,7 @@ if (noteWasLeft() && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
   fit();
   addEventListener('resize', fit);
 
-  const link = document.querySelector('.art-hole[href="/"]'); // The sketchbook's hole, which goes back to the wormhole on the front page
+  const link = document.querySelector('.art-hole[href="/"]'); // The home hole, which goes back to the wormhole on the front page
   const mouth = link?.querySelector('.art-hole-mouth');
   let stillSince = null; // Since when the hole's been still, on the screen
   let lastSeen = null; // Where the hole was last frame

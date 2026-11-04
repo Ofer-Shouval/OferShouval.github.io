@@ -2,7 +2,7 @@ import p5 from 'p5';
 import spiralWorm from './spiral-worm.js';
 import { soundButton, startAudio, soundWanted, onSoundChange } from '../scripts/sound.js';
 
-// The sketchbook as one continuous piece: old sketches that turn into each other on the same canvas.
+// The wormhole on the front page: old sketches from the sketchbook, as one continuous piece, that turn into each other on the same canvas.
 //
 // There are no cuts. Every stage is a list of settings, and the settings always drift toward the current
 // stage's, and whatever's been painted is what the next sketch starts from. Among the flowers, the pixel array
@@ -14,55 +14,45 @@ import { soundButton, startAudio, soundWanted, onSoundChange } from '../scripts/
 // stage is a sketch of its own, spiral-worm.js, which this hands the screen over to: the spiral unwinds into a worm,
 // which flies on to three portals, to art, music and bio, and goes through whichever's chosen. The skip link at the
 // bottom goes straight to the portals.
-// (The noisy spiral's drawing here, and its ending, growing off the screen to white, aren't used any more.)
 //
 // Playing moves it along (see screensToNext), and it carries on slowly by itself if nobody's playing
 // (see secondsToNext). Psychworm moves on when it's clicked, by flying through a flower: each of its segments turns into
-// a flower as it passes through, and it carries on through a field of them. Each sketch also has its own file in this folder (wake.js, psychworm.js,
-// flowers.js, pixel-array.js, noisy-spiral.js, and curves.js and finger-aulos.js). Curves, boxyworm and linear boil aren't stages at the
-// moment, but their settings and drawing are still here. This file has its own blended version of them, so changing
-// one of those files doesn't change this piece.
+// a flower as it passes through, and it carries on through a field of them. Each sketch also has its own file in
+// src/sketchbook/ (wake.js, psychworm.js, flowers.js, pixel-array.js, noisy-spiral.js). This file has its own blended
+// version of them, so changing one of those files doesn't change this piece. (Curves, finger aulos, boxyworm and linear
+// boil were once stages here too: they're in save/36-stretch-portals, and in src/sketchbook/.)
 //
-// It opens on the first stage with a welcome that fades in and out (see .flow-intro in main.css), and waits there
+// It opens on the first stage with a welcome that fades in and out (see .wormhole-intro in main.css), and waits there
 // until someone presses, anywhere, which begins the journey into the next stage.
 //
 // The speaker at the bottom turns the sound on and off, for the whole site (see src/scripts/sound.js). Any stage
-// can use it: `sound` is an AudioContext once it's been turned on, which stays silent while it's switched off. The camera isn't offered at the
-// moment, but cameraReady() says whether `video` has a picture, for stages that use it (curves, linear boil).
-// They work without it.
+// can use it: `sound` is an AudioContext once it's been turned on, which stays silent while it's switched off.
 
 const stages = [
   {
     name: 'wake',
     hint: 'hold to turn it white',
-    settings: { length: 150, flat: 1, box: 0, scatter: 1, wash: 255, washHeld: 255, low: 150, whiteHeld: 1, body: 1, grid: 0, bloom: 0, ground: 0, space: 0, spiral: 0, pixels: 0, curves: 0, coil: 0, noisy: 0 },
+    settings: { length: 150, flat: 1, scatter: 1, wash: 255, washHeld: 255, low: 150, whiteHeld: 1, body: 1, bloom: 0, ground: 0, space: 0 },
   },
   {
     name: 'psychworm',
     hint: 'click for the next sketch, hold to leave trails',
     through: 'flowers', // The stage that going through the ring leads to
-    settings: { length: 70, flat: 0, box: 0, scatter: 0, wash: 50, washHeld: 0, low: 100, whiteHeld: 0, body: 1, grid: 0, bloom: 0, ground: 0, space: 1, spiral: 0, pixels: 0, curves: 0, coil: 0, noisy: 0 },
+    settings: { length: 70, flat: 0, scatter: 0, wash: 50, washHeld: 0, low: 100, whiteHeld: 0, body: 1, bloom: 0, ground: 0, space: 1 },
   },
   {
     name: 'flowers',
     hint: 'hold for a boost, let go to burst, drag to plant more',
-    settings: { length: 70, flat: 0, box: 0, scatter: 0, wash: 255, washHeld: 255, low: 100, whiteHeld: 0, body: 1, grid: 0, bloom: 1, ground: 255, space: 1, spiral: 0, pixels: 0, curves: 0, coil: 0, noisy: 0 },
+    settings: { length: 70, flat: 0, scatter: 0, wash: 255, washHeld: 255, low: 100, whiteHeld: 0, body: 1, bloom: 1, ground: 255, space: 1 },
   },
   // The pixel array used to be a stage of its own here. It's part of the flowers stage now (see arrayHold).
   {
     name: 'noisy spiral',
     hint: 'click for lightning, let go for a rose',
     sketch: spiralWorm, // The stage is this sketch, which takes over the screen (see handOver())
-    settings: { length: 70, flat: 0, box: 0, scatter: 0, wash: 255, washHeld: 255, low: 100, whiteHeld: 0, body: 0, grid: 0, bloom: 0, ground: 0, space: 0, spiral: 1, pixels: 0, curves: 0, coil: 1, noisy: 1 },
+    settings: {}, // It takes over the screen straight away, so this one never draws it
   },
 ];
-// The curves stage, played with your hands, for when it's put back in:
-// {
-//   name: 'curves',
-//   hint: 'open and close your fingers to play, with the sound on',
-//   hintWithoutCamera: 'turn the camera on to play it with your hands',
-//   settings: { length: 70, flat: 0, box: 0, scatter: 0, wash: 255, washHeld: 255, low: 100, whiteHeld: 0, body: 0, grid: 0, bloom: 0, ground: 255, space: 0, spiral: 0, pixels: 0, curves: 1, coil: 0, noisy: 0 },
-// },
 const after = '/art/'; // Where it goes after the last stage
 
 const morphTime = 2.5; // How quickly the settings drift to the next stage's, in seconds (bigger = slower)
@@ -111,11 +101,6 @@ const steerFollow = 0.05; // How quickly the place it's following catches up wit
 const focusFollow = 0.06; // How quickly the point the stars stream from catches up with where it's heading
 const starCount = 120;
 const starSpeed = 0.35; // How much of the way to the camera a star comes each second
-const cell = 16; // Size of each square in linear boil
-const stirSize = 6; // How far stirring reaches, in squares
-const cooling = 0.97; // How much of the stirred heat each square keeps from one frame to the next
-const whitenTime = 12; // How many seconds linear boil's squares take to lose their colours and go white
-const cameraTime = 3; // How quickly linear boil turns from the painting to the camera, in seconds (bigger = slower)
 const fieldCount = 1100; // How many flowers fly by at once, the way the stars do
 const fieldSpeed = 0.28; // How much of the distance to the camera they come each second, so they slow down as they get near
 const fieldStream = 2.5; // Sets how many appear each second: fieldCount * fieldSpeed / this
@@ -128,7 +113,6 @@ const fieldBiggest = 0.2; // The longest their petals can grow, as a share of th
 const fieldGrow = 1.05; // How quickly they get bigger as they get nearer (1 = in true perspective, and more is quicker)
 const fieldFade = 0.3; // How far they come before they've faded in, as a share of the way from where they appear
 const fieldClosing = 0.5; // How much smaller they've got by the time the pixel array has covered the screen, from 0 to 1
-const fieldLingers = 7.5; // How many seconds they carry on for after that, getting smaller, before they've gone
 const mostFlowers = 1400;
 const plantedDrift = 2; // How fast planted flowers drift away from the middle of the stream, in pixels per frame. Near it they'd hardly move otherwise.
 const burstReach = 1.6; // Going through the ring, how far the worm's flowers are thrown, at most, as a share of the screen's width
@@ -161,24 +145,11 @@ const explodeUneven = 2.5; // How uneven the distances are: most flowers stay ne
 const explodeSpeed = [2, 9]; // How quickly a flower flies out, at the least and the most (bigger = quicker)
 const explodeReturn = [0.7, 2.6]; // How slowly a flower comes back, in seconds, at the least and the most
 const explodeGrow = 0.5; // How much of its lost size a flower gets back while it's exploding (1 = all of it)
-const coilSpin = 0.3; // How quickly the spiral turns while it's still smooth, in radians per second
 const wormShrink = 6; // How slowly the worm shrinks away, once the tunnel's started, in seconds (bigger = slower). Boosting speeds it up.
 const wormAbsorbedAt = 5; // How wide the worm is, in pixels, when the pixel array absorbs it and the noisy spiral bursts out
 const wormStretch = 4; // How many times longer the worm's stretched by the end of the pixel array, as it nears the noisy spiral
 const wormThin = 0.25; // ...and how much thinner it is by then (1 = not at all)
 const wormAbsorbTime = 0.35; // How many seconds it takes to go from there
-const spiralTicks = 12; // How many times a second the noisy spiral changes, however fast the rest is drawn
-const spiralStep = 0.05; // How far around it goes between one line and the next, in radians
-const spiralReach = 2.8; // It stops at the screen's width or height divided by this
-const spiralTurn = 1; // How far it turns each time it changes, in radians
-const spiralMostLines = 20000; // Enough for the loosest shape, and it has to stop somewhere if the noise runs away
-const spiralWeights = 8; // How many different weights of line it has, from 2 to 3 pixels going out
-const spiralRoughest = 1; // How much of the last point goes into the next is 1 / this, times the noise
-const spiralSmoothest = 3; // It smooths out to this...
-const spiralSmoothing = 0.05; // ...by this much each time it changes
-const spiralLoosest = 8; // How tightly it's wound when it bursts out (bigger = more turns, closer together)
-const spiralTightest = 300; // ...which it tightens up to, more and more, as the stage goes on
-const spiralSettling = 0.05; // How quickly it gets back to that after a click changes it, each time it changes
 // In the flowers, the pixel array closes in as a circle from the corners, like a tunnel, until it's taken over
 const arrayDelay = 10; // How many seconds into the stage it starts, so the flower worm has a while to itself
 // Once the array's absorbed the worm, all static, it switches off like an old TV: the picture squashes to a bright line
@@ -212,58 +183,12 @@ const staticReach = 40; // How far from the middle, across the half-size picture
 const scanSpeed = 0.05; // How quickly its slow waves of colour roll, each frame
 const scanEdgeSpeed = 2; // How many times faster they roll with the pointer at the top or bottom
 const scanTurn = 0.05; // How quickly they reverse, when the pointer crosses the middle: down when it's above, up when it's below
-const curveSpacing = 10; // How far apart the curves are, and the points along them, in pixels
-const curveBend = 10; // How far the brightest and darkest points are pushed, in pixels
-const curveAcross = 64; // How many points are along each curve
-const curveDown = 48; // How many curves there are
-const curveCameraTime = 1; // How quickly they turn from their own ripples to the camera, in seconds (bigger = slower)
-const curveCalm = 0.2; // How quickly they ripple while there's no camera to follow (smaller = slower)
-// Finger aulos: two pipes, one for each hand, and the distance between its thumb and index finger picks its note
-const pipeNotes = [
-  [207, 220, 233.08, 261.63, 293.66, 329.63, 349.23, 392, 440],
-  [261.63, 293.66, 329.63, 349.23, 392, 440, 463.16, 523.25],
-];
-const pipeLevel = 0.25; // How loud each one is at most (1 = full)
-const pinchClosed = 25; // How far apart the fingers are for the lowest note, in pixels of a camera 640 pixels wide
-const pinchOpen = 280; // ...and for the note above the highest, so that it's reached before they're fully open
-const stringBend = 14; // How far the curves near a hand vibrate, in pixels
-const stringReach = 70; // How far around the hand they do it, in pixels, on top of half the distance between its fingers
-const stringWaves = [80, 24]; // How long the waves are for the lowest note and the highest, in pixels
-const stringTime = 70; // How quickly the waves run along the curves
-const handOptions = { maxHands: 2, flipped: false, runtime: 'tfjs', modelType: 'full' };
-const spiralBursts = { roughness: 0.5, tightness: [spiralLoosest, spiralLoosest] }; // What it bursts out as: loose and spiky
-// Lightning: the noisy spiral's colours swap for a moment every so often. Flashes are kept at least strikeGap apart,
-// so there can't be more than three in a second, which is the limit for not being a danger to people with epilepsy.
-// How it ends: it grows off the screen, its lines stop fading and pile up, and the screen goes white
-const endStarts = 0.6; // How far through the stage that starts, from 0 to 1
-const endReach = 3; // How many times its usual size it grows to, which takes it off the screen
-const endPiling = 0.9; // How far through the ending its lines have stopped fading, from 0 to 1. After that, the white comes up.
-const endWhite = 60; // How strongly the white's being painted over it each frame, at the very end, out of 255
-const strikeEvery = [3, 9]; // How many seconds there are between strikes, at the least and the most
-const strikesFirst = 3; // How many strikes it opens with, straight after the cut
-const strikesFirstEvery = [0.5, 1.1]; // How many seconds there are between those
-const strikeLength = 0.06; // How many seconds a flash stays at its brightest
-const strikeFade = 0.3; // ...and how many it takes to fade out after that
-const strikeGap = 0.4; // How many seconds there are from the start of one flash to the start of the next, in a double strike
-const strikeDouble = 0.4; // How often a strike flashes twice (1 = always)
-// Colourful lightning: some strikes flash a fragment of the stabilized close-up of the Luminin, rather than white
+// spiral-worm.js flashes fragments of this video as lightning. It starts loading in the flowers, so it's ready by then.
 const strikeClip = '/media/lumininCloseupStabilized.mp4';
-const strikeInColour = 0.7; // How often a strike's in colour (1 = always), as long as the video's ready
-const strikeClipLength = 0.25; // How many seconds a strike in colour lasts. It cuts in and out, without fading.
-const strikeClipCrop = [0.35, 0.8]; // How much of the width and height of the video a fragment shows, at the least and the most
-const strikeRose = { roughness: 0.5, tightness: 250 }; // Each flash sets the spiral bursting into a rose: a spiky star that tangles up, wound at least this tightly
-// The number keys pick one of these, in order
-const spiralShapes = [
-  { roughness: 0.7, tightness: [20, 100] },
-  { roughness: 3, tightness: [180, 200] },
-  { roughness: 4, tightness: [1, 100] },
-  { roughness: 0.5, tightness: [1000, 2000] },
-  { roughness: 0.5, tightness: [1, 4] },
-];
 
 const slug = (name) => name.replace(' ', '-');
 
-export default function flow(p, container) {
+export default function wormhole(p, container) {
   const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const now = { ...stages[0].settings };
   let current = 0;
@@ -304,31 +229,10 @@ export default function flow(p, container) {
   let pixelDrift = 0;
   let scanDirection = 1; // Which way its waves of colour are heading: 1 is down, -1 is up
   let scanPosition = 0;
-  const curveCanvas = document.createElement('canvas'); // The camera, one pixel to a point on the curves
-  const curveContext = curveCanvas.getContext('2d', { willReadFrequently: true });
-  let curveCamera = new Float32Array(0); // How bright the camera is at each point, from 0 to 1
-  let curveMix = 0; // How far they've turned from their own ripples to the camera
-  let pictureChecked = false; // Has the camera's picture been checked for being blank?
-  let handTracker = null; // Loaded the first time it's needed, since it's big and the model comes from the web
-  let handTrackerLoading = false;
-  let trackingHands = false;
-  let hands = [];
-  let pipes = null; // The two oscillators and their volumes, once the sound's been turned on
-  let pipeAmount = 0; // How far the pipes have faded in
-  let spiralLines = []; // The noisy spiral's lines, one path for each weight
-  let nextStrike = 0; // When the next flash of lightning is
-  let strikeEnds = 0; // When the one that's happening ends
-  const clip = document.createElement('video'); // Only loaded once it's getting near (see goTo())
-  clip.muted = true;
-  clip.loop = true;
-  clip.playsInline = true;
-  clip.preload = 'auto';
-  let strikeFades = true; // Does the flash that's happening fade out? The ones in colour just stop.
-  let clipCrop = null; // The part of the video the strike that's happening shows, if it's in colour
-  let clipMoved = true; // Has the video been moved on to somewhere new since it was last shown?
-  let firstStrikes = 0; // How many of the strikes it opens with are still to come
-  let secondFlash = false; // Is there another straight after this one?
   let fieldLeft = 1; // How much of their size the flowers flying by have left
+  const clip = document.createElement('video'); // Only for loading the lightning video early (see strikeClip)
+  clip.muted = true;
+  clip.preload = 'auto';
   let arrayNoise = 0; // How close the pixel array is to pure static (1 = all the way)
   let arrayFullAt = null; // When it covered the screen, in the flowers stage
   let tvOffAt = null; // When it started switching off like an old TV (see tvSquash)
@@ -338,13 +242,7 @@ export default function flow(p, container) {
   let wormWide = Infinity; // How wide it was on the screen, last frame, in pixels
   let wormAbsorbed = 0; // How far it's gone into the pixel array (1 = gone)
   let wormFront = { x: 0, y: 0 }; // Where its head is, once it's been pulled toward the middle
-  let spiralAt = { x: 0, y: 0 }; // Where the noisy spiral's coming from, which is where the worm was
   let tunnel = 0; // How far the worm and the flowers have shrunk away into the tunnel (1 = all the way)
-  let spiralDue = 0; // How many seconds it's been since it last changed
-  let spiralLength = 1; // How far around it went last time
-  let spiralTurned = 0;
-  let roughness = spiralRoughest;
-  let tightness = spiralLoosest;
 
   let canvas;
   let at = { x: 0, y: 0 }; // Where the worm is heading
@@ -363,38 +261,22 @@ export default function flow(p, container) {
     if (event.persisted) location.reload();
   });
 
-  const video = document.createElement('video');
-  video.playsInline = true;
-  video.muted = true;
-  let cameraWanted = false;
   let sound = null;
   let soundSwitch;
 
-  // Linear boil's grid: a small copy of whatever was on the canvas, one pixel to a square
-  const small = document.createElement('canvas');
-  const smallContext = small.getContext('2d', { willReadFrequently: true });
-  let cols = 0;
-  let rows = 0;
-  let picture = new Float32Array(0); // How bright each square was, from 0 to 1
-  let live = new Float32Array(0); // The same, from the camera
-  let cameraMix = 0; // How far the squares have turned from the picture to the camera
-  let colours = new Uint8ClampedArray(0);
-  let heat = new Float32Array(0);
-  let boilStart = 0;
-
   const marks = document.createElement('nav');
-  marks.className = 'flow-marks';
+  marks.className = 'wormhole-marks';
   marks.setAttribute('aria-label', 'skip');
   const soundSpot = document.createElement('div');
-  soundSpot.className = 'flow-sound-spot';
+  soundSpot.className = 'wormhole-sound-spot';
   const welcome = document.createElement('div');
-  welcome.className = 'flow-intro';
+  welcome.className = 'wormhole-intro';
   welcome.innerHTML = '<span>welcome to my<br>wormhole</span><span>click anywhere<br>to enter</span>';
   const caption = document.createElement('p');
-  caption.className = 'flow-caption';
+  caption.className = 'wormhole-caption';
   caption.setAttribute('aria-live', 'polite');
   const nextLabel = document.createElement('button');
-  nextLabel.className = 'flow-next';
+  nextLabel.className = 'wormhole-next';
   nextLabel.textContent = ringLabel;
   nextLabel.addEventListener('click', () => {
     if (ringWaiting) bringRing();
@@ -402,78 +284,6 @@ export default function flow(p, container) {
 
   // The start of a random range of brightness, without the flicker for anyone who's asked for less motion
   const shimmer = (low) => (calm ? (low + 255) / 2 : p.random(low, 255));
-
-  function takePicture() {
-    cols = Math.ceil(p.width / cell) + 1;
-    rows = Math.ceil(p.height / cell) + 1;
-    small.width = cols;
-    small.height = rows;
-    smallContext.drawImage(canvas.elt, 0, 0, cols, rows);
-    const pixels = smallContext.getImageData(0, 0, cols, rows).data;
-    picture = new Float32Array(cols * rows);
-    live = new Float32Array(cols * rows);
-    cameraMix = 0;
-    colours = new Uint8ClampedArray(cols * rows * 3);
-    heat = new Float32Array(cols * rows);
-
-    let darkest = 255;
-    let brightest = 0;
-    for (let i = 0; i < picture.length; i++) {
-      const bright = (pixels[i * 4] + pixels[i * 4 + 1] + pixels[i * 4 + 2]) / 3;
-      picture[i] = bright;
-      darkest = Math.min(darkest, bright);
-      brightest = Math.max(brightest, bright);
-      colours.set(pixels.subarray(i * 4, i * 4 + 3), i * 3);
-    }
-    // Thin lines average out dim at this size, so stretch whatever range is there to fill 0 to 1
-    const range = brightest - darkest;
-    for (let i = 0; i < picture.length; i++) {
-      picture[i] = range > 8 ? Math.sqrt((picture[i] - darkest) / range) : 0;
-    }
-  }
-
-  const cameraReady = () => cameraWanted && video.readyState >= 2 && video.videoWidth > 0;
-
-  // Reads the camera into an array, mirrored and cropped to fit, as the original sketch's squares were
-  function readCamera(smallContext, cols, rows, live) {
-    const scale = Math.max(cols / video.videoWidth, rows / video.videoHeight);
-    const drawnWidth = video.videoWidth * scale;
-    const drawnHeight = video.videoHeight * scale;
-    smallContext.save();
-    smallContext.translate(cols, 0);
-    smallContext.scale(-1, 1);
-    smallContext.drawImage(video, (cols - drawnWidth) / 2, (rows - drawnHeight) / 2, drawnWidth, drawnHeight);
-    smallContext.restore();
-    const pixels = smallContext.getImageData(0, 0, cols, rows).data;
-    for (let i = 0; i < live.length; i++) {
-      live[i] = (pixels[i * 4] + pixels[i * 4 + 1] + pixels[i * 4 + 2]) / 3 / 255;
-    }
-  }
-
-  async function startCamera() {
-    cameraWanted = true;
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-      if (!cameraWanted) {
-        stream.getTracks().forEach((track) => track.stop()); // Switched off while the browser was asking
-        return;
-      }
-      video.srcObject = stream;
-      await video.play();
-      pictureChecked = false;
-      if (stages[current].hintWithoutCamera) showCaption(stages[current].name, stages[current].hint);
-    } catch (error) {
-      stopCamera();
-      const blocked = error.name === 'NotAllowedError' || !navigator.mediaDevices;
-      showCaption('no camera', blocked ? 'it\'s blocked here: allow it in this browser and in System Settings, or try another browser' : `${error.name}: ${error.message}`);
-    }
-  }
-
-  function stopCamera() {
-    cameraWanted = false;
-    video.srcObject?.getTracks().forEach((track) => track.stop());
-    video.srcObject = null;
-  }
 
   function startSound() {
     sound = startAudio() ?? sound;
@@ -541,8 +351,8 @@ export default function flow(p, container) {
   // on the waves. It's drawn at half the size and stretched, which is a part of how it looks. See src/testbed/iteration-1.js.
   function drawPixelArray(dt) {
     const opening = moveArrayCircle(dt);
-    if (!stages[current].settings.bloom && !stages[current].settings.pixels) arrayNoise = 0;
-    if (now.pixels < 0.01 && opening <= 0) {
+    if (!stages[current].settings.bloom) arrayNoise = 0;
+    if (opening <= 0) {
       arrayPath = 0;
       return;
     }
@@ -577,7 +387,7 @@ export default function flow(p, container) {
     const crackle = Math.pow(pixelX, 1 - arrayNoise) * Math.pow(noiseFinest, arrayNoise) + (calm ? 0 : Math.max(nearMiddle, arrayNoise) * p.random(1));
     const scan = w / 2; // Always wide, gradual waves
     // Fading in evenly, all over
-    const shown = Math.max(now.pixels, ease(opening)) * 255;
+    const shown = ease(opening) * 255;
     // Cracking, once it's covered the screen for a while: worked out as if each row were this wide
     const cracked = arrayFullAt === null ? 0 : ease(Math.min(1, Math.max(0, (seconds - arrayFullAt - crackAfter) / crackTime)));
     const wrongWidth = Math.max(1, Math.round(w * (1 - crackMost * cracked)));
@@ -634,297 +444,14 @@ export default function flow(p, container) {
       tunnel = arrayOpening;
     } else {
       arrayOpening = arrayOpening < 0.01 ? 0 : arrayOpening * Math.exp(-dt / morphTime);
-      tunnel += ((stages[current].settings.coil ? 1 : 0) - tunnel) * (1 - Math.exp(-dt / morphTime));
+      tunnel *= Math.exp(-dt / morphTime);
     }
-    const { bloom, pixels, noisy } = stages[current].settings;
-    if (bloom && arrayOpening > 0) wormSize *= Math.exp((-dt * (1 + boost)) / wormShrink);
-    else if (pixels) wormSize *= Math.exp(-dt / wormShrink); // Bursting it here doesn't hurry it away
-    else if (!noisy) wormSize = 1;
+    if (stages[current].settings.bloom && arrayOpening > 0) wormSize *= Math.exp((-dt * (1 + boost)) / wormShrink);
+    else wormSize = 1;
     if (wormSize === 1) wormAbsorbed = 0;
     // ...when it's small enough, or once the array's covered the screen for long enough anyway
     else if (wormWide < wormAbsorbedAt || wormAbsorbed > 0 || (arrayFullAt !== null && seconds - arrayFullAt > arrayHold)) wormAbsorbed = Math.min(1, wormAbsorbed + dt / wormAbsorbTime);
     return arrayOpening;
-  }
-
-  async function loadHandTracker() {
-    handTrackerLoading = true;
-    try {
-      window.p5 = p5; // ml5 needs the global one set before it loads
-      const { default: ml5 } = await import('ml5');
-      handTracker = await ml5.handPose(handOptions);
-    } catch (error) {
-      console.error(error);
-      showCaption('no hand tracking', 'the curves still follow the camera');
-    }
-  }
-
-  // The hands are only looked for while the curves are showing and the camera has a picture
-  function trackHands() {
-    const wanted = stages[current].settings.curves && cameraReady();
-    if (wanted && !handTracker && !handTrackerLoading) loadHandTracker();
-    if (wanted && handTracker && !trackingHands) {
-      trackingHands = true;
-      // It goes by these rather than the size of the picture, and they're 0 until they're set
-      video.width = video.videoWidth;
-      video.height = video.videoHeight;
-      handTracker.detectStart(video, (results) => (hands = results));
-    }
-    if (!wanted && trackingHands) {
-      trackingHands = false;
-      handTracker.detectStop();
-      hands = [];
-    }
-  }
-
-  // Each hand's fingers, where they show on the curves, and the note they pick
-  function handsOnCurves() {
-    const scale = Math.max(curveAcross / video.videoWidth, curveDown / video.videoHeight);
-    const onCurves = ({ x, y }) => ({
-      x: (curveAcross - (x * scale + (curveAcross - video.videoWidth * scale) / 2)) * curveSpacing,
-      y: (y * scale + (curveDown - video.videoHeight * scale) / 2) * curveSpacing,
-    });
-    return hands.slice(0, pipeNotes.length).map((hand, i) => {
-      const thumb = hand.keypoints[4];
-      const finger = hand.keypoints[8];
-      const pinch = (Math.hypot(thumb.x - finger.x, thumb.y - finger.y) * 640) / video.videoWidth;
-      const notes = pipeNotes[i];
-      const note = p.constrain(Math.floor(p.map(pinch, pinchClosed, pinchOpen, 0, notes.length - 1)), 0, notes.length - 1);
-      const from = onCurves(thumb);
-      const to = onCurves(finger);
-      return {
-        from,
-        to,
-        x: (from.x + to.x) / 2,
-        y: (from.y + to.y) / 2,
-        reach: stringReach + Math.hypot(from.x - to.x, from.y - to.y) / 2,
-        wave: p.lerp(stringWaves[0], stringWaves[1], note / (notes.length - 1)),
-        pitch: notes[note],
-      };
-    });
-  }
-
-  // A pipe holds its last note when its hand's gone. They fade out when there aren't any hands, and back in
-  // when they return. They can only be heard while the sound's on.
-  function playPipes(playing, dt) {
-    pipeAmount = playing.length ? Math.min(1, pipeAmount + 0.03 * dt * 60) : pipeAmount * Math.pow(0.95, dt * 60);
-    if (!sound) return;
-    pipes ??= pipeNotes.map(() => {
-      const pipe = sound.createOscillator();
-      const volume = sound.createGain();
-      pipe.type = 'triangle';
-      pipe.frequency.value = 0;
-      volume.gain.value = 0;
-      pipe.connect(volume).connect(sound.destination);
-      pipe.start();
-      return { pipe, volume };
-    });
-    pipes.forEach(({ pipe, volume }, i) => {
-      if (playing[i]) pipe.frequency.setTargetAtTime(playing[i].pitch, sound.currentTime, 0.01);
-      volume.gain.setTargetAtTime(pipeAmount * pipeLevel, sound.currentTime, 0.02);
-    });
-  }
-
-  // A block of curves in the middle of the screen, each point pushed by how bright the camera is there, and
-  // smaller on a screen too small for it. It goes straight to the canvas, since there are thousands of points.
-  function drawCurves(dt) {
-    trackHands();
-    const playing = trackingHands && video.videoWidth ? handsOnCurves() : [];
-    playPipes(playing, dt);
-    if (now.curves < 0.01) return;
-    const across = curveAcross;
-    const down = curveDown;
-    if (curveCanvas.width !== across || curveCanvas.height !== down) {
-      curveCanvas.width = across;
-      curveCanvas.height = down;
-      curveCamera = new Float32Array(across * down);
-    }
-    const useCamera = stages[current].settings.curves && cameraReady();
-    if (useCamera) readCamera(curveContext, across, down, curveCamera);
-    curveMix += ((useCamera ? 1 : 0) - curveMix) * (1 - Math.exp(-dt / curveCameraTime));
-    // A camera can be on and still send nothing, as virtual ones do when nothing's feeding them
-    if (useCamera && !pictureChecked && curveMix > 0.9) {
-      pictureChecked = true;
-      if (Math.max(...curveCamera) - Math.min(...curveCamera) < 0.02) {
-        showCaption('blank camera', `${video.srcObject.getVideoTracks()[0].label} isn't sending a picture`);
-      }
-    }
-
-    const time = calm ? 0 : seconds * curveCalm;
-    const bend = curveBend * now.curves;
-    const xs = new Float32Array(across);
-    const ys = new Float32Array(across);
-    const context = p.drawingContext;
-    context.save();
-    const wide = (across - 1) * curveSpacing;
-    const tall = (down - 1) * curveSpacing;
-    const fit = Math.min(1, p.width / (wide + curveBend * 2), p.height / (tall + curveBend * 2));
-    context.translate((p.width - wide * fit) / 2, (p.height - tall * fit) / 2);
-    context.scale(fit, fit);
-    context.globalAlpha = now.curves;
-    context.strokeStyle = 'black';
-    context.lineWidth = 1 / fit;
-    context.beginPath();
-    for (let y = 0; y < down; y++) {
-      for (let x = 0; x < across; x++) {
-        const ripple = p.constrain(p.noise(x * 0.1, y * 0.1, time) * 2 - 0.5, 0, 1);
-        const bright = ripple + (curveCamera[y * across + x] - ripple) * curveMix;
-        const push = (bright * 2 - 1) * bend;
-        xs[x] = x * curveSpacing + push;
-        ys[x] = y * curveSpacing + push;
-        // Near a hand they vibrate, more tightly for higher notes
-        for (const { x: handX, y: handY, reach, wave } of playing) {
-          const near = Math.exp(-((x * curveSpacing - handX) ** 2 + (y * curveSpacing - handY) ** 2) / (2 * reach * reach));
-          ys[x] += stringBend * pipeAmount * near * Math.sin((x * curveSpacing * Math.PI * 2) / wave - time * stringTime);
-        }
-      }
-      // A curve through every point, in the way that p5's splineVertex() does it
-      context.moveTo(xs[0], ys[0]);
-      for (let x = 0; x < across - 1; x++) {
-        const before = Math.max(0, x - 1);
-        const after = Math.min(across - 1, x + 2);
-        context.bezierCurveTo(xs[x] + (xs[x + 1] - xs[before]) / 6, ys[x] + (ys[x + 1] - ys[before]) / 6, xs[x + 1] - (xs[after] - xs[x]) / 6, ys[x + 1] - (ys[after] - ys[x]) / 6, xs[x + 1], ys[x + 1]);
-      }
-    }
-    context.stroke();
-    // The line between each hand's thumb and finger, which is what plays it
-    context.lineWidth = 3 / fit;
-    context.beginPath();
-    for (const { from, to } of playing) {
-      context.moveTo(from.x, from.y);
-      context.lineTo(to.x, to.y);
-    }
-    context.stroke();
-    context.restore();
-  }
-
-  // Works out the noisy spiral afresh. Each point comes partly from the last one, by an amount that's
-  // different every time, which is what makes it noisy.
-  function growSpiral() {
-    const row = calm ? 0 : p.random(1000); // A new row of noise each time, without reseeding it, which would jolt the worm
-    const grown = p.lerp(1, endReach, spiralEnding());
-    const limitX = (p.width / spiralReach) * now.spiral * grown;
-    const limitY = (p.height / spiralReach) * now.spiral * grown;
-    spiralLines = Array.from({ length: spiralWeights }, () => new Path2D());
-    let x = 0;
-    let y = 0;
-    let around = 0;
-    for (let i = 0; i < spiralMostLines && x < limitX && y < limitY; i++) {
-      const wobble = p.noise(around, row);
-      const radius = (around * around) / tightness;
-      const nextX = radius * Math.cos(around) + (x / roughness) * wobble * now.noisy;
-      const nextY = radius * Math.sin(around) + (y / roughness) * wobble * now.noisy;
-      const weight = Math.min(spiralWeights - 1, Math.floor((around / spiralLength) * spiralWeights));
-      spiralLines[weight].moveTo(x, y);
-      spiralLines[weight].lineTo(nextX, nextY);
-      x = nextX;
-      y = nextY;
-      around += spiralStep;
-    }
-    spiralLength = around;
-  }
-
-  // How far through its ending the noisy spiral is, from 0 to 1
-  function spiralEnding() {
-    return stages[current].settings.noisy ? p.constrain((progress - endStarts) / (1 - endStarts), 0, 1) : 0;
-  }
-
-  // How bright the flash of lightning is, from 0 to 1. Moves on to the next one when it's time. There's none once
-  // the lines are piling up, since they'd all stay.
-  function strikeLight() {
-    if (calm || !stages[current].settings.noisy || spiralEnding() > endPiling / 2) return 0;
-    if (seconds >= nextStrike) {
-      pickFragment();
-      strikeFades = !clipCrop;
-      strikeEnds = seconds + (clipCrop ? strikeClipLength : strikeLength);
-      roseBurst();
-      if (firstStrikes > 0) {
-        firstStrikes--;
-        secondFlash = false;
-        nextStrike = seconds + (firstStrikes > 0 ? p.random(strikesFirstEvery[0], strikesFirstEvery[1]) : p.random(strikeEvery[0], strikeEvery[1]));
-      } else {
-        secondFlash = !secondFlash && p.random() < strikeDouble;
-        nextStrike = seconds + (secondFlash ? strikeGap : p.random(strikeEvery[0], strikeEvery[1]));
-      }
-    }
-    if (seconds < strikeEnds) return 1;
-    return strikeFades ? Math.max(0, 1 - (seconds - strikeEnds) / strikeFade) : 0;
-  }
-
-  // Whether the strike starting now is in colour, and which part of the video it shows
-  function pickFragment() {
-    clipCrop = null;
-    if (clip.readyState < 2 || clip.seeking || p.random() >= strikeInColour) return;
-    const share = p.random(strikeClipCrop[0], strikeClipCrop[1]);
-    const wide = clip.videoWidth * share;
-    const tall = clip.videoHeight * share;
-    clipCrop = { x: p.random(clip.videoWidth - wide), y: p.random(clip.videoHeight - tall), wide, tall };
-    clipMoved = false;
-  }
-
-  // A strike in colour, over the ground and under the spiral. Once it's over, the video moves on to somewhere new.
-  function drawFragment() {
-    const light = strikeLight();
-    if (clipCrop && light > 0) {
-      const context = p.drawingContext;
-      context.save();
-      context.globalAlpha = light;
-      context.drawImage(clip, clipCrop.x, clipCrop.y, clipCrop.wide, clipCrop.tall, 0, 0, p.width, p.height);
-      context.restore();
-    } else if (light === 0) {
-      clipCrop = null;
-      if (!clipMoved && clip.readyState >= 1) {
-        clip.currentTime = p.random(clip.duration);
-        clipMoved = true;
-      }
-    }
-  }
-
-  // The ground, with any lightning in it
-  function groundNow() {
-    const light = strikeLight();
-    return clipCrop ? now.ground : p.lerp(now.ground, 255 - now.ground, light);
-  }
-
-  // The spiral bursts into a rose. Lightning sets it off, and so does letting go of the mouse.
-  function roseBurst() {
-    roughness = strikeRose.roughness;
-    tightness = Math.max(tightness, strikeRose.tightness);
-    spiralDue = 1;
-  }
-
-  function changeSpiral(shape) {
-    roughness = shape.roughness;
-    tightness = p.random(shape.tightness[0], shape.tightness[1]);
-  }
-
-  // Only there for its own stage, where it bursts out of where the worm was.
-  // Goes straight to the canvas, since there can be thousands of lines.
-  function drawSpiral(dt) {
-    if (!calm && now.coil > 0.01 && now.noisy < 0.5) spiralTurned += coilSpin * dt;
-    if (now.spiral < 0.01) return;
-    spiralDue += dt;
-    if (now.noisy < 0.5) {
-      growSpiral(); // Smooth until it's mostly noisy, when it starts to jump
-    } else if (spiralDue >= 1 / spiralTicks) {
-      spiralDue %= 1 / spiralTicks;
-      growSpiral();
-      if (!calm) spiralTurned += spiralTurn;
-      if (roughness < spiralSmoothest) roughness += spiralSmoothing;
-      tightness += (spiralLoosest * Math.pow(spiralTightest / spiralLoosest, Math.min(1, progress)) - tightness) * spiralSettling;
-    }
-    const context = p.drawingContext;
-    context.save();
-    spiralAt.x += (p.width / 2 - spiralAt.x) * (1 - Math.exp(-dt / morphTime));
-    spiralAt.y += (p.height / 2 - spiralAt.y) * (1 - Math.exp(-dt / morphTime));
-    context.translate(spiralAt.x, spiralAt.y);
-    context.rotate(spiralTurned);
-    const ink = groundNow() > 127 ? 0 : 255; // Whichever the ground isn't
-    context.strokeStyle = `rgb(${ink},${ink},${ink})`;
-    spiralLines.forEach((lines, i) => {
-      context.lineWidth = 2 + i / (spiralWeights - 1);
-      context.stroke(lines);
-    });
-    context.restore();
   }
 
   // The flowers fly by in the same way as the stars (see drawStars()), from the same point. They start
@@ -1014,17 +541,14 @@ export default function flow(p, container) {
   }
 
   function moveField() {
-    const { bloom, pixels } = stages[current].settings;
-    // They last into the pixel array
-    if (bloom) fieldLeft = 1 - fieldClosing * arrayOpening;
-    else if (pixels) fieldLeft = Math.max(0, fieldLeft - ((1 - fieldClosing) * frameTime) / fieldLingers);
-    else fieldLeft = 1;
-    const lasting = pixels && fieldLeft > 0;
-    if (bloom === 0 && now.bloom < 0.01 && !lasting) {
+    const { bloom } = stages[current].settings;
+    // They get smaller as the pixel array closes in
+    fieldLeft = bloom ? 1 - fieldClosing * arrayOpening : 1;
+    if (bloom === 0 && now.bloom < 0.01) {
       field = [];
       return;
     }
-    if (lasting || (bloom === 1 && seconds - stageStart > fieldDelay)) {
+    if (bloom === 1 && seconds - stageStart > fieldDelay) {
       fieldDue += (fieldCount * fieldSpeed * frameTime * forwardMotion()) / fieldStream;
       for (; fieldDue >= 1; fieldDue--) {
         if (field.length < fieldCount) field.push(newFieldFlower());
@@ -1069,7 +593,7 @@ export default function flow(p, container) {
     return {
       x: focus.x + (flower.x * reach) / flower.z + flower.driftX,
       y: focus.y + (flower.y * reach) / flower.z + flower.driftY,
-      size: (stages[current].settings.pixels ? 1 : now.bloom) * fieldLeft * Math.min(((fieldSize * shorter) / 800) / Math.pow(flower.z, fieldGrow), (fieldBiggest * shorter) / flower.petalLength),
+      size: now.bloom * fieldLeft * Math.min(((fieldSize * shorter) / 800) / Math.pow(flower.z, fieldGrow), (fieldBiggest * shorter) / flower.petalLength),
     };
   }
 
@@ -1083,7 +607,7 @@ export default function flow(p, container) {
   function showCaption(name, hint) {
     caption.innerHTML = '';
     const title = document.createElement('span');
-    title.className = 'flow-caption-name';
+    title.className = 'wormhole-caption-name';
     title.textContent = name;
     caption.append(title, ` ${hint}`);
     // Restarts the fade
@@ -1110,31 +634,9 @@ export default function flow(p, container) {
     // The flowers stage always starts with the worm bursting
     if (stages[current].settings.bloom) bloomStart = seconds; // It waits, wobbles and bursts (see bloomFade)
     else bloomStart = null;
-    const { name, hint, hintWithoutCamera, settings } = stages[current];
-    if (settings.grid) {
-      takePicture();
-      boilStart = seconds;
-    }
-    if ((settings.bloom || settings.noisy) && !clip.src) {
-      clip.src = strikeClip;
-      clip.addEventListener('loadedmetadata', () => (clip.currentTime = p.random(clip.duration)), { once: true });
-    }
-    if (settings.noisy && !calm) clip.play().catch(() => {});
-    else clip.pause();
-    // The noisy spiral doesn't carry over into any other stage
-    if (!settings.noisy) Object.assign(now, { spiral: 0, noisy: 0 });
-    // The noisy spiral's a cut: straight to black, with the spiral already bursting out
-    if (settings.noisy) {
-      changeSpiral(spiralBursts);
-      for (const flower of segments) if (flower) flower.blastX = flower.blastY = flower.blastToX = flower.blastToY = 0;
-      Object.assign(now, { noisy: 1, spiral: 1, body: 0, pixels: 0, bloom: 0, ground: settings.ground, wash: settings.wash });
-      arrayOpening = 0;
-      spiralDue = 1;
-      nextStrike = seconds; // It opens with lightning
-      firstStrikes = strikesFirst;
-    }
-
-    if (begun) showCaption(name, hintWithoutCamera && !cameraReady() ? hintWithoutCamera : hint);
+    const { name, hint, settings } = stages[current];
+    if (settings.bloom && !clip.src) clip.src = strikeClip;
+    if (begun) showCaption(name, hint);
     history.replaceState(null, '', `#${slug(name)}`);
     if (stages[current].sketch) handOver(stages[current].sketch);
   }
@@ -1203,8 +705,7 @@ export default function flow(p, container) {
   // the captions, the sound switch and the skip link staying as they are. `options` go to the next sketch.
   function handOver(sketch, options = {}) {
     handedOver = true;
-    clip.pause();
-    // Once this frame's done. The page keeps resizing this one (see src/scripts/sketchbook.js), so that's turned off,
+    // Once this frame's done. The page keeps resizing this one (see src/scripts/mount_sketches.js), so that's turned off,
     // and the next one keeps itself the size of the screen.
     requestAnimationFrame(() => {
       p.resizeCanvas = () => {};
@@ -1421,7 +922,6 @@ export default function flow(p, container) {
     const length = Math.round(now.length);
     const start = Math.max(0, trail.length - length);
     const round = p.width / 8;
-    p.rectMode(p.CENTER);
     p.fill(0);
     const wormWeight = p.random(1, 2); // The worms flicker a whole frame at a time, and the wake holds steady
     // Having come through the ring as the flower worm, waiting as the field's colour fades in, wobbling more and more,
@@ -1531,8 +1031,7 @@ export default function flow(p, container) {
         const wobbleX = Math.sin(seconds * bloomWobbleSpeed + segment * 0.7) * wobble;
         const wobbleY = Math.cos(seconds * bloomWobbleSpeed * 1.3 + segment * 0.5) * wobble;
         drawFlower(flower, seenX + Math.cos(flower.burstAngle) * thrown + flower.blastX + wobbleX, seenY + Math.sin(flower.burstAngle) * thrown + flower.blastY + wobbleY, (w * grown) / (flower.petalLength * 2), 1 - wormAbsorbed, flowerContext);
-      } else if (now.box < 0.01) p.ellipse(seenX, seenY, w, h);
-      else p.rect(seenX, seenY, w, h, (Math.min(w, h) / 2) * (1 - now.box));
+      } else p.ellipse(seenX, seenY, w, h);
     }
     showFaint();
     if (formAt && seconds - formStart > formTime && now.space > 0.999) formAt = null;
@@ -1569,63 +1068,17 @@ export default function flow(p, container) {
     }
   }
 
-  // Goes straight to the canvas, since there can be thousands of squares
-  function drawBoil(moved, dt) {
-    if (now.grid < 0.01 || !picture.length) return;
-    if (cols !== Math.ceil(p.width / cell) + 1 || rows !== Math.ceil(p.height / cell) + 1) takePicture();
-
-    // Once the stage has started, the camera takes over from the painting
-    const useCamera = stages[current].settings.grid && cameraReady();
-    if (useCamera) readCamera(smallContext, cols, rows, live);
-    cameraMix += ((useCamera ? 1 : 0) - cameraMix) * (1 - Math.exp(-dt / cameraTime));
-
-    if (moved > 0) {
-      const column = Math.floor(at.x / cell);
-      const row = Math.floor(at.y / cell);
-      const strength = (Math.min(moved, 60) / 60) * (pointer.down ? 1.5 : 0.5);
-      for (let y = Math.max(0, row - stirSize); y <= Math.min(rows - 1, row + stirSize); y++) {
-        for (let x = Math.max(0, column - stirSize); x <= Math.min(cols - 1, column + stirSize); x++) {
-          const near = 1 - Math.hypot(x - column, y - row) / stirSize;
-          if (near > 0) heat[y * cols + x] += near * strength;
-        }
-      }
-    }
-
-    const context = p.drawingContext;
-    context.save(); // p5 doesn't know about the fill set below
-    const white = Math.min(1, (seconds - boilStart) / whitenTime);
-    const time = calm ? 0 : seconds * 0.6;
-    const keep = Math.pow(cooling, dt * 60);
-    for (let y = 0; y < rows; y++) {
-      for (let x = 0; x < cols; x++) {
-        const i = y * cols + x;
-        heat[i] *= keep;
-        const boiling = (p.noise(x * 0.15, y * 0.15, time) - 0.5) * 0.6;
-        const seen = picture[i] + (live[i] - picture[i]) * cameraMix;
-        const size = cell * now.grid * Math.min(1, Math.max(0, seen + heat[i] + boiling));
-        if (size < 1) continue;
-        const r = colours[i * 3] + (255 - colours[i * 3]) * white;
-        const g = colours[i * 3 + 1] + (255 - colours[i * 3 + 1]) * white;
-        const b = colours[i * 3 + 2] + (255 - colours[i * 3 + 2]) * white;
-        context.fillStyle = `rgb(${r},${g},${b})`;
-        context.fillRect(x * cell - size / 2, y * cell - size / 2, size, size);
-      }
-    }
-    context.restore();
-  }
-
   p.setup = () => {
     canvas = p.createCanvas(container.clientWidth, container.clientHeight);
     p.background(0);
     at = { x: p.width / 2, y: p.height / 2 };
-    spiralAt = { ...at };
     focus = { ...at };
     steer = { ...at };
 
     soundSwitch = soundButton();
     onSoundChange((on) => (on ? startSound() : stopSound()));
     const skip = document.createElement('a');
-    skip.className = 'flow-skip';
+    skip.className = 'wormhole-skip';
     skip.href = after;
     skip.textContent = 'skip';
     skip.addEventListener('click', (event) => {
@@ -1662,8 +1115,7 @@ export default function flow(p, container) {
       if (ringWaiting) bringRing();
     });
     window.addEventListener('pointerup', () => {
-      if (pointer.down && stages[current].settings.noisy) roseBurst();
-      if (pointer.down && (stages[current].settings.bloom || stages[current].settings.pixels)) {
+      if (pointer.down && stages[current].settings.bloom) {
         const charge = Math.min(1, (seconds - heldFrom) / explodeCharge);
         explode(p.lerp(explodeLeast, explodeMost, charge) * Math.min(p.width, p.height));
       }
@@ -1686,7 +1138,6 @@ export default function flow(p, container) {
       }
       if (event.key === 'ArrowRight') goTo(current + 1);
       if (event.key === 'ArrowLeft') goTo(current - 1);
-      if (stages[current].settings.noisy && spiralShapes[event.key - 1]) changeSpiral(spiralShapes[event.key - 1]);
     });
 
     const named = stages.findIndex(({ name }) => `#${slug(name)}` === location.hash);
@@ -1715,15 +1166,9 @@ export default function flow(p, container) {
 
     const wash = pointer.down ? now.washHeld : p.lerp(now.wash, Math.max(now.wash, ringWash), ringPull * now.space);
     groundTint *= Math.exp(-dt / ringFade);
-    if (pointer.down && (stages[current].settings.bloom || stages[current].settings.pixels)) boost = Math.min(boostMost, boost + boostRise * dt);
+    if (pointer.down && stages[current].settings.bloom) boost = Math.min(boostMost, boost + boostRise * dt);
     else boost *= Math.exp(-dt / boostFade);
-    const ground = groundNow();
-    const ending = spiralEnding();
-    const fading = wash * (1 - Math.min(1, ending / endPiling)) ** 3;
-    if (fading >= 1) p.background(...groundColour.map((colour) => p.lerp(ground, colour, groundTint)), fading);
-    const white = Math.max(0, (ending - endPiling) / (1 - endPiling));
-    if (white > 0) p.background(255, white * white * endWhite);
-    drawFragment();
+    if (wash >= 1) p.background(...groundColour.map((colour) => p.lerp(now.ground, colour, groundTint)), wash);
 
     const moved = moveWorm(dt);
     steer.x += (at.x - steer.x) * steerFollow;
@@ -1735,10 +1180,7 @@ export default function flow(p, container) {
     const level = screenLevel();
     focus.x += (p.lerp(at.x, heading, now.space) - focus.x) * focusFollow;
     focus.y += (p.lerp(at.y, level, now.space) - focus.y) * focusFollow;
-    drawBoil(moved, dt);
     drawPixelArray(dt);
-    drawCurves(dt);
-    drawSpiral(dt);
     frameTime = dt;
     if (pointer.down && moved > 0 && stages[current].settings.bloom) plantInField(at.x, at.y);
     // The stars, the flowers and the worm stay inside the old TV's screen, once the pixel array's taking on its shape
@@ -1772,9 +1214,7 @@ export default function flow(p, container) {
       const crt = tvShaped();
       const inset = crtInset * Math.min(p.width, p.height) * crt * density;
       tvScreen = { x: inset, y: inset, wide: screen.width - inset * 2, tall: screen.height - inset * 2, round: crtCorner * Math.min(p.width, p.height) * crt * density };
-      spiralAt = { ...wormFront };
     } else if (bloom && arrayOpening >= 1) {
-      now.pixels = 1;
       arrayFullAt ??= seconds;
     } else if (!bloom && progress >= 1 && !usesRing) {
       goTo(current + 1);

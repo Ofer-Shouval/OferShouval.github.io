@@ -3,18 +3,19 @@ import p5 from 'p5';
 // The friendly-error checker slows every p5 call; it stays on in `npm run dev` to help while writing sketches.
 p5.disableFriendlyErrors = import.meta.env.PROD;
 
-// Mounts sketches from src/sketchbook/ into <div class="sketch" data-sketch="name"> containers.
+// Mounts sketches from src/wormhole/ (the front page's wormhole) and src/sketchbook/ (loose sketches) into
+// <div class="sketch" data-sketch="name"> containers, by the file's name without .js.
 // Each sketch's code loads only when its container nears the viewport, and sketches pause while
 // off screen, so a page can hold many of them.
 
-const sketches = import.meta.glob('../sketchbook/*.js');
+const sketches = import.meta.glob(['../wormhole/*.js', '../sketchbook/*.js']);
 const running = new Map(); // container -> { p, wasLooping }
 
 async function start(container) {
   const name = container.dataset.sketch;
-  const load = sketches[`../sketchbook/${name}.js`];
+  const load = sketches[`../wormhole/${name}.js`] ?? sketches[`../sketchbook/${name}.js`];
   if (!load) {
-    console.error(`No sketch named "${name}" in src/sketchbook/`);
+    console.error(`No sketch named "${name}" in src/wormhole/ or src/sketchbook/`);
     return;
   }
   running.set(container, { p: null, wasLooping: true });

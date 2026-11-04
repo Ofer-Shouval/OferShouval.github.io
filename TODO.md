@@ -23,12 +23,11 @@ Placeholders on the site show as dashed "TODO" boxes in `npm run dev`.
 - [ ] A thumbnail for its card on the Projects page
 - [ ] Intro text and the years it covers
 
-### Sketchbook
-- [ ] Old sketches, with a year and origin for each ("began as a demo for…")
-- [ ] Psychworm's year and origin
+### Wormhole
+- [ ] Years and origins for the sketches in it ("began as a demo for…"), if they're to be credited anywhere
 - [ ] Links to source code, if sharing it
 
-### Teaching
+### Teaching (left out of the site for now)
 - [ ] Teaching statement
 - [ ] Each course: school, years, two-line description, syllabus link if public
 - [ ] 4–8 student projects: images, name, course, year, role
@@ -42,15 +41,13 @@ Placeholders on the site show as dashed "TODO" boxes in `npm run dev`.
 
 ## Build (once the assets arrive)
 - [ ] Convert and compress media: video to MP4 plus a poster frame, photos to sized JPGs
-- [ ] Fill in the pages and add release, sketch and student cards
-- [ ] Port old sketches to the instance-mode template
-- [ ] Optionally bring back `boxyworm` from `archive/` as a second sketch
+- [ ] Fill in the pages and add release and student cards
 - [ ] Add a favicon and link-preview tags, so shared links show an image and description
 
 ## Before launch
 - [x] Commit the pending changes: the projects rename, p5 2.x and the Sketchbook
 - [ ] Push `2026_Updates` to GitHub as a backup
 - [ ] Test on a phone, especially the navbar and the sketches, which have no mouse there
-- [ ] Remove the leftover templates from the build, or keep them unlinked
+- [ ] Remove the leftover templates from the build, or keep them unlinked (the sketch page template is archived)
 - [ ] Add the GitHub Actions deploy workflow
 - [ ] Merge to `master` and set Pages → Source to "GitHub Actions" at the same time

@@ -6,7 +6,7 @@
 // wanted. Its sound starts on the page's first press after that: startAudio() gives the page's AudioContext,
 // running, whenever sound's wanted, and onSoundChange() says when it's turned on or off.
 //
-// Any element with a data-sound attribute gets a speaker put in it. The sketchbook puts its own in with
+// Any element with a data-sound attribute gets a speaker put in it. The wormhole puts its own in with
 // soundButton().
 
 const choiceKey = 'sound'; // 'on' or 'off'

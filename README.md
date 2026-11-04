@@ -11,16 +11,18 @@ npm run preview  # serve the dist/ build locally
 
 ## Layout
 
-- `index.html` — home: the wormhole (the sketchbook journey in `src/sketchbook/flow.js`), ending in three portals to art, music and bio (`src/sketchbook/spiral-worm.js`)
-- `art/` — one page per piece; `art/index.html` is the walking landing page, and `art/all.html` the grid of everything; `art/sketchbook/` forwards to the front page
+- `index.html` — home: the wormhole (old sketches turning into each other, in `src/wormhole/wormhole.js`), ending in three portals to art, music and bio (`src/wormhole/spiral-worm.js`)
+- `art/` — one page per piece; `art/index.html` is the walking landing page, and `art/all.html` the grid of everything; `art/sketchbook/` has the sketch test page, and its index forwards to the front page
 - `music/` — `index.html` is the full-screen "Wake" sketch, with gates to `live.html`, `recordings.html` (releases grid), `videos.html` and `info.html`; `release-template.html` to copy for each release
-- `teaching/` — courses and student work
+- `teaching/` — courses and student work (left out of the navbar and the build for now; still runs in `npm run dev`)
 - `bio/` — bio
 - `projects.html`, `bio.html` — redirects from the old URLs
 - `src/partials/` — shared HTML pulled in with `<!-- @include file.html -->` at build time
 - `src/sketches/music/` — the music page sketch: `sketch.js` runs it, with `boat.js`, `gate.js`, `wake.js`, `water.js`, `color.js` and `perspective.js`
 - `src/sketches/art_walk.js` — the art landing sketch, with `brush_frames.js`, which paints its walk cycle with p5.brush along the skeleton in `figure.js`
-- `src/sketchbook/` — sketchbook sketches, mounted by `src/scripts/sketchbook.js`
+- `src/wormhole/` — the front page's wormhole: `wormhole.js` runs the stages and hands over to `spiral-worm.js` for the last one
+- `src/sketchbook/` — loose sketches (the wormhole has its own blended copies of them)
+- `src/scripts/mount_sketches.js` — mounts sketches from `src/wormhole/` and `src/sketchbook/` into `data-sketch` containers
 - `src/scripts/media.js` — lazy-loads videos on every page
 - `src/styles/main.css` — site styles
 - `public/media/` — images and videos, referenced as `/media/name.ext`
@@ -39,15 +41,16 @@ Convert GIFs or clips to MP4 and use a poster frame:
 
 ## Adding a sketch to the sketchbook
 
-1. Copy `src/sketchbook/template.js` to `src/sketchbook/<name>.js` and write the sketch in instance mode
-   (`export default function (p, container) { ... }`, size the canvas to `container`).
-2. Copy `art/sketchbook/sketch-template.html` to `art/sketchbook/<name>.html` and set `data-sketch="<name>"`.
+Copy `src/sketchbook/template.js` to `src/sketchbook/<name>.js` and write the sketch in instance mode
+(`export default function (p, container) { ... }`, size the canvas to `container`). To show it on a page, add
+`<div class="sketch" data-sketch="<name>"></div>` and load `src/scripts/mount_sketches.js`. (The old
+one-page-per-sketch pages are in `archive/sketch-pages/`.)
 
-To try one by itself, full screen, run `npm run dev` and open `/art/sketchbook/test.html?sketch=<name>`. This
-also runs plain p5 sketches (`function setup`, `function draw`) that haven't been converted yet.
+To try one by itself, full screen, run `npm run dev` and open `/art/sketchbook/test.html?sketch=<name>` (it finds
+sketches in `src/wormhole/` too). This also runs plain p5 sketches (`function setup`, `function draw`) that haven't been converted yet.
 
-`art/sketchbook/index.html` is one continuous piece rather than a list of these: to add a sketch to it, add a
-stage to `stages` in `src/sketchbook/flow.js`, with settings for how the one before turns into it. A stage can
+To add a sketch to the wormhole on the front page, add a
+stage to `stages` in `src/wormhole/wormhole.js`, with settings for how the one before turns into it. A stage can
 use the camera and sound the visitor turned on (see the top of that file).
 
 Images and sounds a sketch loads go in `public/media/sketchbook/`, and are loaded from `/media/sketchbook/...`.

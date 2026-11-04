@@ -1,13 +1,13 @@
 // Trying out: a worm drawn by the line of the noisy spiral. One line coils round and round the worm's body from its
 // tail to its head, like a spring bent along its path, and the path weaves away into the distance, toward a point up
-// near the horizon, like the psychworm in space in the sketchbook. Its tail's nearest, at the spiral, and each turn of
+// near the horizon, like the psychworm in space earlier in the wormhole. Its tail's nearest, at the spiral, and each turn of
 // the coil is smaller the further away it is. Like the noisy spiral, each point on the line comes partly from the last
 // one, by an amount that's different every time, which makes it noisy, and the noise changes a few times a second.
 // Its tail stays where it comes off the spiral until the spiral's all unwound. Then it's free: its tail drifts about the
 // screen, and once it's let go and jolts forward, stars streak past, out from the point it's heading toward, as they do round the psychworm (see
-// drawStars() in flow.js), so it looks like it's set off, moving forward. Then its tail's let go, and the view comes
+// drawStars() in wormhole.js), so it looks like it's set off, moving forward. Then its tail's let go, and the view comes
 // round to the psychworm's, like a rubber band let go (see stretchTime): from just above and behind it, with its tail near, at the bottom of the screen, as it
-// weaves through space (see seenFromBehind() in flow.js).
+// weaves through space (see seenFromBehind() in wormhole.js).
 //
 // It curves about wildly like the noisy spiral's roses, with noise that changes quickly from point to point, but it's
 // held in close to the body, gently, so it never flies out into spikes.
@@ -17,7 +17,7 @@
 // the first part of the worm (see emerge). It unwinds like thread off a spool: the spiral's used up from the outside in,
 // as the worm gets longer, its head leading the way out, until the spiral's gone (see unwindTime).
 //
-// It's the last stage of the wormhole on the front page (see flow.js): it opens on the noisy spiral, big, as it is
+// It's the last stage of the wormhole on the front page (see wormhole.js): it opens on the noisy spiral, big, as it is
 // there (see spiralTime), loose at first and winding tighter, with its lines closer and closer together and the line
 // longer and longer, always as big. Then the worm comes out of it. Once the worm's let go and jolted forward, it flies on
 // for a moment, and three portals appear, to art, music and bio (see portals): each a point, with its name on top of it
@@ -43,7 +43,7 @@ const weaveTall = 0.6; // ...and up and down, as a share of the screen's height
 const weaving = 0.5; // How much of its weave shows, as it goes away (0 = straight away from the spiral)
 const horizon = 0.25; // How far down the screen the point it's heading away toward is
 
-// The stars streaking past (as in flow.js)
+// The stars streaking past (as in wormhole.js)
 const starCount = 120;
 const starSpeed = 0.35; // How much of the way to the camera a star comes each second
 const setOffTime = 3.5; // How many seconds after it's free its tail's let go, and its tail takes to start drifting
@@ -51,7 +51,7 @@ const driftWide = 0.25; // How far its tail drifts from the middle of the screen
 const driftTall = 0.12; // ...and up and down, as a share of the height
 const driftSpeed = 0.15; // How quickly it drifts (smaller = slower)
 
-// The psychworm's view, which it comes round to once it's set off (as in flow.js)
+// The psychworm's view, which it comes round to once it's set off (as in wormhole.js)
 const releaseTime = 4; // How many seconds that takes
 
 // Like a rubber band: just before its tail's let go, it's pulled out longer and thinner, while the camera rises to look
@@ -96,20 +96,20 @@ const tailWide = 0.4; // How far it can drift from the middle of the screen, as 
 const tailTall = 0.1; // ...and up and down, as a share of the height
 const cameraAbove = 0.5; // How far the camera is above it, as a share of the screen's height
 
-// The noise (as in the noisy spiral in flow.js)
+// The noise
 const ticks = 12; // How many times a second it changes
 const spin = 1; // How far the coil turns each time it changes, in radians
-// The rose (as strikeRose in flow.js)
+// The rose
 const roseRoughness = 0.8; // How much of the last point goes into the next is 1 / this, times the noise (under 1 = wilder)
 const roseSteps = 70; // How many points on the line for each turn
 const roseNoise = 0.05; // How quickly the noise changes from one point to the next (as the noisy spiral's step)
 const roseReach = 2; // How far out it can go, compared to the body's width there: it's held in more and more toward that
 // The noisy spiral it opens on, before the worm comes out of it
 const spiralTime = 6; // How many seconds it's there before it starts unwinding
-const spiralBig = 2.8; // How far out it goes: the smaller side of the screen divided by this (as in flow.js)
-const roseSettling = 0.05; // How quickly it gets back to how it was wound, after bursting into a rose, each time it changes (as spiralSettling in flow.js)
-const roseTightness = 250; // Lightning, and letting go of the mouse, set it bursting into a rose, wound at least this tightly (as strikeRose in flow.js)
-// Lightning, as in the noisy spiral in flow.js: the colours swap for a moment every so often, and each flash sets the spiral
+const spiralBig = 2.8; // How far out it goes: the smaller side of the screen divided by this
+const roseSettling = 0.05; // How quickly it gets back to how it was wound, after bursting into a rose, each time it changes
+const roseTightness = 250; // Lightning, and letting go of the mouse, set it bursting into a rose, wound at least this tightly
+// Lightning: the colours swap for a moment every so often, and each flash sets the spiral
 // bursting into a rose. Flashes are kept at least strikeGap apart, so there can't be more than three in a second, which is
 // the limit for not being a danger to people with epilepsy.
 const strikeEvery = [3, 9]; // How many seconds there are between strikes, at the least and the most
@@ -128,7 +128,7 @@ const strikeClipCrop = [0.35, 0.8]; // How much of the width and height of the v
 // which grows until it covers the screen. Each fills, at the end, like the page it goes to: `fill` is 'white', 'black'
 // or 'static', and `inside` is how it looks inside while it's waiting. `towards` is which corner of the triangle it's at.
 const portals = [
-  { name: 'art', page: '/art/', inside: 'black', fill: 'white', fillTime: 1.5, note: 'wormArrives', towards: [0, -1] }, // The note's so a little worm comes out of the sketchbook hole (see src/sketches/hole_worm.js)
+  { name: 'art', page: '/art/', inside: 'black', fill: 'white', fillTime: 1.5, note: 'wormArrives', towards: [0, -1] }, // The note's so a little worm comes out of the home hole (see src/sketches/hole_worm.js)
   { name: 'music', page: '/music/', inside: 'black', fill: 'black', fillTime: 0.4, towards: [-0.87, 0.5] },
   { name: 'bio', page: '/bio/', inside: 'static', fill: 'static', fillTime: 0.6, towards: [0.87, 0.5] },
 ];
@@ -144,7 +144,7 @@ const portalFollow = 0.6; // How slowly the chosen one drifts to the middle of t
 const portalPull = 0.9; // How far into the chosen one's middle the worm's drawn by the end (1 = all the way, to a point)
 const portalStatic = 96; // How many dots across the bio portal's static is
 const exitRush = 12; // How much faster the stars go by the time it's covered the screen
-// The spiral it comes out of (as the noisy spiral in flow.js)
+// The spiral it comes out of
 const unwindTime = 6; // How many seconds the spiral takes to unwind into the worm
 const emerge = 0.25; // How much of the worm, from its tail, it takes to come out of the spiral and onto its own path
 const spiralReach = 5; // Sets how far out its tail goes round, once it's let go (see circling): the smaller side of the screen divided by this
@@ -153,7 +153,7 @@ const spiralMostPoints = 20000; // It has to stop somewhere if the noise runs aw
 const spiralRoughest = 0.5; // How much of the last point goes into the next is 1 / this, times the noise...
 const spiralSmoothest = 3; // ...smoothing out to this
 const spiralSmoothing = 0.05; // ...by this much each time it changes
-const loosest = 1; // How tightly it's wound at first (bigger = more turns, closer together), as spiralLoosest in flow.js
+const loosest = 1; // How tightly it's wound at first (bigger = more turns, closer together)
 const tightest = 1; // ...tightening up to this over tightenTime
 const tightenTime = spiralTime; // In seconds: so it's loose when it opens, and as tight as it gets just as it starts to unwind
 const thinnest = 1; // How thick the line is, in pixels, at the head
@@ -400,7 +400,7 @@ export default function spiralWorm(p, container, options = {}) {
       }
     });
     // Skipping goes straight to the end, where the portals are, which is where it starts if it's been skipped to (see
-    // skipToPortals() in flow.js)
+    // skipToPortals() in wormhole.js)
     container.skipToPortals = () => {
       if (portalsUp) return;
       unwindStart = seconds - unwindTime - setOffTime - portalAfter;
@@ -560,7 +560,7 @@ export default function spiralWorm(p, container, options = {}) {
     // The spiral, out from the middle of the screen. Each point comes partly from the last one, by a different
     // amount every time.
     const spiral = [];
-    // As big as in the sketchbook, however tightly it's wound: tighter, it just goes round more times before it gets there
+    // As big as ever, however tightly it's wound: tighter, it just goes round more times before it gets there
     const limit = Math.min(p.width, p.height) / spiralBig;
     const winding = loosest * Math.pow(tightest / loosest, Math.min(1, (seconds - openedAt) / tightenTime));
     const tightness = Math.max(winding, roseFloor);
