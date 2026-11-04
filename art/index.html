@@ -14,12 +14,14 @@
     <span class="art-instructions-touch">Tap to walk the mouse into a hole.</span>
   </p>
 
-  <!-- The holes in the ground, scattered around in the distance -->
-  <a class="art-hole" data-row="front" href="/art/luminin.html"><span class="art-hole-name">luminin</span><span class="art-hole-mouth"></span></a>
-  <a class="art-hole" data-row="back" href="/art/interactive-installations.html"><span class="art-hole-name">installations</span><span class="art-hole-mouth"></span></a>
-  <a class="art-hole" data-row="back" href="/art/film-animation.html"><span class="art-hole-name">film/animation</span><span class="art-hole-mouth"></span></a>
-  <a class="art-hole" data-row="front" href="/"><span class="art-hole-name">home</span><span class="art-hole-mouth"></span></a>
-  <a class="art-hole" data-row="front" href="/music/"><span class="art-hole-name">music</span><span class="art-hole-mouth"></span></a>
+  <!-- The holes in the ground, in a diamond: music at the back, luminin in the middle, installations and film/animation
+       either side, and home at the front, behind the mouse, off the bottom of the screen. data-spot is where each one is,
+       and data-spot-narrow where it is on a narrow screen instead (see standHoles() in src/sketches/art_walk.js). -->
+  <a class="art-hole" data-spot="0, 0.6" href="/art/luminin.html"><span class="art-hole-name">luminin</span><span class="art-hole-mouth"></span></a>
+  <a class="art-hole" data-spot="-1, 0.48" data-spot-narrow="-1, 0.44" href="/art/interactive-installations.html"><span class="art-hole-name">installations</span><span class="art-hole-mouth"></span></a>
+  <a class="art-hole" data-spot="1, 0.48" data-spot-narrow="1, 0.44" href="/art/film-animation.html"><span class="art-hole-name">film/animation</span><span class="art-hole-mouth"></span></a>
+  <a class="art-hole" data-row="behind" href="/"><span class="art-hole-name">home</span><span class="art-hole-mouth"></span></a>
+  <a class="art-hole" data-spot="0, 0.34" data-spot-narrow="0, 0.3" href="/music/"><span class="art-hole-name">music</span><span class="art-hole-mouth"></span></a>
 
   <a class="footer art-list-link" href="/art/all.html">see everything as a list</a>
 

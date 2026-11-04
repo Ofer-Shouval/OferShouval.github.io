@@ -1,6 +1,6 @@
 import p5 from 'p5';
 import spiralWorm from './spiral-worm.js';
-import { soundButton, startAudio, soundWanted, onSoundChange } from '../scripts/sound.js';
+import { soundButton, startAudio, soundWanted, onSoundChange, setSound } from '../scripts/sound.js';
 
 // The wormhole on the front page: old sketches from the sketchbook, as one continuous piece, that turn into each other on the same canvas.
 //
@@ -22,7 +22,8 @@ import { soundButton, startAudio, soundWanted, onSoundChange } from '../scripts/
 // version of them, so changing one of those files doesn't change this piece. (Curves, finger aulos, boxyworm and linear
 // boil were once stages here too: they're in save/36-stretch-portals, and in src/sketchbook/.)
 //
-// It opens on the first stage with a welcome that fades in and out (see .wormhole-intro in main.css), and waits there
+// It opens on the first stage with a welcome: "welcome to my wormhole", and then "click anywhere to enter" with a
+// "sound on?" button under it (see runIntro()), and waits there
 // until someone presses, anywhere, which begins the journey into the next stage.
 //
 // The speaker at the bottom turns the sound on and off, for the whole site (see src/scripts/sound.js). Any stage
@@ -36,7 +37,7 @@ const stages = [
   },
   {
     name: 'psychworm',
-    hint: 'click for the next sketch, hold to leave trails',
+    hint: 'hold to leave trails',
     through: 'flowers', // The stage that going through the ring leads to
     settings: { length: 70, flat: 0, scatter: 0, wash: 50, washHeld: 0, low: 100, whiteHeld: 0, body: 1, bloom: 0, ground: 0, space: 1 },
   },
@@ -55,6 +56,10 @@ const stages = [
 ];
 const after = '/art/'; // Where it goes after the last stage
 
+// The welcome: "welcome to my wormhole", and then, in the same place, "click anywhere to enter", which stays until
+// someone enters. Entering turns the sound on. The sound switch is hidden until then, and then it's at the bottom.
+const welcomeTime = 6; // How many seconds "welcome to my wormhole" is up for
+const introGap = 1.3; // How many seconds from it starting to fade out to the rest starting to fade in
 const morphTime = 2.5; // How quickly the settings drift to the next stage's, in seconds (bigger = slower)
 // Pressing to begin forms the worm where it was pressed: the wake's scattered all over the screen, so first it gathers
 // into a circle around there, then into the worm, which then drifts off from there on its own way
@@ -83,7 +88,6 @@ const bodyScale = 2; // How big it's drawn, compared to its size when it isn't i
 // enough time going by, brings it toward the camera, the worm goes through its middle, and that leads to the next stage.
 const ringLead = 5; // How many seconds after it sets off the worm's head gets to it
 const ringWait = tailDistance + (headDistance - tailDistance) * (1 + ringLead / bodyTime); // How far away it waits, in the same units as headDistance
-const ringLabel = 'next sketch';
 const ringSmall = 0.2; // How big it is while it waits, compared to what it would be at the worm's head
 const ringCovers = 9.7; // How many seconds after it sets off it's covered the screen
 const psychwormSeconds = 22; // Roughly how long the psychworm stage lasts if nobody clicks, a little longer than the others
@@ -119,6 +123,9 @@ const burstReach = 1.6; // Going through the ring, how far the worm's flowers ar
 const burstExtra = 400; // How many more flowers it throws out, from all along it, which carry on off the screen rather than going back into the worm
 const burstExtraSpeed = [0.3, 1]; // How fast they carry on, in shares of the screen's width per second
 const burstExtraSize = [0.4, 2.2]; // How big they are, compared to usual, at the least and the most
+const burstStay = 0.25; // How many of them (from 0 to 1) join the flowers flying by instead, each flying out to a spot of
+// its own anywhere on the screen, so they're evenly spread, while that spot's already moving toward the edges like theirs
+const burstLandPace = 3; // ...and how many times faster than the others they fly toward the edges
 // Coming through the ring, as the worm's turned into flowers, the field's colour fades in, then the flower worm
 // wobbles, more and more, and bursts
 const bloomFade = 0.6; // How many seconds it waits, as the field's colour fades in
@@ -128,12 +135,12 @@ const bloomWobbleSpeed = 9; // How quickly they wobble, in radians a second
 const bloomFaint = 0.35; // How see-through the flower worm is, from turning into flowers until it bursts (1 = solid)
 const bloomSolid = 1.5; // How many seconds it takes to come back to solid, once it's burst
 const burstOut = 5; // How quickly they fly out (bigger = quicker)
-const burstApart = 2.4; // How far the worm's own flowers are thrown, compared to burstReach
+const burstApart = 2; // How far the worm's own flowers are thrown, compared to burstReach
 const burstReturn = 1.5; // How slowly they settle back into the shape of the worm (bigger = slower)
 const boostRise = 2; // How quickly holding the mouse down adds speed, in multiples of the usual speed each second
 const boostMost = 6; // The most speed it can add
 const boostFade = 1.5; // How slowly it wears off when let go, in seconds (bigger = slower)
-const boostSpread = 0.02; // How far the worm's flowers have spread at the top speed, at most, as a share of the screen's width
+const boostSpin = 4; // How many times faster than usual the worm's flowers spin at the top speed, on top of their usual spin
 // Letting go of the mouse makes the worm explode, more the longer it was held
 const explodeCharge = 3; // How many seconds of holding it takes to reach the biggest explosion
 const explodeLeast = 0.05; // How far its flowers are thrown by a quick click, as a share of the screen's shorter side
@@ -145,7 +152,8 @@ const explodeUneven = 2.5; // How uneven the distances are: most flowers stay ne
 const explodeSpeed = [2, 9]; // How quickly a flower flies out, at the least and the most (bigger = quicker)
 const explodeReturn = [0.7, 2.6]; // How slowly a flower comes back, in seconds, at the least and the most
 const explodeGrow = 0.5; // How much of its lost size a flower gets back while it's exploding (1 = all of it)
-const wormShrink = 6; // How slowly the worm shrinks away, once the tunnel's started, in seconds (bigger = slower). Boosting speeds it up.
+const wormStays = 0.6; // How far the tunnel's closed in (from 0 to 1) before the worm starts to move off into the distance, staying close until then
+const wormShrink = 6; // How slowly the worm shrinks away once it's started, in seconds (bigger = slower). Boosting speeds it up.
 const wormAbsorbedAt = 5; // How wide the worm is, in pixels, when the pixel array absorbs it and the noisy spiral bursts out
 const wormStretch = 4; // How many times longer the worm's stretched by the end of the pixel array, as it nears the noisy spiral
 const wormThin = 0.25; // ...and how much thinner it is by then (1 = not at all)
@@ -157,13 +165,15 @@ const arrayDelay = 10; // How many seconds into the stage it starts, so the flow
 const tvSquash = 0.28; // How many seconds squashing to a line takes
 const tvShrink = 0.22; // ...shrinking the line to a dot
 const tvFade = 0.4; // ...and the dot fading away
+const tvDark = 0.25; // ...and then how many seconds it stays black before the noisy spiral bursts out
 const arrayHold = 10; // How many seconds the flowers go on once the pixel array's covered the screen, while the worm stretches and shrinks away, before it's absorbed anyway
 const arrayTime = 10.5; // How many seconds it takes to cover the screen, at the worm's usual speed. Boosting speeds it up by as much.
 // Once it's covered the screen, it slowly looks more and more like it's on an old TV: its edges pull in to a rounded
 // screen, darker toward its edges, with black around it. Then it cracks: seams break through it, more and more, from
 // working the pattern out as if the screen were the wrong width, so each row slips out of step with the one above
 const crtTime = 7; // How many seconds taking on the old TV's shape takes, easing in and out
-const crtInset = 0.25; // How far its edges pull in, as a share of the screen's smaller side
+const crtInset = 0.25; // How far its edges pull in at least, as a share of the screen's smaller side
+const crtAspect = 4 / 3; // The shape it ends up, whatever the window's shape: width divided by height
 const crtCorner = 0.16; // How round its corners get, as a share of the screen's smaller side
 const crtShade = 0.75; // How dark it gets at its edges (1 = black)
 const crackAfter = 4; // How many seconds after it's covered the screen it starts to crack
@@ -171,7 +181,7 @@ const crackTime = 4.5; // How many seconds the cracks take to spread
 const crackMost = 0.3; // How wrong the width gets, as a share of the real one, by the end
 // It moves by itself, as if a mouse were spiralling out from the middle and then going around the edges of the screen
 const pathTurns = 1.5; // How many times it goes around on the way out. Any faster and every pixel changes every frame, which flashes.
-const pathOut = 35; // How many seconds it takes to get out to the edges. Boosting speeds it up, the same as the fade.
+const pathOut = 35; // How many seconds it takes to get out to the edges. Boosting doesn't speed it up.
 const pathEdge = 0.96; // How far out it goes, as a share of the way to the edge of the screen
 // It gets closer and closer to pure static as the worm gets near to being absorbed
 const noiseFrom = 60; // How wide the worm is when that starts, in pixels
@@ -268,19 +278,21 @@ export default function wormhole(p, container) {
   marks.className = 'wormhole-marks';
   marks.setAttribute('aria-label', 'skip');
   const soundSpot = document.createElement('div');
-  soundSpot.className = 'wormhole-sound-spot';
+  soundSpot.className = 'wormhole-sound-spot waiting'; // Hidden until it begins
   const welcome = document.createElement('div');
   welcome.className = 'wormhole-intro';
-  welcome.innerHTML = '<span>welcome to my<br>wormhole</span><span>click anywhere<br>to enter</span>';
+  const welcomeWords = document.createElement('span');
+  welcomeWords.innerHTML = 'welcome to my<br>wormhole';
+  const pressWords = document.createElement('span');
+  pressWords.innerHTML = 'click anywhere<br>to enter';
+  const lines = document.createElement('div'); // The two lines, one after the other in the same place
+  lines.className = 'wormhole-intro-lines';
+  lines.append(welcomeWords, pressWords);
+  welcome.append(lines);
+  let introTimers = []; // What's still to come in the welcome (see runIntro())
   const caption = document.createElement('p');
   caption.className = 'wormhole-caption';
   caption.setAttribute('aria-live', 'polite');
-  const nextLabel = document.createElement('button');
-  nextLabel.className = 'wormhole-next';
-  nextLabel.textContent = ringLabel;
-  nextLabel.addEventListener('click', () => {
-    if (ringWaiting) bringRing();
-  });
 
   // The start of a random range of brightness, without the flicker for anyone who's asked for less motion
   const shimmer = (low) => (calm ? (low + 255) / 2 : p.random(low, 255));
@@ -318,8 +330,8 @@ export default function wormhole(p, container) {
   }
 
   // Goes straight to the canvas, since there can be thousands of petals
-  function drawFlower(flower, x, y, scale, alpha = 1, context = p.drawingContext) {
-    flower.turned += flower.spin * frameTime * 60;
+  function drawFlower(flower, x, y, scale, alpha = 1, context = p.drawingContext, spinFaster = 1) {
+    flower.turned += flower.spin * spinFaster * frameTime * 60;
     const across = flower.petalLength * scale;
     if (scale < 0.005 || x < -across || x > p.width + across || y < -across || y > p.height + across) return;
     context.save();
@@ -364,7 +376,7 @@ export default function wormhole(p, container) {
       pixelImage = pixelContext.createImageData(w, h);
     }
     // Anyone who's asked for less motion moves it themselves
-    arrayPath += dt * (1 + boost);
+    arrayPath += dt;
     // At a steady pace along the spiral, so it goes around quickly in the middle, and slowly further out, where
     // the same movement shows as curves flowing rather than as static
     const out = Math.sqrt(Math.min(1, arrayPath / pathOut));
@@ -446,7 +458,7 @@ export default function wormhole(p, container) {
       arrayOpening = arrayOpening < 0.01 ? 0 : arrayOpening * Math.exp(-dt / morphTime);
       tunnel *= Math.exp(-dt / morphTime);
     }
-    if (stages[current].settings.bloom && arrayOpening > 0) wormSize *= Math.exp((-dt * (1 + boost)) / wormShrink);
+    if (stages[current].settings.bloom && arrayOpening > wormStays) wormSize *= Math.exp((-dt * (1 + boost)) / wormShrink);
     else wormSize = 1;
     if (wormSize === 1) wormAbsorbed = 0;
     // ...when it's small enough, or once the array's covered the screen for long enough anyway
@@ -468,6 +480,11 @@ export default function wormhole(p, container) {
     const camera = cameraAt(pathTime);
     for (let i = 0; i < burstExtra; i++) {
       const from = seenFromBehind(p.random(0.1, 0.9), camera); // From all along it
+      const size = (p.random(burstExtraSize[0], burstExtraSize[1]) * p.width) / 1200;
+      if (p.random() < burstStay) {
+        joinField(newFlower(), p.random(p.width), p.random(p.height), size, from);
+        continue;
+      }
       thrownOut.push({
         ...newFlower(),
         fromX: from.x,
@@ -476,7 +493,7 @@ export default function wormhole(p, container) {
         angle: p.random(p.TWO_PI),
         reach: p.random(0.15, 1) * burstReach * p.width,
         speed: p.random(burstExtraSpeed[0], burstExtraSpeed[1]) * p.width,
-        size: (p.random(burstExtraSize[0], burstExtraSize[1]) * p.width) / 1200,
+        size,
       });
     }
   }
@@ -521,6 +538,17 @@ export default function wormhole(p, container) {
     });
   }
 
+  // A flower thrown out by the burst becomes one of the flowers flying by, at (x, y) and this big, as if it had been that
+  // far away all along: so it carries on toward the edges as they do (see fieldPlace()). It starts at `from`, on the
+  // worm, and flies out to where it'd be, as quickly as the burst.
+  function joinField(flower, x, y, size, from) {
+    const shorter = Math.min(p.width, p.height);
+    const reach = Math.max(p.width, p.height) * 0.5;
+    const shown = Math.max(0.01, now.bloom * fieldLeft);
+    const z = p.constrain(Math.pow((fieldSize * shorter) / 800 / (size / shown), 1 / fieldGrow), 0.05, 1 - fieldFade); // Near enough to have faded in
+    field.push({ ...flower, x: ((x - focus.x) * z) / reach, y: ((y - focus.y) * z) / reach, z, driftX: 0, driftY: 0, pace: burstLandPace, burstFromX: from.x - x, burstFromY: from.y - y, burstAt: seconds });
+  }
+
   // How far the worm's flowers have come back since the burst (from 0 to 1), slowing as they settle
   function burstBack() {
     return 1 - Math.exp((burstStart - seconds) / burstReturn);
@@ -556,7 +584,7 @@ export default function wormhole(p, container) {
     }
     if (!calm) {
       for (const flower of field) {
-        flower.z -= flower.z * fieldSpeed * frameTime * forwardMotion();
+        flower.z -= flower.z * fieldSpeed * (flower.pace ?? 1) * frameTime * forwardMotion();
         flower.driftX += flower.xSpeed * frameTime * 60;
         flower.driftY += flower.ySpeed * frameTime * 60;
       }
@@ -590,9 +618,11 @@ export default function wormhole(p, container) {
   function fieldPlace(flower) {
     const reach = Math.max(p.width, p.height) * 0.5;
     const shorter = Math.min(p.width, p.height);
+    // Any thrown out by the burst start on the worm (see joinField())
+    const thrown = flower.burstAt === undefined ? 0 : Math.exp(-(seconds - flower.burstAt) * burstOut);
     return {
-      x: focus.x + (flower.x * reach) / flower.z + flower.driftX,
-      y: focus.y + (flower.y * reach) / flower.z + flower.driftY,
+      x: focus.x + (flower.x * reach) / flower.z + flower.driftX + (flower.burstFromX ?? 0) * thrown,
+      y: focus.y + (flower.y * reach) / flower.z + flower.driftY + (flower.burstFromY ?? 0) * thrown,
       size: now.bloom * fieldLeft * Math.min(((fieldSize * shorter) / 800) / Math.pow(flower.z, fieldGrow), (fieldBiggest * shorter) / flower.petalLength),
     };
   }
@@ -643,11 +673,26 @@ export default function wormhole(p, container) {
 
   // Keeps what's drawn after this inside the old TV's screen, at however far it's taken on its shape
   function clipToTv(context, crt) {
-    const smaller = Math.min(p.width, p.height);
-    const inset = crtInset * smaller * crt;
+    const { x, y, wide, tall, round } = tvRect(crt);
     context.beginPath();
-    context.roundRect(inset, inset, p.width - inset * 2, p.height - inset * 2, crtCorner * smaller * crt);
+    context.roundRect(x, y, wide, tall, round);
     context.clip();
+  }
+
+  // Where the old TV's screen is, at however far it's taken on its shape: from the whole window to the biggest crtAspect
+  // rectangle that fits inside crtInset of its edges, in the middle
+  function tvRect(crt) {
+    const smaller = Math.min(p.width, p.height);
+    const inset = crtInset * smaller;
+    let tall = p.height - inset * 2;
+    let wide = tall * crtAspect;
+    if (wide > p.width - inset * 2) {
+      wide = p.width - inset * 2;
+      tall = wide / crtAspect;
+    }
+    wide = p.lerp(p.width, wide, crt);
+    tall = p.lerp(p.height, tall, crt);
+    return { x: (p.width - wide) / 2, y: (p.height - tall) / 2, wide, tall, round: crtCorner * smaller * crt };
   }
 
   // How far the pixel array's taken on the old TV's shape, from 0 to 1, easing gently in and out
@@ -695,7 +740,7 @@ export default function wormhole(p, container) {
       context.fillRect(-glow, -glow, glow * 2, glow * 2);
     }
     context.restore();
-    if (fading >= 1) {
+    if (t >= tvSquash + tvShrink + tvFade + tvDark) {
       tvOffAt = null;
       goTo(current + 1);
     }
@@ -714,6 +759,22 @@ export default function wormhole(p, container) {
     });
   }
 
+  // The welcome, and then the way in (see welcomeTime)
+  function runIntro() {
+    const later = (time, then) => introTimers.push(setTimeout(then, time * 1000));
+    later(0.05, () => {
+      welcomeWords.classList.add('showing');
+    });
+    later(welcomeTime, () => welcomeWords.classList.remove('showing'));
+    later(welcomeTime + introGap, () => pressWords.classList.add('showing'));
+  }
+
+  function stopIntro() {
+    introTimers.forEach(clearTimeout);
+    welcome.classList.add('gone');
+    soundSpot.classList.remove('waiting');
+  }
+
   // Skipping goes straight to the end of the wormhole, where the portals are (see spiral-worm.js)
   function skipToPortals() {
     if (handedOver) {
@@ -721,7 +782,7 @@ export default function wormhole(p, container) {
       return;
     }
     begun = true;
-    welcome.classList.add('gone');
+    stopIntro();
     current = stages.findIndex(({ sketch }) => sketch);
     history.replaceState(null, '', `#${slug(stages[current].name)}`);
     handOver(stages[current].sketch, { atPortals: true });
@@ -822,11 +883,6 @@ export default function wormhole(p, container) {
     const gap = Math.hypot(x - ring.x, y - ring.y);
     const keep = gap > 0 ? p.lerp(1, (room * Math.tanh(gap / room)) / gap, ringPull) : 1;
     return { x: ring.x + (x - ring.x) * keep, y: ring.y + (y - ring.y) * keep };
-  }
-
-  // How far the worm's got to it, once it's set off (from 0 to 1)
-  function ringOpening() {
-    return ringWaiting ? 0 : p.constrain((ringWait - ringDistance) / (ringWait - headDistance), 0, 1);
   }
 
   // The size of the circle in its middle
@@ -1017,8 +1073,7 @@ export default function wormhole(p, container) {
         segments[segment] ??= { ...newFlower(), burstAngle: p.random(p.TWO_PI), burstSize: p.random(0.5, 1) };
         const flower = segments[segment];
         // Thrown out quickly, and settling back
-        const thrown = (burstStart === null ? 0 : (1 - Math.exp((burstStart - seconds) * burstOut)) * (1 - burstBack()) * burstReach * burstApart * p.width * flower.burstSize)
-          + (boost / boostMost) * boostSpread * p.width * wormSize * flower.burstSize; // ...swelling as it speeds up
+        const thrown = burstStart === null ? 0 : (1 - Math.exp((burstStart - seconds) * burstOut)) * (1 - burstBack()) * burstReach * burstApart * p.width * flower.burstSize;
         // Exploding when the mouse is let go, each flower in its own way
         flower.blastX = (flower.blastX ?? 0) + ((flower.blastToX ?? 0) - (flower.blastX ?? 0)) * (1 - Math.exp(-frameTime * (flower.blastSpeed ?? 1)));
         flower.blastY = (flower.blastY ?? 0) + ((flower.blastToY ?? 0) - (flower.blastY ?? 0)) * (1 - Math.exp(-frameTime * (flower.blastSpeed ?? 1)));
@@ -1030,7 +1085,7 @@ export default function wormhole(p, container) {
         const wobble = burstStart === null ? bloomWobble * w * wobbling * wobbling : 0;
         const wobbleX = Math.sin(seconds * bloomWobbleSpeed + segment * 0.7) * wobble;
         const wobbleY = Math.cos(seconds * bloomWobbleSpeed * 1.3 + segment * 0.5) * wobble;
-        drawFlower(flower, seenX + Math.cos(flower.burstAngle) * thrown + flower.blastX + wobbleX, seenY + Math.sin(flower.burstAngle) * thrown + flower.blastY + wobbleY, (w * grown) / (flower.petalLength * 2), 1 - wormAbsorbed, flowerContext);
+        drawFlower(flower, seenX + Math.cos(flower.burstAngle) * thrown + flower.blastX + wobbleX, seenY + Math.sin(flower.burstAngle) * thrown + flower.blastY + wobbleY, (w * grown) / (flower.petalLength * 2), 1 - wormAbsorbed, flowerContext, 1 + (boost / boostMost) * boostSpin); // Spinning faster as it speeds up
       } else p.ellipse(seenX, seenY, w, h);
     }
     showFaint();
@@ -1087,16 +1142,18 @@ export default function wormhole(p, container) {
     });
     marks.append(skip);
     soundSpot.append(soundSwitch);
-    container.append(welcome, caption, nextLabel, marks, soundSpot);
+    container.append(welcome, caption, marks, soundSpot);
 
-    // Pressing anywhere, or a key, gets past the welcome and on to the next stage, with the worm forming at (x, y)
+    // Pressing anywhere, or a key, gets past the welcome and on to the next stage, with the worm forming at (x, y).
+    // It turns the sound on, too (and the switch at the bottom can turn it off again).
     function begin(x = p.width / 2, y = p.height / 2) {
       if (begun) return;
+      if (!soundWanted()) setSound(true);
       begun = true;
       formAt = { x, y };
       formStart = seconds;
       if (soundWanted()) startSound();
-      welcome.classList.add('gone');
+      stopIntro();
       goTo(current + 1);
     }
 
@@ -1132,6 +1189,7 @@ export default function wormhole(p, container) {
       pointer.lastMoved = seconds;
     });
     window.addEventListener('keydown', (event) => {
+      if (event.target === soundSwitch) return; // Pressing those from the keyboard is their own click
       if (!begun) {
         if (!event.metaKey && !event.ctrlKey && event.key !== 'Tab') begin();
         return;
@@ -1145,7 +1203,8 @@ export default function wormhole(p, container) {
       Object.assign(now, stages[named].settings);
       begun = true; // Straight to a stage, past the welcome
       welcome.remove();
-    }
+      soundSpot.classList.remove('waiting');
+    } else runIntro();
     goTo(Math.max(0, named));
   };
 
@@ -1212,8 +1271,8 @@ export default function wormhole(p, container) {
       tvOffAt = seconds;
       const density = screen.width / p.width;
       const crt = tvShaped();
-      const inset = crtInset * Math.min(p.width, p.height) * crt * density;
-      tvScreen = { x: inset, y: inset, wide: screen.width - inset * 2, tall: screen.height - inset * 2, round: crtCorner * Math.min(p.width, p.height) * crt * density };
+      const tv = tvRect(crt);
+      tvScreen = { x: tv.x * density, y: tv.y * density, wide: tv.wide * density, tall: tv.tall * density, round: tv.round * density };
     } else if (bloom && arrayOpening >= 1) {
       arrayFullAt ??= seconds;
     } else if (!bloom && progress >= 1 && !usesRing) {
@@ -1247,9 +1306,6 @@ export default function wormhole(p, container) {
       }
     }
     // The camera comes into line with it slowly as it nears the worm's head, and goes back once it's over
-    // Its label's there until the worm gets to it
-    nextLabel.style.opacity = ringDistance === null ? 0 : 1 - ringOpening();
-    nextLabel.disabled = !ringWaiting;
     const coming = ringDistance === null || ringWaiting ? 0 : p.constrain((ringWait - ringDistance) / (ringWait - ringLinedUp), 0, 1);
     ringPull += (coming * coming * (3 - 2 * coming) - ringPull) * (1 - Math.exp((-dt * forwardMotion()) / (ringDistance === null ? 1.5 : 0.5)));
   };

@@ -2,8 +2,8 @@
 // choice (in this browser) for the next page and the next visit. Until someone's tried it, it nudges them:
 // it pulses gently, with "sound?" beside it.
 //
-// Browsers only let a page make sound after it's been clicked or pressed, so turning it on only says it's
-// wanted. Its sound starts on the page's first press after that: startAudio() gives the page's AudioContext,
+// It's on until someone turns it off. Browsers only let a page make sound after it's been clicked or pressed, so
+// being on only says it's wanted. Its sound starts on the page's first press after that: startAudio() gives the page's AudioContext,
 // running, whenever sound's wanted, and onSoundChange() says when it's turned on or off.
 //
 // Any element with a data-sound attribute gets a speaker put in it. The wormhole puts its own in with
@@ -27,7 +27,7 @@ function write(key, value) {
   } catch {}
 }
 
-let wanted = read(choiceKey) === 'on';
+let wanted = read(choiceKey) !== 'off'; // On until someone chooses otherwise
 let tried = read(triedKey) !== null;
 let context = null;
 const listeners = new Set();
@@ -49,7 +49,8 @@ export function startAudio() {
   return context;
 }
 
-function setSound(on) {
+// Turns it on or off, as the switch does. Only call it from a click or press.
+export function setSound(on) {
   wanted = on;
   tried = true;
   write(choiceKey, on ? 'on' : 'off');

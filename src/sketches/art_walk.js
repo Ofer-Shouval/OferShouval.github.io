@@ -58,11 +58,15 @@ let maxRows = 300; // How many of them to hold on to
 let holes = []; // A hole for each link on the page, in the ground out in the distance (see setupHoles() and placeHoles())
 let holeReach; // How far sideways the furthest hole is, in the frames' own pixels
 // How far down the screen they're scattered with the camera where it starts (0 = the top, 1 = the bottom).
-// A link can ask for the back or the front with data-row; any other can go anywhere.
+// A link can ask for the back or the front with data-row; any other can go anywhere. Or data-spot="across, down" puts it
+// in a set place: across from -1 (as far left as its sign fits in the middle holeScatterWidth) to 1, and down as above
+// (and data-spot-narrow, if it's there, on narrow screens). data-row="behind" puts it behind
+// the mouse instead, off the bottom of the screen, with a tag at the bottom pointing to it, like home on the music page.
 let holeBand = { back: [0.33, 0.42], front: [0.5, 0.64], any: [0.33, 0.64] };
 let holeBandNarrow = { back: [0.26, 0.38], front: [0.48, 0.66], any: [0.26, 0.66] }; // ...and on narrow screens, where their signs need more room
 let holeNameRoom = { perLetter: 12, padding: 24, perLine: 22, gap: 60 }; // How much room a name's sign takes up, in pixels, for keeping them apart
 let holeScatterWidth = 640; // How wide an area in the middle of the screen they're scattered over, in pixels, when the screen's wider than that
+let holeBehind = -0.35; // How far away a hole behind the mouse is, in the units of mouse.depth (below 0 is off the bottom of the screen)
 let holeTries = 200; // How many places to try for each hole, keeping the one furthest from the others
 let holeWidth = 50; // How wide they are, in the frames' own pixels, which is about what the mouse needs to fit
 let holeLinkSize = [32, 20]; // The smallest their links can be, in pixels, so that they can still be clicked from far away
@@ -88,6 +92,16 @@ let mouseBowTime = 0.12; // How many seconds it takes to get up and lower its he
 let mouseViewStick = 1.2; // How far past halfway to the next way of facing it has to be heading before it changes to that
 let mouseFollow = 5; // How quickly the camera catches up with it (bigger = quicker)
 let mouseEntersFrom = -0.17; // Where it starts when the page opens, in the units of mouse.depth: just off the bottom of the screen
+// Coming from the wormhole's art portal, the little worm comes out of its hole first (see hole_worm.js), and the mouse
+// waits off the screen until it's out. hole_worm.js says so with a 'worm-out' event, and takes the note away.
+let wormFirst = (() => {
+  try {
+    return sessionStorage.getItem('wormArrives') === '1';
+  } catch {
+    return false;
+  }
+})();
+let wormWaitLongest = 10; // How many seconds the mouse waits for it at most, in case it never comes
 let mouseSheet; // The mouse standing and walking (see brush_frames.js)
 let mouse; // Where it is in the world and what it's doing (see placeMouse() and moveMouse())
 let mouseHome; // How far away it is when it's where the camera keeps it (in the units of mouse.depth)
@@ -114,6 +128,17 @@ function setup() {
   buildCrowd();
 }
 
+// The mouse walks on once the worm's out of its hole
+function waitForWorm() {
+  let walkOn = () => {
+    if (!wormFirst) return;
+    wormFirst = false;
+    if (mouse.depth < 0 && !mouseTarget) mouseTarget = { x: 0, depth: mouseHome, walkingOn: true };
+  };
+  window.addEventListener('worm-out', walkOn, { once: true });
+  setTimeout(walkOn, wormWaitLongest * 1000);
+}
+
 // The size that puts a figure's feet at the bottom of the screen
 function bottomSize() {
   return (height * (1 - horizon)) / cameraHeight;
@@ -131,6 +156,7 @@ function buildCrowd() {
     let calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
     mouse = { x: 0, depth: calm ? mouseHome : mouseEntersFrom, view: 0, facing: 1, bow: 0, walked: 0, walking: false, falling: null };
     if (calm) showInstructions();
+    else if (wormFirst) waitForWorm();
     else mouseTarget = { x: 0, depth: mouseHome, walkingOn: true };
   } else if (mouse.depth < 0) {
     mouse.depth = mouseHome;
@@ -278,7 +304,8 @@ function moveMouse() {
 
   let edge = cameraReach() + (width / 2 - 8) / size;
   if ((right < 0 && mouse.x <= -edge) || (right > 0 && mouse.x >= edge)) right = 0;
-  if (down > 0 && mouse.depth <= 0) down = 0;
+  let goingBehind = mouseTarget?.hole?.behind; // Only a hole behind it can take it back off the bottom of the screen
+  if (down > 0 && mouse.depth <= 0 && !goingBehind) down = 0;
   if (right === 0 && down === 0 && !stopped) mouseTarget = null;
 
   // It faces the nearest of the ways it can, and carries on facing that way when it stops
@@ -303,7 +330,7 @@ function moveMouse() {
     mouse.x = constrain(mouse.x + ((right / along) * pushed) / size, -edge, edge);
     // Across the ground, the screen's pixels are worth less the further away they are. It can't come any
     // nearer than the bottom of the screen, unless it's still walking on from past there.
-    let nearest = Math.min(0, mouse.depth);
+    let nearest = goingBehind ? mouseTarget.hole.depth : Math.min(0, mouse.depth);
     mouse.depth = Math.max(nearest, mouse.depth - ((down / along) * pushed) / (cameraHeight * size + curl * height));
   } else {
     mouse.walked = 0;
@@ -352,6 +379,7 @@ function setupHoles() {
   let signs = paintSigns(links.length, brushName, signPen.weight, signPen.width, signPen.height, signPen.post, density * 2);
   holes = links.map((link, i) => ({
     link,
+    behind: link.dataset.row === 'behind',
     mouth: link.querySelector('.art-hole-mouth'),
     name: link.querySelector('.art-hole-name'),
     picture: pictures[i],
@@ -379,13 +407,27 @@ function standHoles() {
   let widest = Math.max(width * 0.3, 190); // Past this, the names wrap (see .art-hole-name)
   let spots = [];
   holes.forEach((hole, i) => {
+    if (hole.behind) {
+      hole.link.classList.add('art-hole-behind');
+      hole.depth = holeBehind;
+      hole.size = bottomSize() * Math.exp(-hole.depth);
+      hole.inRow = 0;
+      hole.x = 0;
+      return;
+    }
     let band = bands[hole.link.dataset.row] ?? bands.any;
     let letters = hole.name.textContent.length;
     let wide = Math.min(widest, letters * holeNameRoom.perLetter + holeNameRoom.padding);
     let tall = Math.ceil((letters * holeNameRoom.perLetter) / widest) * holeNameRoom.perLine + holeNameRoom.gap;
     let best = null;
     let bestRoom = -1;
-    for (let attempt = 0; attempt < holeTries; attempt++) {
+    let spot = (width < 600 && hole.link.dataset.spotNarrow) || hole.link.dataset.spot;
+    if (spot) {
+      let [across, down] = spot.split(',').map(Number);
+      best = { x: width / 2 + (across * (Math.min(width, holeScatterWidth) - wide)) / 2, y: height * down, wide, tall };
+      bestRoom = Infinity;
+    }
+    for (let attempt = 0; bestRoom < Infinity && attempt < holeTries; attempt++) {
       let x = width / 2 + (hash(i * 1000 + attempt + 0.1) - 0.5) * (Math.min(width, holeScatterWidth) - wide);
       let y = height * lerp(band[0], band[1], hash(i * 1000 + attempt + 0.2));
       let roomHere = Math.min(Infinity, ...spots.map((spot) => Math.max(Math.abs(x - spot.x) / ((wide + spot.wide) / 2), Math.abs(y - spot.y) / ((tall + spot.tall) / 2))));
@@ -433,6 +475,7 @@ function sendMouseToHole(hole) {
 // The places on the ground it stops on the way to a hole: spaced along the line from the mouse to the
 // hole, and off to alternate sides of it, so that it changes direction at each.
 function tripStopsTo(hole) {
+  if (hole.behind) return []; // Straight back
   let bottom = bottomSize();
   let mouseSize = sizeOf(mouse.depth);
   let holeSize = sizeOf(hole.depth);
@@ -472,6 +515,12 @@ function placeHoles() {
     hole.height = hole.width * holeShape;
     hole.left = width / 2 + (hole.inRow * (width / 2) - rowSideways) * scale - hole.width / 2;
     hole.ground = groundAt(size, bottom);
+    if (hole.behind) {
+      // Its link's a tag at the bottom of the screen, below where it is (see .art-hole-behind)
+      hole.link.style.left = `${constrain(hole.left + hole.width / 2, 40, width - 40)}px`;
+      hole.link.style.top = `${height - 6}px`;
+      continue;
+    }
 
     let linkHeight = Math.max(hole.height, holeLinkSize[1]);
     hole.link.style.left = `${hole.left + hole.width / 2}px`;
@@ -499,6 +548,7 @@ function placeHoles() {
 
 // A hole's signpost, standing at the back of the hole. Its name goes on top, as the link on the page.
 function showSign(ctx, hole) {
+  if (hole.behind) return; // It has its tag instead
   let middle = hole.left + hole.width / 2;
   let holeBack = hole.ground - hole.height / 2;
   let scale = hole.signWidth / signPen.width;
@@ -519,6 +569,7 @@ function showSign(ctx, hole) {
 // A hole, with its middle on the ground where it is. Its picture's white, and a "difference" blend makes
 // it black on the white ground, while anyone walking over it comes out white.
 function showHole(ctx, hole) {
+  if (hole.behind) return; // Off the screen
   let margin = (holeMargin * hole.width) / holePen.width;
   ctx.setTransform(density, 0, 0, density, 0, 0);
   ctx.globalAlpha = alpha * Math.min(1, pow(hole.width / holeWidth / bottomSize(), distanceFade)); // The same fade as the crowd's

@@ -51,6 +51,7 @@ if (noteWasLeft() && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
   let lastSeen = null; // Where the hole was last frame
   let placedAt = null; // When the hole was first put in its place
   let outAt = null; // When it started coming out
+  let saidOut = false; // Has it told the art page it's out, so the mouse can walk on? (see waitForWorm() in art_walk.js)
   let from = null; // Where the hole is now. Everything's measured from there, so it stays with the hole as the view moves.
 
   // Where its head is, this many seconds after it started coming out: rising out of the hole, then wafting about,
@@ -72,12 +73,14 @@ if (noteWasLeft() && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
     // Where the hole is, from where the art page puts its link: its middle, and half its height above the link's top,
     // which is where its ground is (see placeHoles() in art_walk.js). The link's somewhere else until the art page has
     // painted its crowd, which takes a while.
-    if (!mouth || !link.style.left) return requestAnimationFrame(frame);
-    from = { x: parseFloat(link.style.left), y: parseFloat(link.style.top) - parseFloat(mouth.style.height) / 2 };
+    if (!link || !link.style.left) return requestAnimationFrame(frame);
+    // Home's behind the mouse, off the bottom of the screen, so it comes up from below the bottom (see .art-hole-behind)
+    const behind = link.classList.contains('art-hole-behind');
+    from = behind ? { x: parseFloat(link.style.left), y: innerHeight + 12 } : { x: parseFloat(link.style.left), y: parseFloat(link.style.top) - parseFloat(mouth.style.height) / 2 };
     // Wait until it's on the screen and has stopped moving, since the view moves as the mouse walks on
     if (outAt === null) {
       placedAt ??= seconds;
-      const onScreen = from.y > 0 && from.y < innerHeight && from.x > 0 && from.x < innerWidth;
+      const onScreen = from.y > 0 && (behind || from.y < innerHeight) && from.x > 0 && from.x < innerWidth;
       const moved = lastSeen ? Math.hypot(from.x - lastSeen.x, from.y - lastSeen.y) : Infinity;
       lastSeen = from;
       stillSince = onScreen && moved < 0.5 ? (stillSince ?? seconds) : null;
@@ -86,6 +89,10 @@ if (noteWasLeft() && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
       outAt = seconds;
     }
     const t = seconds - outAt;
+    if (!saidOut && t >= rise) {
+      saidOut = true;
+      dispatchEvent(new Event('worm-out'));
+    }
 
     context.setTransform(density, 0, 0, density, 0, 0);
     context.clearRect(0, 0, innerWidth, innerHeight);

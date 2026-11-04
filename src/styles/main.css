@@ -44,7 +44,6 @@ ul {
 
 .navbar {
   border: 1px solid #ccc;
-  overflow: hidden;
   display: block;
   background-color: #171717;
   position: sticky;
@@ -53,19 +52,113 @@ ul {
   z-index: 2;
 }
 
-.navbar a {
+/* The menu, art, music, bio, home, in five equal tabs */
+.navbar ul {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  overflow: visible; /* So the menu's list can hang below it (lists hide what spills out, elsewhere on the site) */
+}
+
+.navbar a,
+.nav-menu-button {
   font-family: 'Major Mono Display', monospace;
   color: white;
-  width: 20%;
-  float: left;
-  display: block;
-  text-align: center;
-  padding: 16px 14px;
   text-decoration: none;
 }
 
-.navbar a:hover {
+.navbar ul > a,
+.nav-menu {
+  flex: none;
+  width: 20%;
+}
+
+.navbar ul > a,
+.nav-menu-button {
+  display: block;
+  box-sizing: border-box;
+  text-align: center;
+  padding: 16px 14px;
+}
+
+.nav-menu-button {
+  width: 100%;
+}
+
+.navbar a:hover,
+.nav-menu-button:hover,
+.nav-menu-button[aria-expanded='true'] {
   background-color: rgba(100, 100, 100, 0.6);
+}
+
+/* The menu on the left: three lines, which open a list of every page below the navbar */
+.nav-menu {
+  position: relative;
+}
+
+.nav-menu-button {
+  height: 100%;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-size: inherit;
+}
+
+.menu-icon {
+  width: 1.1em;
+  height: 1.1em;
+  margin: -0.55em 0; /* So it doesn't make its tab taller than the others */
+  vertical-align: middle;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+}
+
+.nav-menu-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  display: flex;
+  gap: 28px;
+  padding: 16px 22px;
+  border: 1px solid #ccc;
+  background-color: #171717;
+}
+
+.nav-menu-list[hidden] {
+  display: none;
+}
+
+.nav-menu-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.nav-menu-group a {
+  padding: 2px 6px;
+  font-size: 14px;
+  opacity: 0.75;
+}
+
+/* Each group's first link is its section */
+.nav-menu-group a:first-child {
+  font-size: 16px;
+  opacity: 1;
+  margin-bottom: 4px;
+}
+
+.nav-menu-group a:hover,
+.nav-menu-group a:focus-visible {
+  opacity: 1;
+}
+
+@media screen and (max-width: 500px) {
+  .nav-menu-list {
+    flex-direction: column;
+    gap: 16px;
+  }
 }
 
 .navbar a[aria-current="page"] {
@@ -85,7 +178,8 @@ ul {
 }
 
 @media screen and (max-width: 500px) {
-  .navbar a {
+  .navbar ul > a,
+  .nav-menu-button {
     padding: 16px 0;
     font-size: 12px;
   }
@@ -154,8 +248,14 @@ ul {
   border-color: #171717;
 }
 
-.light .navbar a {
+.light .navbar a,
+.light .nav-menu-button {
   color: black;
+}
+
+.light .nav-menu-list {
+  background-color: white;
+  border-color: #171717;
 }
 
 .light .footer.art-list-link {
@@ -247,6 +347,40 @@ ul {
 
 .art-hole-mouth {
   display: block;
+}
+
+/* A hole behind the mouse, off the bottom of the screen: a tag at the bottom pointing down to it, like home on the music
+   page (see holeBehind in art_walk.js) */
+.art-hole-behind {
+  gap: 2px;
+  font-size: 16px;
+}
+
+.art-hole-behind .art-hole-name {
+  padding: 0.2em 0.6em;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(0, 0, 0, 0.45);
+}
+
+.art-hole-behind:hover .art-hole-name,
+.art-hole-behind:focus-visible .art-hole-name {
+  text-decoration-color: black;
+}
+
+.art-hole-behind .art-hole-mouth {
+  display: none;
+}
+
+/* Long and narrow, pointing down */
+.art-hole-behind::after {
+  content: '';
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 16px solid rgba(0, 0, 0, 0.8);
 }
 
 
@@ -620,8 +754,10 @@ ul {
   position: absolute;
   inset: 0;
   z-index: 1;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   padding: 0 16px;
   color: white;
   font-family: 'Major Mono Display', monospace;
@@ -636,67 +772,35 @@ ul {
   opacity: 0;
 }
 
-.wormhole-intro span {
-  grid-area: 1 / 1; /* Both in the middle */
+.wormhole-intro-lines {
+  display: grid;
+  place-items: center;
+}
+
+.wormhole-intro-lines > * {
+  grid-area: 1 / 1; /* One after another in the same place (see runIntro() in wormhole.js) */
+}
+
+.wormhole-intro-lines > * {
   opacity: 0;
-  animation: wormhole-intro-welcome 4.5s ease-in-out forwards;
+  visibility: hidden;
+  transition: opacity 1.2s ease-in-out, visibility 0s 1.2s;
 }
 
-.wormhole-intro span + span {
-  animation: wormhole-intro-press 1.5s ease-in-out 4.8s forwards;
+.wormhole-intro-lines > .showing {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 1.2s ease-in-out, visibility 0s;
 }
 
-@keyframes wormhole-intro-welcome {
-  33%,
-  78% {
-    opacity: 0.8;
-  }
-  100% {
-    opacity: 0;
-  }
-}
-
-@keyframes wormhole-intro-press {
-  to {
-    opacity: 0.8;
-  }
+.wormhole-intro-lines > .showing {
+  opacity: 0.8;
 }
 
 .wormhole-caption {
   bottom: 60px;
   opacity: 0;
   pointer-events: none;
-}
-
-/* The label of the flower that leads to the next sketch */
-.wormhole-next {
-  position: absolute;
-  top: 62px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 1;
-  margin: 0;
-  color: white;
-  padding: 4px 12px;
-  border: 0;
-  background: none;
-  font-family: 'Major Mono Display', monospace;
-  font-size: 16px;
-  white-space: nowrap;
-  opacity: 0;
-  cursor: pointer;
-  transition: background-color 0.15s;
-}
-
-.wormhole-next:disabled {
-  pointer-events: none;
-}
-
-.wormhole-next:hover,
-.wormhole-next:focus-visible {
-  background-color: rgba(100, 100, 100, 0.6);
-  text-decoration: underline;
-  text-underline-offset: 4px;
 }
 
 @media screen and (max-width: 500px) {
@@ -756,6 +860,60 @@ ul {
   bottom: 12px;
   left: 50%;
   transform: translateX(-50%);
+  transition: opacity 1.2s, visibility 0s;
+}
+
+.wormhole-sound-spot.waiting {
+  opacity: 0;
+  visibility: hidden;
+  transition: none;
+}
+
+/* Here it's a speaker and a switch, rather than "sound?" */
+.wormhole-sound-spot .sound-button {
+  position: relative;
+  padding-right: 42px;
+}
+
+.wormhole-sound-spot .sound-button .sound-ask,
+.wormhole-sound-spot .sound-button.nudging .sound-ask {
+  display: none;
+}
+
+.wormhole-sound-spot .sound-button::before,
+.wormhole-sound-spot .sound-button::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  transition: right 0.25s ease-in-out, background-color 0.25s;
+}
+
+/* The track */
+.wormhole-sound-spot .sound-button::before {
+  right: 0;
+  width: 30px;
+  height: 16px;
+  margin-top: -9px;
+  border: 1px solid currentColor;
+  border-radius: 9px;
+}
+
+/* The knob: left for off, right for on */
+.wormhole-sound-spot .sound-button::after {
+  right: 16px;
+  width: 10px;
+  height: 10px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background-color: currentColor;
+}
+
+.wormhole-sound-spot .sound-button[aria-pressed='true']::before {
+  background-color: rgba(255, 255, 255, 0.3);
+}
+
+.wormhole-sound-spot .sound-button[aria-pressed='true']::after {
+  right: 4px;
 }
 
 /* The site's sound switch (see src/scripts/sound.js): a speaker, with waves while it's on and a cross while it's
