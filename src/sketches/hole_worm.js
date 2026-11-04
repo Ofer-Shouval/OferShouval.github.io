@@ -45,7 +45,7 @@ if (noteWasLeft() && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
   fit();
   addEventListener('resize', fit);
 
-  const link = document.querySelector('.art-hole[href="/art/sketchbook/"]');
+  const link = document.querySelector('.art-hole[href="/"]'); // The sketchbook's hole, which goes back to the wormhole on the front page
   const mouth = link?.querySelector('.art-hole-mouth');
   let stillSince = null; // Since when the hole's been still, on the screen
   let lastSeen = null; // Where the hole was last frame

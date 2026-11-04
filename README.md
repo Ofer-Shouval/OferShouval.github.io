@@ -11,15 +11,15 @@ npm run preview  # serve the dist/ build locally
 
 ## Layout
 
-- `index.html` — home (the walking sketch, with holes to teaching, art, music and bio)
-- `art/` — one page per piece; `art/index.html` is the walking landing page, reached through the sketchbook journey in `art/sketchbook/`, and `art/all.html` the grid of everything
+- `index.html` — home: the wormhole (the sketchbook journey in `src/sketchbook/flow.js`), ending in three portals to art, music and bio (`src/sketchbook/spiral-worm.js`)
+- `art/` — one page per piece; `art/index.html` is the walking landing page, and `art/all.html` the grid of everything; `art/sketchbook/` forwards to the front page
 - `music/` — `index.html` is the full-screen "Wake" sketch, with gates to `live.html`, `recordings.html` (releases grid), `videos.html` and `info.html`; `release-template.html` to copy for each release
 - `teaching/` — courses and student work
 - `bio/` — bio
 - `projects.html`, `bio.html` — redirects from the old URLs
 - `src/partials/` — shared HTML pulled in with `<!-- @include file.html -->` at build time
 - `src/sketches/music/` — the music page sketch: `sketch.js` runs it, with `boat.js`, `gate.js`, `wake.js`, `water.js`, `color.js` and `perspective.js`
-- `src/sketches/art_walk.js` — the home and art landing sketch, with `brush_frames.js`, which paints its walk cycle with p5.brush along the skeleton in `figure.js`
+- `src/sketches/art_walk.js` — the art landing sketch, with `brush_frames.js`, which paints its walk cycle with p5.brush along the skeleton in `figure.js`
 - `src/sketchbook/` — sketchbook sketches, mounted by `src/scripts/sketchbook.js`
 - `src/scripts/media.js` — lazy-loads videos on every page
 - `src/styles/main.css` — site styles

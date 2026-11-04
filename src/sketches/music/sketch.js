@@ -52,7 +52,7 @@ let overGate = false; // Is the mouse over a gate or its name?
 
 // The way home: a tag at the bottom of the screen, like the ones pointing to gates that are off the screen, as
 // if home's back the way the boat came. It fades in once the boat's sailed on, and stays. Clicking it turns the
-// boat round to sail back off the bottom of the screen, and it all fades to the white of the home page.
+// boat round to sail back off the bottom of the screen, and it all fades to the black of the home page's wormhole.
 let homeAlpha = 0; // How much it's showing, from 0 to 1
 let homeArea = null; // Where its name was last drawn, so it can be clicked
 let homeWhiteLatest = 8; // How many seconds after setting off for home it fades to white anyway, if the boat never quite gets off the screen
@@ -319,7 +319,7 @@ function isHomeAt(x, y) {
   return a !== null && homeAlpha > 0.5 && x > a.left && x < a.right && y > a.top && y < a.bottom;
 }
 
-// Once the boat's all the way off the bottom of the screen on its way home, everything fades to white, and then
+// Once the boat's all the way off the bottom of the screen on its way home, everything fades to black, and then
 // it's the home page
 function fadeHome() {
   if (!boat.leaving) return;
@@ -329,7 +329,7 @@ function fadeHome() {
   let white = constrain((millis() - boat.leaving.whiteFrom) / 1000 / homeWhiteTime, 0, 1);
   push();
   noStroke();
-  fill(255, white * white * (3 - 2 * white) * 255);
+  fill(0, white * white * (3 - 2 * white) * 255);
   rect(0, 0, width, height);
   pop();
   if (white >= 1 && !boat.leaving.gone) {

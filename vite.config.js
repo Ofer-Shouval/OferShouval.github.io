@@ -14,8 +14,7 @@ function includePartials(html) {
   );
 }
 
-// Marks the navbar link for the page's top-level section (e.g. /art/ for art/luminin.html). The
-// links say which section they're for, since the art link goes through the sketchbook first.
+// Marks the navbar link for the page's top-level section (e.g. /art/ for art/luminin.html), which each link names.
 function markCurrentSection(html, filename) {
   const [first, ...rest] = relative(root, filename).split('/');
   const section = rest.length ? `/${first}/` : '/';

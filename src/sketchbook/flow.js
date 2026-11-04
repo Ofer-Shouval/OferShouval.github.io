@@ -8,10 +8,12 @@ import { soundButton, startAudio, soundWanted, onSoundChange } from '../scripts/
 // stage's, and whatever's been painted is what the next sketch starts from. Among the flowers, the pixel array
 // closes in as a circle from the corners, like a tunnel, more quickly if the worm's boosting. The flowers and the
 // worm carry on as they were while shrinking away, into the array, with the worm's head pulled more and more to the
-// middle and the array getting closer to static. When the worm's a few pixels wide, the array absorbs it, and it cuts
+// middle and the array getting closer to static, the flowers still flying past. When the worm's a few pixels wide, or
+// once it's been long enough (see arrayHold), the array absorbs it, and it cuts
 // to the noisy spiral bursting out, white on black, with lightning, some of it in the colours of the Luminin. That last
 // stage is a sketch of its own, spiral-worm.js, which this hands the screen over to: the spiral unwinds into a worm,
-// which flies into a portal, and then it's on to the art page. The skip link at the bottom goes straight there.
+// which flies on to three portals, to art, music and bio, and goes through whichever's chosen. The skip link at the
+// bottom goes straight to the portals.
 // (The noisy spiral's drawing here, and its ending, growing off the screen to white, aren't used any more.)
 //
 // Playing moves it along (see screensToNext), and it carries on slowly by itself if nobody's playing
@@ -46,11 +48,7 @@ const stages = [
     hint: 'hold for a boost, let go to burst, drag to plant more',
     settings: { length: 70, flat: 0, box: 0, scatter: 0, wash: 255, washHeld: 255, low: 100, whiteHeld: 0, body: 1, grid: 0, bloom: 1, ground: 255, space: 1, spiral: 0, pixels: 0, curves: 0, coil: 0, noisy: 0 },
   },
-  {
-    name: 'pixel array',
-    hint: 'hold and let go to burst the worm',
-    settings: { length: 70, flat: 0, box: 0, scatter: 0, wash: 255, washHeld: 255, low: 100, whiteHeld: 0, body: 1, grid: 0, bloom: 0, ground: 0, space: 1, spiral: 0, pixels: 1, curves: 0, coil: 1, noisy: 0 },
-  },
+  // The pixel array used to be a stage of its own here. It's part of the flowers stage now (see arrayHold).
   {
     name: 'noisy spiral',
     hint: 'click for lightning, let go for a rose',
@@ -132,11 +130,20 @@ const fieldClosing = 0.5; // How much smaller they've got by the time the pixel 
 const fieldLingers = 7.5; // How many seconds they carry on for after that, getting smaller, before they've gone
 const mostFlowers = 1400;
 const plantedDrift = 2; // How fast planted flowers drift away from the middle of the stream, in pixels per frame. Near it they'd hardly move otherwise.
-const burstReach = 1; // Going through the ring, how far the worm's flowers are thrown, at most, as a share of the screen's width
-const burstExtra = 120; // How many more flowers it throws out, which carry on off the screen rather than going back into the worm
-const burstExtraSpeed = [0.25, 0.6]; // How fast they carry on, in shares of the screen's width per second
+const burstReach = 1.6; // Going through the ring, how far the worm's flowers are thrown, at most, as a share of the screen's width
+const burstExtra = 400; // How many more flowers it throws out, from all along it, which carry on off the screen rather than going back into the worm
+const burstExtraSpeed = [0.3, 1]; // How fast they carry on, in shares of the screen's width per second
+const burstExtraSize = [0.4, 2.2]; // How big they are, compared to usual, at the least and the most
+// Coming through the ring, as the worm's turned into flowers, the field's colour fades in, then the flower worm
+// wobbles, more and more, and bursts
+const bloomFade = 0.6; // How many seconds it waits, as the field's colour fades in
+const bloomWobbleTime = 0.9; // ...and then how many seconds it wobbles before it bursts
+const bloomWobble = 0.35; // How far its flowers wobble about, at the most, compared to how big they are
+const bloomWobbleSpeed = 9; // How quickly they wobble, in radians a second
+const bloomFaint = 0.35; // How see-through the flower worm is, from turning into flowers until it bursts (1 = solid)
+const bloomSolid = 1.5; // How many seconds it takes to come back to solid, once it's burst
 const burstOut = 5; // How quickly they fly out (bigger = quicker)
-const burstApart = 1.8; // How far the worm's own flowers are thrown, compared to burstReach
+const burstApart = 2.4; // How far the worm's own flowers are thrown, compared to burstReach
 const burstReturn = 1.5; // How slowly they settle back into the shape of the worm (bigger = slower)
 const boostRise = 2; // How quickly holding the mouse down adds speed, in multiples of the usual speed each second
 const boostMost = 6; // The most speed it can add
@@ -154,7 +161,7 @@ const explodeSpeed = [2, 9]; // How quickly a flower flies out, at the least and
 const explodeReturn = [0.7, 2.6]; // How slowly a flower comes back, in seconds, at the least and the most
 const explodeGrow = 0.5; // How much of its lost size a flower gets back while it's exploding (1 = all of it)
 const coilSpin = 0.3; // How quickly the spiral turns while it's still smooth, in radians per second
-const wormShrink = 6; // How slowly the worm shrinks away, once the tunnel's started, in seconds (bigger = slower), so it's absorbed about stageSeconds into the pixel array. Boosting speeds it up.
+const wormShrink = 6; // How slowly the worm shrinks away, once the tunnel's started, in seconds (bigger = slower). Boosting speeds it up.
 const wormAbsorbedAt = 5; // How wide the worm is, in pixels, when the pixel array absorbs it and the noisy spiral bursts out
 const wormStretch = 4; // How many times longer the worm's stretched by the end of the pixel array, as it nears the noisy spiral
 const wormThin = 0.25; // ...and how much thinner it is by then (1 = not at all)
@@ -173,8 +180,23 @@ const spiralTightest = 300; // ...which it tightens up to, more and more, as the
 const spiralSettling = 0.05; // How quickly it gets back to that after a click changes it, each time it changes
 // In the flowers, the pixel array closes in as a circle from the corners, like a tunnel, until it's taken over
 const arrayDelay = 4.5; // How many seconds into the stage it starts
+// Once the array's absorbed the worm, all static, it switches off like an old TV: the picture squashes to a bright line
+// across the middle, the line shrinks to a bright dot, and the dot fades, before the noisy spiral bursts out of the dark
+const tvSquash = 0.28; // How many seconds squashing to a line takes
+const tvShrink = 0.22; // ...shrinking the line to a dot
+const tvFade = 0.4; // ...and the dot fading away
+const arrayHold = 8; // How many seconds the flowers go on once the pixel array's covered the screen, while the worm stretches and shrinks away, before it's absorbed anyway
 const arrayTime = stageSeconds - arrayDelay; // How many seconds it takes to cover the screen, at the worm's usual speed, so the flowers last stageSeconds. Boosting speeds it up by as much.
-const arraySoft = 0.4; // How wide its soft edge is, as a share of the distance from a corner to the middle
+// Once it's covered the screen, it slowly looks more and more like it's on an old TV: its edges pull in to a rounded
+// screen, darker toward its edges, with black around it. Then it cracks: seams break through it, more and more, from
+// working the pattern out as if the screen were the wrong width, so each row slips out of step with the one above
+const crtTime = 3; // How many seconds taking on the old TV's shape takes
+const crtInset = 0.06; // How far its edges pull in, as a share of the screen's smaller side
+const crtCorner = 0.12; // How round its corners get, as a share of the screen's smaller side
+const crtShade = 0.75; // How dark it gets at its edges (1 = black)
+const crackAfter = 3; // How many seconds after it's covered the screen it starts to crack
+const crackTime = 4.5; // How many seconds the cracks take to spread
+const crackMost = 0.3; // How wrong the width gets, as a share of the real one, by the end
 // It moves by itself, as if a mouse were spiralling out from the middle and then going around the edges of the screen
 const pathTurns = 1.5; // How many times it goes around on the way out. Any faster and every pixel changes every frame, which flashes.
 const pathOut = 35; // How many seconds it takes to get out to the edges. Boosting speeds it up, the same as the fade.
@@ -249,6 +271,7 @@ export default function flow(p, container) {
   let focus = { x: 0, y: 0 }; // The point the worm's heading for, which the stars stream from
   let stageStart = 0;
   let burstStart = null; // When the worm burst into flowers, having gone through the ring
+  let bloomStart = null; // When it came through the ring, as the flower worm
   let heldFrom = 0; // When the mouse was pressed
   let boost = 0; // How much extra speed there is from holding the mouse down
   let thrownOut = []; // The extra flowers it threw out
@@ -267,6 +290,9 @@ export default function flow(p, container) {
   let fieldDue = 0; // How many more are due to appear
   const segments = []; // The flowers that the worm is made of, once it's been through the ring
   let frameTime = 0;
+  // While the flowers are faint, they're drawn solid here first (see drawWorm())
+  const faintLayer = document.createElement('canvas');
+  const faintContext = faintLayer.getContext('2d');
   const pixelCanvas = document.createElement('canvas');
   const pixelContext = pixelCanvas.getContext('2d');
   let pixelImage = null;
@@ -303,6 +329,9 @@ export default function flow(p, container) {
   let secondFlash = false; // Is there another straight after this one?
   let fieldLeft = 1; // How much of their size the flowers flying by have left
   let arrayNoise = 0; // How close the pixel array is to pure static (1 = all the way)
+  let arrayFullAt = null; // When it covered the screen, in the flowers stage
+  let tvOffAt = null; // When it started switching off like an old TV (see tvSquash)
+  const tvPicture = document.createElement('canvas'); // What was on the screen as it switched off
   let wormSize = 1; // How big the worm is, compared to its usual size
   let wormWide = Infinity; // How wide it was on the screen, last frame, in pixels
   let wormAbsorbed = 0; // How far it's gone into the pixel array (1 = gone)
@@ -358,7 +387,7 @@ export default function flow(p, container) {
   soundSpot.className = 'flow-sound-spot';
   const welcome = document.createElement('div');
   welcome.className = 'flow-intro';
-  welcome.innerHTML = '<span>welcome to my<br>sketchbook.</span><span>press anywhere<br>to begin your journey.</span>';
+  welcome.innerHTML = '<span>welcome to my<br>wormhole</span><span>click anywhere<br>to enter</span>';
   const caption = document.createElement('p');
   caption.className = 'flow-caption';
   caption.setAttribute('aria-live', 'polite');
@@ -452,6 +481,13 @@ export default function flow(p, container) {
     sound?.suspend();
   }
 
+  // A fully saturated colour of the given hue (in degrees round the colour wheel), as [red, green, blue]
+  function vivid(hue) {
+    const h = (((hue % 360) + 360) % 360) / 60;
+    const x = 255 * (1 - Math.abs((h % 2) - 1));
+    return [[255, x, 0], [x, 255, 0], [0, 255, x], [0, x, 255], [x, 0, 255], [255, 0, x]][Math.floor(h)];
+  }
+
   function newFlower() {
     return {
       petals: p.random(3, 12),
@@ -470,11 +506,10 @@ export default function flow(p, container) {
   }
 
   // Goes straight to the canvas, since there can be thousands of petals
-  function drawFlower(flower, x, y, scale, alpha = 1) {
+  function drawFlower(flower, x, y, scale, alpha = 1, context = p.drawingContext) {
     flower.turned += flower.spin * frameTime * 60;
     const across = flower.petalLength * scale;
     if (scale < 0.005 || x < -across || x > p.width + across || y < -across || y > p.height + across) return;
-    const context = p.drawingContext;
     context.save();
     context.globalAlpha = alpha;
     context.translate(x, y);
@@ -539,19 +574,20 @@ export default function flow(p, container) {
     arrayNoise += (p.constrain(Math.log(noiseFrom / wormWide) / Math.log(noiseFrom / wormAbsorbedAt), 0, 1) - arrayNoise) * noiseFollow;
     const crackle = Math.pow(pixelX, 1 - arrayNoise) * Math.pow(noiseFinest, arrayNoise) + (calm ? 0 : Math.max(nearMiddle, arrayNoise) * p.random(1));
     const scan = w / 2; // Always wide, gradual waves
-    const corner = Math.hypot(w / 2, h / 2); // How far a corner is from the middle
-    const soft = corner * arraySoft;
-    const hole = corner - opening * (corner + soft); // Where the edge starts, going in
+    // Fading in evenly, all over
+    const shown = Math.max(now.pixels, ease(opening)) * 255;
+    // Cracking, once it's covered the screen for a while: worked out as if each row were this wide
+    const cracked = arrayFullAt === null ? 0 : ease(Math.min(1, Math.max(0, (seconds - arrayFullAt - crackAfter) / crackTime)));
+    const wrongWidth = Math.max(1, Math.round(w * (1 - crackMost * cracked)));
     const { data } = pixelImage;
     let i = 0;
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        const edge = Math.min(1, Math.max(0, (Math.hypot(x - w / 2, y - h / 2) - hole) / soft));
-        data[i + 3] = Math.max(now.pixels, edge * edge * (3 - 2 * edge)) * 255;
-        if (data[i + 3] === 0) {
-          i += 4;
-          continue;
-        }
+    for (let row = 0; row < h; row++) {
+      for (let column = 0; column < w; column++) {
+        // Where on the pattern this pixel comes from: where it is, until it cracks
+        const along = row * w + column;
+        const x = cracked > 0 ? along % wrongWidth : column;
+        const y = cracked > 0 ? Math.floor(along / wrongWidth) : row;
+        data[i + 3] = shown;
         data[i] = 100 * (1 + Math.cos(y / w / pixelY + pixelY / 10));
         data[i + 1] = 100 * (1 + (Math.sin((x * y) / (0.5 * crackle) + crackle / 10 - pixelDrift) + Math.sin(((w - x) * (h - y)) / (0.5 * crackle) + crackle / 10 - pixelDrift)) / 2);
         data[i + 2] = 100 * (1 + Math.cos((1.414 * y) / scan + scan / 10 - scanPosition));
@@ -562,7 +598,27 @@ export default function flow(p, container) {
     const context = p.drawingContext;
     context.save();
     context.imageSmoothingEnabled = false;
+    // Taking on the shape of an old TV's screen, once it's covered the screen
+    const crt = arrayFullAt === null ? 0 : ease(Math.min(1, (seconds - arrayFullAt) / crtTime));
+    if (crt > 0) {
+      const smaller = Math.min(p.width, p.height);
+      const inset = crtInset * smaller * crt;
+      const round = crtCorner * smaller * crt;
+      context.fillStyle = 'black';
+      context.fillRect(0, 0, p.width, p.height);
+      context.beginPath();
+      context.roundRect(inset, inset, p.width - inset * 2, p.height - inset * 2, round);
+      context.clip();
+    }
     context.drawImage(pixelCanvas, 0, 0, p.width, p.height);
+    if (crt > 0) {
+      // ...darker toward its edges
+      const shade = context.createRadialGradient(p.width / 2, p.height / 2, Math.min(p.width, p.height) * 0.3, p.width / 2, p.height / 2, Math.hypot(p.width, p.height) / 2);
+      shade.addColorStop(0, 'rgba(0,0,0,0)');
+      shade.addColorStop(1, `rgba(0,0,0,${crtShade * crt})`);
+      context.fillStyle = shade;
+      context.fillRect(0, 0, p.width, p.height);
+    }
     context.restore();
   }
 
@@ -588,8 +644,8 @@ export default function flow(p, container) {
     else if (pixels) wormSize *= Math.exp(-dt / wormShrink); // Bursting it here doesn't hurry it away
     else if (!noisy) wormSize = 1;
     if (wormSize === 1) wormAbsorbed = 0;
-    // ...when it's small enough, or after stageSeconds of the pixel array anyway
-    else if (wormWide < wormAbsorbedAt || wormAbsorbed > 0 || (pixels && seconds - stageStart > stageSeconds)) wormAbsorbed = Math.min(1, wormAbsorbed + dt / wormAbsorbTime);
+    // ...when it's small enough, or once the array's covered the screen for long enough anyway
+    else if (wormWide < wormAbsorbedAt || wormAbsorbed > 0 || (arrayFullAt !== null && seconds - arrayFullAt > arrayHold)) wormAbsorbed = Math.min(1, wormAbsorbed + dt / wormAbsorbTime);
     return arrayOpening;
   }
 
@@ -885,17 +941,18 @@ export default function flow(p, container) {
   }
 
   function throwFlowers() {
-    const middle = seenFromBehind(0.5, cameraAt(pathTime));
+    const camera = cameraAt(pathTime);
     for (let i = 0; i < burstExtra; i++) {
+      const from = seenFromBehind(p.random(0.1, 0.9), camera); // From all along it
       thrownOut.push({
         ...newFlower(),
-        fromX: middle.x,
-        fromY: middle.y,
+        fromX: from.x,
+        fromY: from.y,
         thrownAt: seconds,
         angle: p.random(p.TWO_PI),
         reach: p.random(0.15, 1) * burstReach * p.width,
         speed: p.random(burstExtraSpeed[0], burstExtraSpeed[1]) * p.width,
-        size: (p.random(0.4, 1.4) * p.width) / 1200,
+        size: (p.random(burstExtraSize[0], burstExtraSize[1]) * p.width) / 1200,
       });
     }
   }
@@ -926,7 +983,7 @@ export default function flow(p, container) {
     }
   }
 
-  function drawThrownOut() {
+  function drawThrownOut(context) {
     if (burstStart === null) thrownOut = [];
     thrownOut = thrownOut.filter((flower) => {
       const since = seconds - flower.thrownAt;
@@ -935,7 +992,7 @@ export default function flow(p, container) {
       const y = flower.fromY + Math.sin(flower.angle) * distance;
       const across = flower.petalLength * flower.size;
       if (x < -across || x > p.width + across || y < -across || y > p.height + across) return false;
-      drawFlower(flower, x, y, flower.size * (1 - tunnel));
+      drawFlower(flower, x, y, flower.size * (1 - tunnel), 1, context);
       return true;
     });
   }
@@ -1019,10 +1076,10 @@ export default function flow(p, container) {
     };
   }
 
-  function drawField() {
+  function drawField(context) {
     for (const flower of field) {
       const { x, y, size } = fieldPlace(flower);
-      drawFlower(flower, x, y, size, Math.min(1, (1 - flower.z) / fieldFade)); // They fade in in the distance
+      drawFlower(flower, x, y, size, Math.min(1, (1 - flower.z) / fieldFade), context); // They fade in in the distance
     }
   }
 
@@ -1048,18 +1105,20 @@ export default function flow(p, container) {
     current = (index + stages.length) % stages.length;
     progress = 0;
     stageStart = seconds;
+    arrayFullAt = null;
     ringDistance = null;
     ringWaiting = false;
     burstStart = null;
     boost = 0;
     // The flowers stage always starts with the worm bursting
-    if (stages[current].settings.bloom) burst();
+    if (stages[current].settings.bloom) bloomStart = seconds; // It waits, wobbles and bursts (see bloomFade)
+    else bloomStart = null;
     const { name, hint, hintWithoutCamera, settings } = stages[current];
     if (settings.grid) {
       takePicture();
       boilStart = seconds;
     }
-    if ((settings.pixels || settings.noisy) && !clip.src) {
+    if ((settings.bloom || settings.noisy) && !clip.src) {
       clip.src = strikeClip;
       clip.addEventListener('loadedmetadata', () => (clip.currentTime = p.random(clip.duration)), { once: true });
     }
@@ -1083,9 +1142,48 @@ export default function flow(p, container) {
     if (stages[current].sketch) handOver(stages[current].sketch);
   }
 
+  // Switching off like an old TV: the picture squashed to a bright line across the middle, the line shrunk to a bright
+  // dot, and the dot fading, and then it's on to the next stage
+  function drawTvOff() {
+    const t = seconds - tvOffAt;
+    const context = p.drawingContext;
+    const { width, height } = context.canvas;
+    context.save();
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.fillStyle = 'black';
+    context.fillRect(0, 0, width, height);
+    const squashing = ease(Math.min(1, t / tvSquash));
+    const shrinking = ease(Math.min(1, Math.max(0, (t - tvSquash) / tvShrink)));
+    const fading = Math.min(1, Math.max(0, (t - tvSquash - tvShrink) / tvFade));
+    const line = Math.max(2, height * 0.004); // How thick the line is, in the canvas's own pixels
+    const tall = p.lerp(height, line, squashing);
+    const wide = p.lerp(width, line, shrinking);
+    context.translate(width / 2, height / 2);
+    if (shrinking < 1) {
+      // The picture, squashed and brightening to white as it goes
+      context.drawImage(tvPicture, -wide / 2, -tall / 2, wide, tall);
+      context.fillStyle = `rgba(255,255,255,${squashing})`;
+      context.fillRect(-wide / 2, -tall / 2, wide, tall);
+    }
+    // The dot, glowing, and fading
+    if (shrinking > 0.8) {
+      const glow = line * 4;
+      const dot = context.createRadialGradient(0, 0, 0, 0, 0, glow);
+      dot.addColorStop(0, `rgba(255,255,255,${1 - fading})`);
+      dot.addColorStop(1, 'rgba(255,255,255,0)');
+      context.fillStyle = dot;
+      context.fillRect(-glow, -glow, glow * 2, glow * 2);
+    }
+    context.restore();
+    if (fading >= 1) {
+      tvOffAt = null;
+      goTo(current + 1);
+    }
+  }
+
   // A stage that's a sketch of its own takes over the screen: this one stops, and that one starts in its place, with
-  // the captions, the sound switch and the skip link staying as they are
-  function handOver(sketch) {
+  // the captions, the sound switch and the skip link staying as they are. `options` go to the next sketch.
+  function handOver(sketch, options = {}) {
     handedOver = true;
     clip.pause();
     // Once this frame's done. The page keeps resizing this one (see src/scripts/sketchbook.js), so that's turned off,
@@ -1093,8 +1191,21 @@ export default function flow(p, container) {
     requestAnimationFrame(() => {
       p.resizeCanvas = () => {};
       p.remove();
-      new p5((next) => sketch(next, container), container);
+      new p5((next) => sketch(next, container, options), container);
     });
+  }
+
+  // Skipping goes straight to the end of the wormhole, where the portals are (see spiral-worm.js)
+  function skipToPortals() {
+    if (handedOver) {
+      container.skipToPortals?.();
+      return;
+    }
+    begun = true;
+    welcome.classList.add('gone');
+    current = stages.findIndex(({ sketch }) => sketch);
+    history.replaceState(null, '', `#${slug(stages[current].name)}`);
+    handOver(stages[current].sketch, { atPortals: true });
   }
 
 
@@ -1245,21 +1356,52 @@ export default function flow(p, container) {
 
   function drawWorm() {
     moveField();
-    drawField();
-    drawThrownOut();
+    // All the flowers are faint from the worm turning into flowers until it's burst, and then come back slowly. While
+    // they're faint, they're drawn solid on a layer of their own first, and then put on the canvas faint all at once, so
+    // each flower fades as a whole, without its petals showing through each other.
+    const flowerShown = burstStart === null ? bloomFaint : Math.min(1, bloomFaint + ((1 - bloomFaint) * (seconds - burstStart)) / bloomSolid);
+    const layered = flowerShown < 1 && (ringDistance !== null || bloomStart !== null); // Only while there are flowers to fade
+    const flowerContext = layered ? faintContext : p.drawingContext;
+    if (layered) {
+      const main = p.drawingContext;
+      if (faintLayer.width !== main.canvas.width || faintLayer.height !== main.canvas.height) {
+        faintLayer.width = main.canvas.width;
+        faintLayer.height = main.canvas.height;
+      }
+      faintContext.setTransform(main.getTransform());
+      faintContext.clearRect(0, 0, p.width, p.height);
+    }
+    const showFaint = () => {
+      if (!layered) return;
+      const main = p.drawingContext;
+      main.save();
+      main.setTransform(1, 0, 0, 1, 0, 0);
+      main.globalAlpha = flowerShown;
+      main.drawImage(faintLayer, 0, 0);
+      main.restore();
+    };
+    drawField(flowerContext);
+    drawThrownOut(flowerContext);
     if (ringDistance !== null) drawRing();
-    if (now.body < 0.01) return;
+    if (now.body < 0.01) {
+      showFaint();
+      return;
+    }
     const length = Math.round(now.length);
     const start = Math.max(0, trail.length - length);
     const round = p.width / 8;
     p.rectMode(p.CENTER);
     p.fill(0);
     const wormWeight = p.random(1, 2); // The worms flicker a whole frame at a time, and the wake holds steady
+    // Having come through the ring as the flower worm, waiting as the field's colour fades in, wobbling more and more,
+    // and bursting
+    const wobbling = bloomStart === null ? 0 : Math.min(1, Math.max(0, (seconds - bloomStart - bloomFade) / bloomWobbleTime));
+    if (bloomStart !== null && burstStart === null && wobbling >= 1) burst();
     const white = pointer.down && now.whiteHeld > 0.5;
     const camera = cameraAt(pathTime);
 
     // Through the pixel array it stretches out, longer and thinner, as it nears the noisy spiral
-    const stretching = stages[current].settings.pixels ? ease(Math.min(1, (seconds - stageStart) / stageSeconds)) : 0;
+    const stretching = arrayFullAt !== null ? ease(Math.min(1, (seconds - arrayFullAt) / arrayHold)) : 0;
     const longer = p.lerp(1, wormStretch, stretching);
     const thinner = p.lerp(1, wormThin, stretching);
 
@@ -1279,6 +1421,8 @@ export default function flow(p, container) {
       const along = (i - start + length - (trail.length - start)) / length; // 0 at the tail, 1 at the head
       const distance = p.lerp(tailDistance, headDistance, along);
       const { x, y } = trail[i];
+      // Having been through the ring, this part of the worm is a flower
+      const isFlower = ringDistance !== null ? distance > ringDistance : stages[current].settings.bloom === 1 || now.bloom > 0.01 || tunnel > 0.01;
       const fade = p.lerp(1, p.sin(along * p.HALF_PI), now.flat);
       p.strokeWeight(p.lerp(wormWeight, white ? p.random(1.8, 2) : 1.8, now.flat));
       if (white) {
@@ -1337,8 +1481,6 @@ export default function flow(p, container) {
         top = Math.min(top, seenY - h / 2);
         bottom = Math.max(bottom, seenY + h / 2);
       }
-      // Having been through the ring, this part of the worm is a flower
-      const isFlower = ringDistance !== null ? distance > ringDistance : stages[current].settings.bloom === 1 || now.bloom > 0.01 || tunnel > 0.01;
       if (isFlower) {
         const segment = i - start;
         segments[segment] ??= { ...newFlower(), burstAngle: p.random(p.TWO_PI), burstSize: p.random(0.5, 1) };
@@ -1353,10 +1495,15 @@ export default function flow(p, container) {
         flower.blastToX = (flower.blastToX ?? 0) * settling;
         flower.blastToY = (flower.blastToY ?? 0) * settling;
         const grown = p.lerp(1, Math.pow(wormSize, -explodeGrow), Math.min(1, Math.hypot(flower.blastX, flower.blastY) / (explodeLeast * Math.min(p.width, p.height)))); // It'd be too small to see otherwise
-        drawFlower(flower, seenX + Math.cos(flower.burstAngle) * thrown + flower.blastX, seenY + Math.sin(flower.burstAngle) * thrown + flower.blastY, (w * grown) / (flower.petalLength * 2), 1 - wormAbsorbed);
+        // Wobbling more and more, until it bursts
+        const wobble = burstStart === null ? bloomWobble * w * wobbling * wobbling : 0;
+        const wobbleX = Math.sin(seconds * bloomWobbleSpeed + segment * 0.7) * wobble;
+        const wobbleY = Math.cos(seconds * bloomWobbleSpeed * 1.3 + segment * 0.5) * wobble;
+        drawFlower(flower, seenX + Math.cos(flower.burstAngle) * thrown + flower.blastX + wobbleX, seenY + Math.sin(flower.burstAngle) * thrown + flower.blastY + wobbleY, (w * grown) / (flower.petalLength * 2), 1 - wormAbsorbed, flowerContext);
       } else if (now.box < 0.01) p.ellipse(seenX, seenY, w, h);
       else p.rect(seenX, seenY, w, h, (Math.min(w, h) / 2) * (1 - now.box));
     }
+    showFaint();
     if (formAt && seconds - formStart > formTime && now.space > 0.999) formAt = null;
     // (Its trail's still short when the page has only just opened, which would make it look tiny)
     wormWide = wormSize < 1 && trail.length >= length ? Math.max(right - left, bottom - top) : Infinity;
@@ -1450,6 +1597,10 @@ export default function flow(p, container) {
     skip.className = 'flow-skip';
     skip.href = after;
     skip.textContent = 'skip';
+    skip.addEventListener('click', (event) => {
+      event.preventDefault();
+      skipToPortals();
+    });
     marks.append(skip);
     soundSpot.append(soundSwitch);
     container.append(welcome, caption, nextLabel, marks, soundSpot);
@@ -1520,6 +1671,10 @@ export default function flow(p, container) {
     if (handedOver) return;
     const dt = Math.min(p.deltaTime / 1000, 0.1); // So coming back to the tab doesn't jump ahead
     seconds += dt;
+    if (tvOffAt !== null) {
+      drawTvOff();
+      return;
+    }
     pathTime += dt * p.lerp(1, fieldPace, Math.max(now.bloom, tunnel)) * forwardMotion();
 
     // Everything drifts toward the current stage
@@ -1565,14 +1720,21 @@ export default function flow(p, container) {
     if (!begun) progress = 0; // The welcome waits for a press
     const { through } = stages[current];
     const usesRing = through && !calm;
-    // The flowers last until the tunnel's closed, so there's nothing for the pixel array to fade in over
-    // ...and the pixel array until it's absorbed the worm, when the noisy spiral bursts out
-    const { bloom, pixels } = stages[current].settings;
-    if (pixels && wormAbsorbed >= 1) {
+    // The flowers go on as the pixel array closes in, and once it's covered the screen, until it's absorbed the worm,
+    // when the noisy spiral bursts out
+    const { bloom } = stages[current].settings;
+    if (bloom && wormAbsorbed >= 1) {
+      // Switching off like an old TV, from what's on the screen now, and then on to the noisy spiral (see drawTvOff())
+      const screen = p.drawingContext.canvas;
+      tvPicture.width = screen.width;
+      tvPicture.height = screen.height;
+      tvPicture.getContext('2d').drawImage(screen, 0, 0);
+      tvOffAt = seconds;
       spiralAt = { ...wormFront };
-      goTo(current + 1);
-    } else if (bloom ? arrayOpening >= 1 : !pixels && progress >= 1 && !usesRing) {
-      if (bloom) now.pixels = 1;
+    } else if (bloom && arrayOpening >= 1) {
+      now.pixels = 1;
+      arrayFullAt ??= seconds;
+    } else if (!bloom && progress >= 1 && !usesRing) {
       goTo(current + 1);
     }
 
@@ -1582,9 +1744,13 @@ export default function flow(p, container) {
       ringWaiting = true;
       portal = newFlower();
       portal.middle = portal.petalLength * 0.6; // Big enough for the worm to go through
-      groundColour = [p.random(255), p.random(255), p.random(255)];
+      // Always vivid: its petals in one hue, its middle (and the field beyond) in the opposite one, and its outline in a
+      // third, between them
+      const hue = p.random(360);
+      portal.petalColour = `rgb(${vivid(hue)})`;
+      groundColour = vivid(hue + 180);
       portal.middleColour = `rgb(${groundColour})`;
-      portal.strokeColour = `rgb(${p.random(255)},${p.random(255)},${p.random(255)})`;
+      portal.strokeColour = `rgb(${vivid(hue + 90)})`;
       portal.spin = ringSpin / 60;
     }
     if (ringWaiting && seconds - stageStart > ringLongest) bringRing();

@@ -27,7 +27,9 @@
 // goes on to cover the screen (see portalAfter), which is where it
 // goes on to the art page, white too. The noisy spiral's lightning flashes all through it, some of it in the colours of the
 // Luminin, until the end (see strikeEvery), apart from while it's unwinding into the worm, when there's only what
-// someone asks for: pressing the mouse brings a flash of lightning, and letting go of it sets the spiral bursting into a rose.
+// someone asks for: pressing the mouse brings a flash of lightning, and letting go of it sets the spiral bursting into a rose,
+// and holding it down scatters points along the worm's line about at random, more and more the longer it's held, and
+// letting go snaps it straight back (see scatterCharge).
 // Run it by itself at /art/sketchbook/test.html?sketch=spiral-worm.
 
 // The worm
@@ -65,6 +67,15 @@ const lookDownDepth = 1.5; // How far away its head looks then, compared to its 
 const formingSlide = 0.86; // How far down the screen the spiral and the worm's tail slide as it forms, as the camera moves up and forward (0.5 = staying in the middle)
 const formingLift = 0.8; // How far the camera's risen, as the worm forms out of the spiral, by the time it's all unwound (1 = as far as for the stretch)
 const formingZoom = 0.85; // How small everything's got, as the camera pulls back while it moves up and forward, by the time it's formed (1 = not at all)
+// Holding the mouse down swells it, and scatters some of the points along its line, each to its own random place,
+// afresh every frame, more and more the longer it's held, so it scribbles about. The scatter's gaussian: most points
+// move a little, and a few a long way. Letting go snaps it straight back.
+const scatterCharge = 3; // How many seconds of holding it takes to scatter it the most
+const scatterLeast = 0.3; // How far points are typically thrown as soon as it's held, compared to how fat the body is there (the spread of the gaussian)
+const scatterMost = 2; // ...and after the longest hold
+const scatterChance = 0.25; // How many of its points are thrown about, each frame (1 = all of them)
+const chargeSwell = 0.6; // How much fatter it swells, charged all the way (as the flower worm swells as it speeds up)
+const releasedThinner = 0.8; // How fat it is once it's let go, compared to before (it gets there as the view comes round)
 const settleView = 0.35; // How quickly the camera comes back down once it's let go, in seconds (bigger = slower)
 // As it's let go and snaps back, it jolts forward: the stars rush past much faster for a moment, and slow back down
 const joltStars = 5; // How much faster the stars go at the height of it
@@ -179,6 +190,8 @@ export default function spiralWorm(p, container) {
   let lift = 0; // How far the camera's risen to look down on it, from 0 to 1
   let spun = 0; // How far it's spun round itself, in radians
   let rushing = 0; // How hard the stars are rushing past, as it jolts forward, from 0 to 1
+  let scattered = 0; // How far its points are being thrown about, compared to how fat the body is there
+  let pressedAt = null; // When the mouse was pressed down, charging it up
   let portalAt = null; // Where the portal is, once it's open
   let fillsAt = null; // When it got as wide as the screen's smaller side
   let leaving = false; // Has it gone on to the art page?
@@ -335,12 +348,17 @@ export default function spiralWorm(p, container) {
     // Pressing the mouse brings a flash of lightning, as long as it's not too soon after the last (see strikeGap), and
     // letting go sets the spiral bursting into a rose
     canvas.mousePressed(() => {
+      pressedAt = seconds;
       if (seconds - strikeStarted >= strikeGap) {
         nextStrike = seconds;
         asked = true;
       }
     });
-    canvas.mouseReleased(roseBurst);
+    canvas.mouseReleased(() => {
+      roseBurst();
+      pressedAt = null;
+      scattered = 0; // Its points snap straight back
+    });
   };
 
   p.windowResized = () => p.resizeCanvas(container.clientWidth, container.clientHeight);
@@ -431,6 +449,11 @@ export default function spiralWorm(p, container) {
 
     // Where the worm's line goes, worked out from the tail, since each point comes from the one before
     const points = [];
+    // Its points thrown about more and more, and it swelling, the longer the mouse is held down, and snapping straight
+    // back once it's let go
+    const charging = pressedAt !== null && p.mouseIsPressed ? Math.min(1, (seconds - pressedAt) / scatterCharge) : 0;
+    scattered = charging > 0 ? p.lerp(scatterLeast, scatterMost, charging) : 0;
+    const swell = 1 + chargeSwell * charging * charging * (3 - 2 * charging);
     let offX = 0; // Where the line is, round the middle of its body
     let offY = 0;
     for (let i = 0; i <= total; i++) {
@@ -452,8 +475,8 @@ export default function spiralWorm(p, container) {
         closer: p.lerp(away.closer, behind.closer, released),
       };
       const middle = { x: p.lerp(tailAt.x, onPath.x, leaving), y: p.lerp(tailAt.y, onPath.y, leaving) };
-      const body = (Math.sin(along * Math.PI) * (p.width / 8) * bodyScale * onPath.closer * size) / 2 / Math.sqrt(stretch); // Thinner as it stretches
-      const radius = p.lerp(startRadius, body, leaving);
+      const body = ((Math.sin(along * Math.PI) * (p.width / 8) * bodyScale * onPath.closer * size) / 2 / Math.sqrt(stretch)) * p.lerp(1, releasedThinner, released); // Thinner as it stretches, and once it's let go
+      const radius = p.lerp(startRadius, body * swell, leaving);
       const angle = startAngle + (i / perTurn) * Math.PI * 2;
       // Each point partly from the last one, by a different amount every time
       const wobble = p.noise(i * roseNoise, row);
@@ -477,7 +500,13 @@ export default function spiralWorm(p, container) {
       const roundY = p.lerp(plainY, offY, noisy);
       const c = Math.cos(spun);
       const sn = Math.sin(spun);
-      points.push({ x: middle.x + roundX * c - roundY * sn, y: middle.y + roundX * sn + roundY * c, along });
+      // ...and thrown about at random, gaussian, if it's scattered, and it's one of the ones that are this frame
+      const spread = scattered > 0.01 && Math.random() < scatterChance ? scattered * body : 0;
+      points.push({
+        x: middle.x + roundX * c - roundY * sn + (spread ? p.randomGaussian(0, spread) : 0),
+        y: middle.y + roundX * sn + roundY * c + (spread ? p.randomGaussian(0, spread) : 0),
+        along,
+      });
     }
 
     // As it's let go, its tail snaps in toward its body, like the end of a rubber band, and goes back out
