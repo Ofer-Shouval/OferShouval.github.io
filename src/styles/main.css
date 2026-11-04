@@ -500,10 +500,9 @@ ul {
 
 /* Content pages (art, music, teaching) */
 
-/* The opening of the installations page: a sheet of fluorescent acrylic, with a sun on it (see
-   src/sketches/sun_deity.js). It fills a thin window. On anything wider it's as wide as the text below it,
-   and hangs in the middle of the dark page, no taller than about the proportions of the real sheet. What's
-   below just shows underneath, so it's clear there's more. */
+/* The opening of the installations page: Sun Deity, ported (see src/sketches/sun_deity.js), on a sheet of fluorescent
+   orange acrylic, no taller than about the proportions of the real sheet, with the page's title and what's on it, and a
+   label at the bottom saying what it is. What's below just shows underneath, so it's clear there's more. */
 
 .sun-opening {
   position: relative;
@@ -527,28 +526,208 @@ ul {
   height: 100%;
 }
 
-.sun-opening h1 {
+/* The title, and the index under it, however many lines the title takes */
+.sun-heading {
   position: absolute;
   top: 28px;
   left: 16px;
   right: 16px;
+  pointer-events: none;
+}
+
+.sun-opening h1 {
+  display: block; /* (Headings are inline elsewhere on the site) */
+  margin: 0 0 14px;
   text-align: center;
   color: #171717;
-  pointer-events: none;
+}
+
+.installations-index {
+  pointer-events: auto;
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+  font-family: 'Major Mono Display', monospace;
+  font-size: 15px;
+}
+
+.installations-index a,
+.sun-label {
+  color: #171717;
+  text-decoration: none;
+}
+
+.installations-index a:hover,
+.installations-index a:focus-visible,
+.sun-label:hover,
+.sun-label:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Like a label on a gallery wall */
+.sun-label {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  left: 14px;
+  text-align: right;
+  font-family: 'Inconsolata', monospace;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+/* Ghost Harp, simulated (see src/sketches/ghost_harp.js): the column hanging in the dark, with its sound switch, and
+   what it's playing under it */
+.installation .ghost-harp-sim {
+  position: relative;
+  max-width: 700px;
+  margin: 32px auto 40px;
+}
+
+.ghost-harp-sim canvas {
+  display: block;
+  width: 100%;
+  height: max(calc(100vh - 150px), 420px); /* All of it on the screen at once, under the navbar, with its controls below */
+  touch-action: pan-y; /* Dragging sideways turns it, and up and down still scrolls the page */
+  cursor: grab;
+}
+
+.ghost-harp-sound {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  color: white;
+}
+
+.installation .ghost-harp-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px 16px;
+  margin-top: 10px;
+}
+
+.ghost-harp-midi {
+  padding: 4px 12px;
+  border: 1px solid #555;
+  border-radius: 999px;
+  background: none;
+  color: white;
+  font-family: 'Inconsolata', monospace;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ghost-harp-midi:hover,
+.ghost-harp-midi:focus-visible {
+  border-color: white;
+}
+
+/* ...on the left, with its description and details on the right, staying in view while the harp scrolls by. Its name
+   and first line go above both. On narrow screens, one after the other. */
+@media (min-width: 800px) {
+  .ghost-harp-top {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 40px;
+    align-items: start;
+    margin-top: 32px;
+  }
+
+  /* Its name and first line, lined up with the harp's left edge */
+  .page #ghost-harp > h2,
+  .page #ghost-harp > p {
+    max-width: none;
+    margin-left: 0;
+  }
+
+  .installation .ghost-harp-top .ghost-harp-sim {
+    margin: 0;
+  }
+
+  .ghost-harp-text {
+    position: sticky;
+    top: 72px;
+  }
+
+  .ghost-harp-text p,
+  .ghost-harp-text .specs {
+    max-width: none;
+  }
+
+  .ghost-harp-text p:first-of-type {
+    margin-top: 0;
+  }
+}
+
+/* Each installation, one after another, with a line between them */
+.installation {
+  scroll-margin-top: 72px; /* So its name isn't under the navbar when it's jumped to */
+}
+
+.installation + .installation {
+  padding-top: 72px;
+  border-top: 1px solid #333;
+}
+
+.installation figure {
+  max-width: 700px;
+  margin: 24px auto;
+}
+
+.installation figure video {
+  margin: 0 auto;
+}
+
+.installation figcaption {
+  margin-top: 6px;
+  color: #7a7a7a;
+  font-family: 'Inconsolata', monospace;
+  font-size: 13px;
 }
 
 /* Refracture, running live from the viewer's camera (see src/sketches/refracture.js) */
 
+/* A label in the corner of a simulation, saying what it's a simulation of (the sun's is .sun-label) */
+.page .sim-label {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  max-width: calc(100% - 140px);
+  margin: 0;
+  color: rgba(255, 255, 255, 0.6);
+  font-family: 'Inconsolata', monospace;
+  font-size: 12px;
+  font-weight: normal;
+  line-height: 1.4;
+  pointer-events: none;
+}
+
+/* The harp's is at the bottom, clear of its ceiling box (and above its controls) */
+.page .ghost-harp-sim .sim-label {
+  top: auto;
+  bottom: 52px;
+  max-width: 30%; /* Left of the harp */
+}
+
 .refracture {
+  position: relative;
   max-width: 700px;
   margin: 24px auto;
 }
 
 .refracture canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background-color: black;
   outline: none;
 }
 
-.refracture button {
+.refracture .refracture-camera {
   display: block;
   margin: 12px auto 0;
   padding: 8px 16px;
@@ -560,9 +739,10 @@ ul {
   cursor: pointer;
 }
 
-.refracture button:hover {
+.refracture .refracture-camera:hover {
   background-color: rgba(100, 100, 100, 0.6);
 }
+
 
 .page .refracture-readout {
   margin: 8px auto 0;
@@ -650,6 +830,7 @@ ul {
 
 .page img, .page video {
   width: 100%;
+  height: auto; /* Their width and height attributes keep their room on the page before they've loaded */
   display: block;
   margin: 24px auto;
   border: 0px solid white;

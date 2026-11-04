@@ -35,7 +35,7 @@ Placeholders on the site show as dashed "TODO" boxes in `npm run dev`.
 
 ### Existing content
 - [ ] Years for Sun Deity, the visualisers and the animation work (their cards have none)
-- [ ] Ghost Harp: still says "In August 2021, Ghost Harp *will become* a permanent installation"
+- [x] Ghost Harp: the Pratt line is gone (it never went up there, because of COVID)
 - [ ] Bio: update for the last 5 years (teaching, music, Luminin)
 - [ ] Resume PDF: replace with a current one
 
