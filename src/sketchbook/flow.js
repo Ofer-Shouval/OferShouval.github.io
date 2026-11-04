@@ -73,7 +73,7 @@ const formRadius = 0.45; // How big the circle is, as a share of the smaller sid
 const formTime = 7; // How many seconds the worm takes to drift from where it formed onto its own way
 const screensToNext = 25; // How far the pointer travels to reach the next stage, in lengths of the screen's diagonal
 const stageSeconds = 15; // Roughly how long each stage lasts if nobody plays with it (the first waits to be pressed). The
-// stages that end in their own ways are timed to it: see ringLongest, arrayTime, wormShrink and stageSeconds below.
+// stages that end in their own ways are timed to it: see ringLongest. (The flowers stage has its own timing: see arrayDelay, arrayTime and arrayHold.)
 const secondsToNext = stageSeconds; // How long a stage lasts if nobody plays with it, unless it has its own `seconds`
 const idleTime = 5; // How many seconds after the pointer stops before the sketch starts moving by itself
 // In space, the worm weaves along by itself and the camera follows just above and behind it
@@ -96,7 +96,8 @@ const ringWait = tailDistance + (headDistance - tailDistance) * (1 + ringLead / 
 const ringLabel = 'next sketch';
 const ringSmall = 0.2; // How big it is while it waits, compared to what it would be at the worm's head
 const ringCovers = 9.7; // How many seconds after it sets off it's covered the screen
-const ringLongest = Math.max(0, stageSeconds - ringCovers); // How many seconds into the stage it comes by itself, if nobody's clicked, so it's gone through after stageSeconds
+const psychwormSeconds = 22; // Roughly how long the psychworm stage lasts if nobody clicks, a little longer than the others
+const ringLongest = Math.max(0, psychwormSeconds - ringCovers); // How many seconds into the stage it comes by itself, if nobody's clicked, so it's gone through after psychwormSeconds
 const ringRush = 0.2; // How much its growth keeps speeding up on the way, so it never seems to slow (0 = steady, 1 = most of it at the end)
 const ringFade = 3; // How slowly the next stage's ground fades from the colour of the flower's middle, in seconds (bigger = slower)
 const ringSpin = 0.25; // How quickly it turns, in radians per second
@@ -179,22 +180,22 @@ const spiralLoosest = 8; // How tightly it's wound when it bursts out (bigger = 
 const spiralTightest = 300; // ...which it tightens up to, more and more, as the stage goes on
 const spiralSettling = 0.05; // How quickly it gets back to that after a click changes it, each time it changes
 // In the flowers, the pixel array closes in as a circle from the corners, like a tunnel, until it's taken over
-const arrayDelay = 4.5; // How many seconds into the stage it starts
+const arrayDelay = 10; // How many seconds into the stage it starts, so the flower worm has a while to itself
 // Once the array's absorbed the worm, all static, it switches off like an old TV: the picture squashes to a bright line
 // across the middle, the line shrinks to a bright dot, and the dot fades, before the noisy spiral bursts out of the dark
 const tvSquash = 0.28; // How many seconds squashing to a line takes
 const tvShrink = 0.22; // ...shrinking the line to a dot
 const tvFade = 0.4; // ...and the dot fading away
-const arrayHold = 8; // How many seconds the flowers go on once the pixel array's covered the screen, while the worm stretches and shrinks away, before it's absorbed anyway
-const arrayTime = stageSeconds - arrayDelay; // How many seconds it takes to cover the screen, at the worm's usual speed, so the flowers last stageSeconds. Boosting speeds it up by as much.
+const arrayHold = 10; // How many seconds the flowers go on once the pixel array's covered the screen, while the worm stretches and shrinks away, before it's absorbed anyway
+const arrayTime = 10.5; // How many seconds it takes to cover the screen, at the worm's usual speed. Boosting speeds it up by as much.
 // Once it's covered the screen, it slowly looks more and more like it's on an old TV: its edges pull in to a rounded
 // screen, darker toward its edges, with black around it. Then it cracks: seams break through it, more and more, from
 // working the pattern out as if the screen were the wrong width, so each row slips out of step with the one above
-const crtTime = 3; // How many seconds taking on the old TV's shape takes
-const crtInset = 0.06; // How far its edges pull in, as a share of the screen's smaller side
-const crtCorner = 0.12; // How round its corners get, as a share of the screen's smaller side
+const crtTime = 7; // How many seconds taking on the old TV's shape takes, easing in and out
+const crtInset = 0.25; // How far its edges pull in, as a share of the screen's smaller side
+const crtCorner = 0.16; // How round its corners get, as a share of the screen's smaller side
 const crtShade = 0.75; // How dark it gets at its edges (1 = black)
-const crackAfter = 3; // How many seconds after it's covered the screen it starts to crack
+const crackAfter = 4; // How many seconds after it's covered the screen it starts to crack
 const crackTime = 4.5; // How many seconds the cracks take to spread
 const crackMost = 0.3; // How wrong the width gets, as a share of the real one, by the end
 // It moves by itself, as if a mouse were spiralling out from the middle and then going around the edges of the screen
@@ -331,6 +332,7 @@ export default function flow(p, container) {
   let arrayNoise = 0; // How close the pixel array is to pure static (1 = all the way)
   let arrayFullAt = null; // When it covered the screen, in the flowers stage
   let tvOffAt = null; // When it started switching off like an old TV (see tvSquash)
+  let tvScreen = null; // Where the old TV's screen was then, in the canvas's own pixels, so it switches off inside it
   const tvPicture = document.createElement('canvas'); // What was on the screen as it switched off
   let wormSize = 1; // How big the worm is, compared to its usual size
   let wormWide = Infinity; // How wide it was on the screen, last frame, in pixels
@@ -599,16 +601,11 @@ export default function flow(p, container) {
     context.save();
     context.imageSmoothingEnabled = false;
     // Taking on the shape of an old TV's screen, once it's covered the screen
-    const crt = arrayFullAt === null ? 0 : ease(Math.min(1, (seconds - arrayFullAt) / crtTime));
+    const crt = tvShaped();
     if (crt > 0) {
-      const smaller = Math.min(p.width, p.height);
-      const inset = crtInset * smaller * crt;
-      const round = crtCorner * smaller * crt;
       context.fillStyle = 'black';
       context.fillRect(0, 0, p.width, p.height);
-      context.beginPath();
-      context.roundRect(inset, inset, p.width - inset * 2, p.height - inset * 2, round);
-      context.clip();
+      clipToTv(context, crt);
     }
     context.drawImage(pixelCanvas, 0, 0, p.width, p.height);
     if (crt > 0) {
@@ -1142,6 +1139,22 @@ export default function flow(p, container) {
     if (stages[current].sketch) handOver(stages[current].sketch);
   }
 
+  // Keeps what's drawn after this inside the old TV's screen, at however far it's taken on its shape
+  function clipToTv(context, crt) {
+    const smaller = Math.min(p.width, p.height);
+    const inset = crtInset * smaller * crt;
+    context.beginPath();
+    context.roundRect(inset, inset, p.width - inset * 2, p.height - inset * 2, crtCorner * smaller * crt);
+    context.clip();
+  }
+
+  // How far the pixel array's taken on the old TV's shape, from 0 to 1, easing gently in and out
+  function tvShaped() {
+    if (arrayFullAt === null) return 0;
+    const t = Math.min(1, (seconds - arrayFullAt) / crtTime);
+    return t ** 3 * (t * (t * 6 - 15) + 10);
+  }
+
   // Switching off like an old TV: the picture squashed to a bright line across the middle, the line shrunk to a bright
   // dot, and the dot fading, and then it's on to the next stage
   function drawTvOff() {
@@ -1155,13 +1168,18 @@ export default function flow(p, container) {
     const squashing = ease(Math.min(1, t / tvSquash));
     const shrinking = ease(Math.min(1, Math.max(0, (t - tvSquash) / tvShrink)));
     const fading = Math.min(1, Math.max(0, (t - tvSquash - tvShrink) / tvFade));
+    // All of it inside the old TV's screen
+    const screen = tvScreen ?? { x: 0, y: 0, wide: width, tall: height, round: 0 };
+    context.beginPath();
+    context.roundRect(screen.x, screen.y, screen.wide, screen.tall, screen.round);
+    context.clip();
     const line = Math.max(2, height * 0.004); // How thick the line is, in the canvas's own pixels
-    const tall = p.lerp(height, line, squashing);
-    const wide = p.lerp(width, line, shrinking);
-    context.translate(width / 2, height / 2);
+    const tall = p.lerp(screen.tall, line, squashing);
+    const wide = p.lerp(screen.wide, line, shrinking);
+    context.translate(screen.x + screen.wide / 2, screen.y + screen.tall / 2);
     if (shrinking < 1) {
-      // The picture, squashed and brightening to white as it goes
-      context.drawImage(tvPicture, -wide / 2, -tall / 2, wide, tall);
+      // The picture on the screen, squashed and brightening to white as it goes
+      context.drawImage(tvPicture, screen.x, screen.y, screen.wide, screen.tall, -wide / 2, -tall / 2, wide, tall);
       context.fillStyle = `rgba(255,255,255,${squashing})`;
       context.fillRect(-wide / 2, -tall / 2, wide, tall);
     }
@@ -1360,7 +1378,9 @@ export default function flow(p, container) {
     // they're faint, they're drawn solid on a layer of their own first, and then put on the canvas faint all at once, so
     // each flower fades as a whole, without its petals showing through each other.
     const flowerShown = burstStart === null ? bloomFaint : Math.min(1, bloomFaint + ((1 - bloomFaint) * (seconds - burstStart)) / bloomSolid);
-    const layered = flowerShown < 1 && (ringDistance !== null || bloomStart !== null); // Only while there are flowers to fade
+    // ...and as the pixel array takes on the shape of an old TV, they turn into black silhouettes against it
+    const silhouette = tvShaped();
+    const layered = (flowerShown < 1 && (ringDistance !== null || bloomStart !== null)) || silhouette > 0; // Only while there are flowers to fade or darken
     const flowerContext = layered ? faintContext : p.drawingContext;
     if (layered) {
       const main = p.drawingContext;
@@ -1378,6 +1398,17 @@ export default function flow(p, container) {
       main.setTransform(1, 0, 0, 1, 0, 0);
       main.globalAlpha = flowerShown;
       main.drawImage(faintLayer, 0, 0);
+      if (silhouette > 0) {
+        // The same again, in black, over them
+        faintContext.save();
+        faintContext.setTransform(1, 0, 0, 1, 0, 0);
+        faintContext.globalCompositeOperation = 'source-in';
+        faintContext.fillStyle = 'black';
+        faintContext.fillRect(0, 0, faintLayer.width, faintLayer.height);
+        faintContext.restore();
+        main.globalAlpha = flowerShown * silhouette;
+        main.drawImage(faintLayer, 0, 0);
+      }
       main.restore();
     };
     drawField(flowerContext);
@@ -1710,8 +1741,15 @@ export default function flow(p, container) {
     drawSpiral(dt);
     frameTime = dt;
     if (pointer.down && moved > 0 && stages[current].settings.bloom) plantInField(at.x, at.y);
+    // The stars, the flowers and the worm stay inside the old TV's screen, once the pixel array's taking on its shape
+    const crt = tvShaped();
+    if (crt > 0) {
+      p.drawingContext.save();
+      clipToTv(p.drawingContext, crt);
+    }
     drawStars(dt);
     drawWorm();
+    if (crt > 0) p.drawingContext.restore();
 
     // Playing moves things along. Left alone, it carries on by itself, unless motion's been turned down
     progress += pointer.travelled / Math.hypot(p.width, p.height) / screensToNext;
@@ -1730,6 +1768,10 @@ export default function flow(p, container) {
       tvPicture.height = screen.height;
       tvPicture.getContext('2d').drawImage(screen, 0, 0);
       tvOffAt = seconds;
+      const density = screen.width / p.width;
+      const crt = tvShaped();
+      const inset = crtInset * Math.min(p.width, p.height) * crt * density;
+      tvScreen = { x: inset, y: inset, wide: screen.width - inset * 2, tall: screen.height - inset * 2, round: crtCorner * Math.min(p.width, p.height) * crt * density };
       spiralAt = { ...wormFront };
     } else if (bloom && arrayOpening >= 1) {
       now.pixels = 1;
