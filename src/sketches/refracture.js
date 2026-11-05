@@ -563,7 +563,7 @@ function loop() {
 }
 
 function showReadout() {
-  readout.textContent = `threshold ${threshold} · colour variation ${randomFactor} · arrow keys change these`;
+  readout.textContent = `threshold ${threshold} · color variation ${randomFactor} · arrow keys change these`;
 }
 
 function run() {

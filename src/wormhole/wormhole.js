@@ -123,9 +123,10 @@ const burstReach = 1.6; // Going through the ring, how far the worm's flowers ar
 const burstExtra = 400; // How many more flowers it throws out, from all along it, which carry on off the screen rather than going back into the worm
 const burstExtraSpeed = [0.3, 1]; // How fast they carry on, in shares of the screen's width per second
 const burstExtraSize = [0.4, 2.2]; // How big they are, compared to usual, at the least and the most
-const burstStay = 0.25; // How many of them (from 0 to 1) join the flowers flying by instead, each flying out to a spot of
-// its own anywhere on the screen, so they're evenly spread, while that spot's already moving toward the edges like theirs
-const burstLandPace = 3; // ...and how many times faster than the others they fly toward the edges
+const burstStay = 0.25; // How many of them (from 0 to 1) stay on the screen instead, each flying out to a spot of its own
+// anywhere on it, so they're evenly spread. Once they've landed they join the flowers flying by, toward the edges.
+const burstLand = 0.8; // How many seconds after the burst they've landed and join them
+const burstLandPace = 3; // ...and how many times faster than the others they then fly toward the edges
 // Coming through the ring, as the worm's turned into flowers, the field's colour fades in, then the flower worm
 // wobbles, more and more, and bursts
 const bloomFade = 0.6; // How many seconds it waits, as the field's colour fades in
@@ -165,15 +166,13 @@ const arrayDelay = 10; // How many seconds into the stage it starts, so the flow
 const tvSquash = 0.28; // How many seconds squashing to a line takes
 const tvShrink = 0.22; // ...shrinking the line to a dot
 const tvFade = 0.4; // ...and the dot fading away
-const tvDark = 0.25; // ...and then how many seconds it stays black before the noisy spiral bursts out
 const arrayHold = 10; // How many seconds the flowers go on once the pixel array's covered the screen, while the worm stretches and shrinks away, before it's absorbed anyway
 const arrayTime = 10.5; // How many seconds it takes to cover the screen, at the worm's usual speed. Boosting speeds it up by as much.
 // Once it's covered the screen, it slowly looks more and more like it's on an old TV: its edges pull in to a rounded
 // screen, darker toward its edges, with black around it. Then it cracks: seams break through it, more and more, from
 // working the pattern out as if the screen were the wrong width, so each row slips out of step with the one above
 const crtTime = 7; // How many seconds taking on the old TV's shape takes, easing in and out
-const crtInset = 0.25; // How far its edges pull in at least, as a share of the screen's smaller side
-const crtAspect = 4 / 3; // The shape it ends up, whatever the window's shape: width divided by height
+const crtInset = 0.25; // How far its edges pull in, as a share of the screen's smaller side
 const crtCorner = 0.16; // How round its corners get, as a share of the screen's smaller side
 const crtShade = 0.75; // How dark it gets at its edges (1 = black)
 const crackAfter = 4; // How many seconds after it's covered the screen it starts to crack
@@ -480,20 +479,18 @@ export default function wormhole(p, container) {
     const camera = cameraAt(pathTime);
     for (let i = 0; i < burstExtra; i++) {
       const from = seenFromBehind(p.random(0.1, 0.9), camera); // From all along it
-      const size = (p.random(burstExtraSize[0], burstExtraSize[1]) * p.width) / 1200;
-      if (p.random() < burstStay) {
-        joinField(newFlower(), p.random(p.width), p.random(p.height), size, from);
-        continue;
-      }
+      const stays = p.random() < burstStay;
+      const spot = { x: p.random(p.width), y: p.random(p.height) }; // Where it lands, if it stays
       thrownOut.push({
         ...newFlower(),
         fromX: from.x,
         fromY: from.y,
         thrownAt: seconds,
-        angle: p.random(p.TWO_PI),
-        reach: p.random(0.15, 1) * burstReach * p.width,
-        speed: p.random(burstExtraSpeed[0], burstExtraSpeed[1]) * p.width,
-        size,
+        angle: stays ? Math.atan2(spot.y - from.y, spot.x - from.x) : p.random(p.TWO_PI),
+        reach: stays ? Math.hypot(spot.x - from.x, spot.y - from.y) : p.random(0.15, 1) * burstReach * p.width,
+        speed: stays ? 0 : p.random(burstExtraSpeed[0], burstExtraSpeed[1]) * p.width,
+        stays,
+        size: (p.random(burstExtraSize[0], burstExtraSize[1]) * p.width) / 1200,
       });
     }
   }
@@ -534,19 +531,22 @@ export default function wormhole(p, container) {
       const across = flower.petalLength * flower.size;
       if (x < -across || x > p.width + across || y < -across || y > p.height + across) return false;
       drawFlower(flower, x, y, flower.size * (1 - tunnel), 1, context);
+      if (flower.stays && since > burstLand) {
+        joinField(flower, x, y, flower.size * (1 - tunnel));
+        return false;
+      }
       return true;
     });
   }
 
-  // A flower thrown out by the burst becomes one of the flowers flying by, at (x, y) and this big, as if it had been that
-  // far away all along: so it carries on toward the edges as they do (see fieldPlace()). It starts at `from`, on the
-  // worm, and flies out to where it'd be, as quickly as the burst.
-  function joinField(flower, x, y, size, from) {
+  // A flower thrown out by the burst becomes one of the flowers flying by, just where it is and just as big, as if it
+  // had been that far away all along: so it carries on toward the edges as they do (see fieldPlace())
+  function joinField(flower, x, y, size) {
     const shorter = Math.min(p.width, p.height);
     const reach = Math.max(p.width, p.height) * 0.5;
     const shown = Math.max(0.01, now.bloom * fieldLeft);
     const z = p.constrain(Math.pow((fieldSize * shorter) / 800 / (size / shown), 1 / fieldGrow), 0.05, 1 - fieldFade); // Near enough to have faded in
-    field.push({ ...flower, x: ((x - focus.x) * z) / reach, y: ((y - focus.y) * z) / reach, z, driftX: 0, driftY: 0, pace: burstLandPace, burstFromX: from.x - x, burstFromY: from.y - y, burstAt: seconds });
+    field.push({ ...flower, x: ((x - focus.x) * z) / reach, y: ((y - focus.y) * z) / reach, z, driftX: 0, driftY: 0, pace: burstLandPace });
   }
 
   // How far the worm's flowers have come back since the burst (from 0 to 1), slowing as they settle
@@ -618,11 +618,9 @@ export default function wormhole(p, container) {
   function fieldPlace(flower) {
     const reach = Math.max(p.width, p.height) * 0.5;
     const shorter = Math.min(p.width, p.height);
-    // Any thrown out by the burst start on the worm (see joinField())
-    const thrown = flower.burstAt === undefined ? 0 : Math.exp(-(seconds - flower.burstAt) * burstOut);
     return {
-      x: focus.x + (flower.x * reach) / flower.z + flower.driftX + (flower.burstFromX ?? 0) * thrown,
-      y: focus.y + (flower.y * reach) / flower.z + flower.driftY + (flower.burstFromY ?? 0) * thrown,
+      x: focus.x + (flower.x * reach) / flower.z + flower.driftX,
+      y: focus.y + (flower.y * reach) / flower.z + flower.driftY,
       size: now.bloom * fieldLeft * Math.min(((fieldSize * shorter) / 800) / Math.pow(flower.z, fieldGrow), (fieldBiggest * shorter) / flower.petalLength),
     };
   }
@@ -673,26 +671,11 @@ export default function wormhole(p, container) {
 
   // Keeps what's drawn after this inside the old TV's screen, at however far it's taken on its shape
   function clipToTv(context, crt) {
-    const { x, y, wide, tall, round } = tvRect(crt);
-    context.beginPath();
-    context.roundRect(x, y, wide, tall, round);
-    context.clip();
-  }
-
-  // Where the old TV's screen is, at however far it's taken on its shape: from the whole window to the biggest crtAspect
-  // rectangle that fits inside crtInset of its edges, in the middle
-  function tvRect(crt) {
     const smaller = Math.min(p.width, p.height);
-    const inset = crtInset * smaller;
-    let tall = p.height - inset * 2;
-    let wide = tall * crtAspect;
-    if (wide > p.width - inset * 2) {
-      wide = p.width - inset * 2;
-      tall = wide / crtAspect;
-    }
-    wide = p.lerp(p.width, wide, crt);
-    tall = p.lerp(p.height, tall, crt);
-    return { x: (p.width - wide) / 2, y: (p.height - tall) / 2, wide, tall, round: crtCorner * smaller * crt };
+    const inset = crtInset * smaller * crt;
+    context.beginPath();
+    context.roundRect(inset, inset, p.width - inset * 2, p.height - inset * 2, crtCorner * smaller * crt);
+    context.clip();
   }
 
   // How far the pixel array's taken on the old TV's shape, from 0 to 1, easing gently in and out
@@ -740,7 +723,7 @@ export default function wormhole(p, container) {
       context.fillRect(-glow, -glow, glow * 2, glow * 2);
     }
     context.restore();
-    if (t >= tvSquash + tvShrink + tvFade + tvDark) {
+    if (fading >= 1) {
       tvOffAt = null;
       goTo(current + 1);
     }
@@ -1271,8 +1254,8 @@ export default function wormhole(p, container) {
       tvOffAt = seconds;
       const density = screen.width / p.width;
       const crt = tvShaped();
-      const tv = tvRect(crt);
-      tvScreen = { x: tv.x * density, y: tv.y * density, wide: tv.wide * density, tall: tv.tall * density, round: tv.round * density };
+      const inset = crtInset * Math.min(p.width, p.height) * crt * density;
+      tvScreen = { x: inset, y: inset, wide: screen.width - inset * 2, tall: screen.height - inset * 2, round: crtCorner * Math.min(p.width, p.height) * crt * density };
     } else if (bloom && arrayOpening >= 1) {
       arrayFullAt ??= seconds;
     } else if (!bloom && progress >= 1 && !usesRing) {

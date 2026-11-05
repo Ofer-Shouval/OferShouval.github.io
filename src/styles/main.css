@@ -849,19 +849,20 @@ ul {
   text-decoration: underline;
 }
 
+/* Photos or videos side by side, across the same 700px column as everything else, edge to edge with it. Each one
+   grows in proportion to its --ratio (width / height, 1 if not given), so a wide one next to a tall one still comes
+   out the same height. */
 .imageGrid {
-  margin-bottom: 10px;
-  width: 100%;
-  text-align: center;
-  display: block;
+  display: flex;
+  gap: 16px;
+  max-width: 700px;
+  margin: 24px auto;
 }
 
-.imageGrid img, .imageGrid video {
-  width: 49%;
-  padding-left: 1.5%;
-  padding-right: 1.5%;
-  max-width: 350px;
-  display: inline;
+.page .imageGrid img, .page .imageGrid video {
+  flex: var(--ratio, 1) 1 0;
+  min-width: 0;
+  width: auto;
   margin: 0;
 }
 
