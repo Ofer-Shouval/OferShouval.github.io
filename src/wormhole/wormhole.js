@@ -124,6 +124,8 @@ const wormFollow = 0.55; // How closely the worm follows the mouse, at most (1 =
 const steerFollow = 0.05; // How quickly the place it's following catches up with the mouse
 const focusFollow = 0.06; // How quickly the point the stars stream from catches up with where it's heading
 const starCount = 120;
+const pondSettle = 5; // Coming from the pond (see fromPond), how many seconds the camera takes to start drifting as it
+// usually does, and the worm to start following the mouse, and the stars to come in (they're eased in over that)
 const starSpeed = 0.35; // How much of the way to the camera a star comes each second
 const fieldCount = 1100; // How many flowers fly by at once, the way the stars do
 const fieldSpeed = 0.28; // How much of the distance to the camera they come each second, so they slow down as they get near
@@ -217,7 +219,12 @@ const strikeClip = '/media/lumininCloseupStabilized.mp4';
 
 const slug = (name) => name.replace(' ', '-');
 
-export default function wormhole(p, container) {
+// options.fromPond: when the pond (pond.js, the way in on the front page) hands over to it, with its worm (see handOver
+// there): then it begins straight at the psychworm stage, past the welcome, with its worm carrying on just as the pond's
+// was, at the same place on the same path (the pond's worm weaves along the same Perlin noise, which it's given), drawn
+// by hand as the pond's was (see drawHandRing()), with the camera drifting and the worm following the mouse only bit by
+// bit (see pondSettle). Without it, it begins with the welcome.
+export default function wormhole(p, container, options = {}) {
   const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const now = { ...stages[0].settings };
   let current = 0;
@@ -284,6 +291,10 @@ export default function wormhole(p, container) {
   let formAt = null; // Where it was pressed, while the worm's forming there (see formRound)
   let formStart = 0;
   let headSeen = null; // Where the worm's head was going to be last frame, before being moved to where it's forming
+  const fromPond = options.fromPond ?? null; // The pond's worm, if it came from the pond (see options.fromPond)
+  let pondStart = null; // When it began, from the pond
+  let pondDrift = { x: 0, y: 0 }; // The camera's drift then, taken off at first, so it's just where the pond's was
+  const settled = () => (pondStart === null ? 1 : ease(Math.min(1, (seconds - pondStart) / pondSettle))); // (1 = as usual)
   // Coming back from there with the browser's Back button can restore it just as it was left, all white, so start
   // it fresh instead
   window.addEventListener('pageshow', (event) => {
@@ -465,7 +476,7 @@ export default function wormhole(p, container) {
     const seen = seenFromBehind(along, cameraAt(pathTime));
     const followed = steerAt(seconds - (1 - along) * bodyTime);
     if (!followed) return seen;
-    return { x: p.lerp(seen.x, followed.x, wormFollow), y: p.lerp(seen.y, followed.y, wormFollow) };
+    return { x: p.lerp(seen.x, followed.x, wormFollow * settled()), y: p.lerp(seen.y, followed.y, wormFollow * settled()) };
   }
 
   // How far it's closed in from the corners, opening again if the flowers stage is left before it's done
@@ -927,8 +938,8 @@ export default function wormhole(p, container) {
   // Where the camera is at a given time: wherever puts the tail where it's drifted to on the screen
   function cameraAt(time) {
     const tail = weaveAt(time - bodyTime);
-    const x = tail.x - (p.noise(time * tailWander, 200) - 0.5) * 2 * tailWide * p.width;
-    const y = tail.y - (p.noise(time * tailWander, 300) - 0.5) * 2 * tailTall * p.height;
+    const x = tail.x - (p.noise(time * tailWander, 200) - 0.5) * 2 * tailWide * p.width + pondDrift.x * (1 - settled());
+    const y = tail.y - (p.noise(time * tailWander, 300) - 0.5) * 2 * tailTall * p.height + pondDrift.y * (1 - settled());
     if (ringPull < 0.001) return { x, y };
     // As the worm nears the ring, the camera moves into line with it, so that it's in the middle of the screen
     const ring = weaveAt(ringMeets);
@@ -1012,7 +1023,8 @@ export default function wormhole(p, container) {
   // stage's ground, which then fades away
   function drawRing() {
     const ring = ringPlace(pathTime);
-    drawFlower(portal, ring.x, ring.y, (ringHole() * 2) / portal.middle);
+    // (Coming from the pond, it fades in with the stars: see pondSettle)
+    drawFlower(portal, ring.x, ring.y, (ringHole() * 2) / portal.middle, settled());
   }
 
   // Where the place the worm's following was at a given time, in between the frames either side of it
@@ -1033,8 +1045,47 @@ export default function wormhole(p, container) {
     return { x: p.lerp(before.x, after.x, between), y: p.lerp(before.y, after.y, between) };
   }
 
+  // A ring of the worm drawn by hand, as the pond draws its worm's (see ringShape in pond.js): pushed in and out by three
+  // waves of its own, which drift round and spin, filled black, so it hides what's behind it. seed: which ring it is.
+  function drawHandRing(x, y, d, colour, weight, seed) {
+    if (d <= 0.5) return;
+    const { noise, spin, spinRate, spinMix, glow } = fromPond;
+    const hash = (k) => {
+      const v = Math.sin((seed * 0.37 + 11) * 12.9898 + k * 78.233) * 43758.5453;
+      return v - Math.floor(v);
+    };
+    let churn = Math.min(noise.amount * d, noise.most);
+    if (churn < 0.3) churn = 0;
+    const counter = fromPond.counter + 0.01 * (p.frameCount - 1); // It goes up by that each frame, in the pond
+    const waves = churn > 0 ? [0, 1, 2].map((k) => ({
+      bumps: Math.round(p.lerp(noise.bumps[0], noise.bumps[1], hash(k))),
+      size: (0.5 + hash(k + 3)) / 3,
+      phase: hash(k + 6) * Math.PI * 2 + counter * noise.drift * (hash(k + 9) - 0.5) * 2,
+    })) : [];
+    const own = Math.sin((seed * 0.37 + 11) * 12.9898) * 43758.5453;
+    const turned = (spin + spinRate * (seconds - pondStart)) * p.lerp(1 - spinMix, 1 + spinMix, own - Math.floor(own));
+    const points = Math.max(churn > 0.5 ? 32 : 12, Math.min(noise.points, Math.round(d / noise.spacing)));
+    const g = p.drawingContext;
+    g.beginPath();
+    for (let k = 0; k < points; k++) {
+      const angle = (k / points) * Math.PI * 2;
+      let r = d / 2;
+      for (const wave of waves) r += churn * wave.size * Math.sin(wave.bumps * (angle - turned) + wave.phase);
+      g.lineTo(x + Math.cos(angle) * r, y + Math.sin(angle) * r);
+    }
+    g.closePath();
+    g.fillStyle = 'black';
+    g.fill();
+    // As bright as the pond's, which was brighter for where its drop landed
+    const [r, gr, b, a] = colour.map((v, k) => (k < 3 ? Math.round(v + (255 - v) * glow) : v));
+    g.strokeStyle = `rgba(${r},${gr},${b},${a / 255})`;
+    g.lineWidth = weight;
+    g.stroke();
+  }
+
   function drawWorm() {
     moveField();
+
     // All the flowers are faint from the worm turning into flowers until it's burst, and then come back slowly. While
     // they're faint, they're drawn solid on a layer of their own first, and then put on the canvas faint all at once, so
     // each flower fades as a whole, without its petals showing through each other.
@@ -1144,8 +1195,8 @@ export default function wormhole(p, container) {
         // lined up with the ring
         const followed = steerAt(seconds - (1 - along) * bodyTime);
         if (followed) {
-          seen.x = p.lerp(seen.x, followed.x, wormFollow * (1 - ringPull));
-          seen.y = p.lerp(seen.y, followed.y, wormFollow * (1 - ringPull));
+          seen.x = p.lerp(seen.x, followed.x, wormFollow * (1 - ringPull) * settled());
+          seen.y = p.lerp(seen.y, followed.y, wormFollow * (1 - ringPull) * settled());
         }
         const sizeInSpace = size * round * bodyScale * seen.closer;
         let inView = keepOnScreen(seen.x, seen.y);
@@ -1200,6 +1251,7 @@ export default function wormhole(p, container) {
         const wobbleY = Math.cos(seconds * bloomWobbleSpeed * 1.3 + segment * 0.5) * wobble;
         drawFlower(flower, seenX + Math.cos(flower.burstAngle) * thrown + flower.blastX + wobbleX, seenY + Math.sin(flower.burstAngle) * thrown + flower.blastY + wobbleY, (w * grown) / (flower.petalLength * 2), 1 - wormAbsorbed, flowerContext, 1 + (boost / boostMost) * boostSpin); // Spinning faster as it speeds up
       } else if (now.flat > 0.01) drawWakeRing(seenX, seenY, w, h, colour, weight, trail[i].seed ?? 0.5, now.flat);
+      else if (fromPond && now.space > 0.5) drawHandRing(seenX, seenY, w, colour, p.lerp(fromPond.weights[1], fromPond.weights[0], along), n - start);
       else p.ellipse(seenX, seenY, w, h);
     }
     drawWithin();
@@ -1232,7 +1284,7 @@ export default function wormhole(p, container) {
         star.z = 1;
         continue;
       }
-      p.stroke(255, 255 * (1 - star.z) * now.space * (1 - now.bloom) * (1 - tunnel));
+      p.stroke(255, 255 * (1 - star.z) * now.space * (1 - now.bloom) * (1 - tunnel) * settled()); // (Coming in, from the pond)
       p.strokeWeight(1 + (1 - star.z));
       p.line(fromX, fromY, focus.x + (star.x * reach) / star.z, focus.y + (star.y * reach) / star.z);
     }
@@ -1313,6 +1365,37 @@ export default function wormhole(p, container) {
       if (event.key === 'ArrowLeft') goTo(current - 1);
     });
 
+    if (options.fromPond) {
+      // From the pond: straight into the psychworm stage, out in space, with the worm following the middle of the screen
+      // to begin with, and starting just where the pond's worm was (see drawWorm())
+      const psychworm = stages.findIndex(({ name }) => name === 'psychworm');
+      p.noiseSeed(fromPond.noiseSeed);
+      pathTime = fromPond.path / weaveSpeed; // Where the pond's worm's head was along the same noise
+      pondStart = 0;
+      pondDrift = {
+        x: (p.noise(pathTime * tailWander, 200) - 0.5) * 2 * tailWide * p.width,
+        y: (p.noise(pathTime * tailWander, 300) - 0.5) * 2 * tailTall * p.height,
+      };
+      // Its colours are the pond's, and the screen's cleared each frame, as it was, so the worm's just as it was
+      // (holding still leaves trails)
+      Object.assign(stages[psychworm].settings, { low: fromPond.low, wash: 255 });
+      pondLeave = fromPond.leave;
+      const middle = { x: p.width / 2, y: p.height / 2 };
+      trail = Array.from({ length: stages[psychworm].settings.length }, () => ({ ...middle, seed: p.random() }));
+      at = { ...middle };
+      focus = { x: p.width / 2, y: p.height * spaceHorizon };
+      steer = { ...middle };
+      Object.assign(pointer, { ...middle, lastMoved: 0 });
+      lastPointer = { ...middle };
+      Object.assign(now, stages[psychworm].settings);
+      begun = true;
+      welcome.remove();
+      soundSpot.classList.remove('waiting');
+      if (soundWanted()) startSound();
+      goTo(psychworm);
+      return;
+    }
+
     const named = stages.findIndex(({ name }) => `#${slug(name)}` === location.hash);
     if (named > 0) {
       Object.assign(now, stages[named].settings);
@@ -1323,8 +1406,13 @@ export default function wormhole(p, container) {
     goTo(Math.max(0, named));
   };
 
+  let pondLeave = null; // Coming from the pond, what takes it away, once this has drawn its first frame
   p.draw = () => {
     if (handedOver) return;
+    if (pondLeave && p.frameCount > 1) {
+      pondLeave();
+      pondLeave = null;
+    }
     const dt = Math.min(p.deltaTime / 1000, 0.1); // So coming back to the tab doesn't jump ahead
     seconds += dt;
     if (tvOffAt !== null) {
