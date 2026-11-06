@@ -9,6 +9,13 @@ let gap = 40; // How far apart the rings are, in pixels (the biggest is numSegme
 let centreFade = 4; // How many seconds into a wormhole's life the rings it makes have faded away completely, so that
 // its middle goes calm as its rings spread out (0 = no fading)
 let centreFadeCurve = 1.5; // How they fade over that time (1 = evenly, more = fading sooner)
+let colourGrowSpeed = 0.4; // How quickly the colour wormhole's rings spread, compared to the others'
+let colourSize = 0.95; // How wide the colour wormhole gets, as a share of the screen's width or height, whichever's
+// more (its rings stop there), so that just round its edges the rain can still be seen falling
+let colourBurst = 3; // How many seconds its rings come out of its middle for, before it goes dark there
+let colourBunch = 3; // How much its rings slow and bunch up as they near its edge (bigger = sooner, and closer together)
+let colourReach = 2.5; // How long they take to get most of the way to its edge, compared to spreading there at their speed
+let colourClear = 40; // How far outside it the rain keeps from landing, in pixels
 let growSpeed = 0.3; // How quickly the rings spread out (1 = a ring's width every frame, as it was; less = slower,
 // still smoothly, and just as far apart)
 let blendWidth = 1; // How wide a ring has to be to be all the outer colour, as a share of the screen's width (the
@@ -109,16 +116,19 @@ function draw() {
   background(0);
   let seconds = millis() / 1000;
 
-  if (seconds > nextDrop) dropRain();
+  let diving = startDive(seconds); // How far into the dive it is, from 0 to 1, or null if it isn't diving
+  if (seconds > nextDrop && (!dive || !diveFalls)) dropRain();
 
   // The wormholes, oldest first, so that each new one opens over the ones before
   worms = worms.filter((w) => w.leaving === undefined || seconds - w.leaving < leaveTime); // Gone, once faded away
   for (let worm of worms) moveWorm(worm);
+  diveCamera(diving, true);
   drawWorms();
-  // Once one's grown all the way out, its biggest rings cover the screen, so the ones under it can go
+  // Once one's grown all the way out, its biggest rings cover the screen, so the ones under it can go (but not the
+  // colour one, which stays, on top)
   for (let n = worms.length - 1; n > 0; n--) {
-    if (worms[n].xLoc[0] !== undefined) {
-      worms.splice(0, n);
+    if (!worms[n].landing && worms[n].xLoc[0] !== undefined) {
+      worms = worms.filter((w, k) => k >= n || w.landing);
       break;
     }
   }
@@ -133,14 +143,23 @@ function draw() {
       splash(drop, seconds);
       // With the drop's colours, which were picked when it fell, so its middle is the drop's colour
       let worm = { home: drop.at, offset: random(1000), xLoc: [], yLoc: [], inner: drop.inner, outer: drop.outer, tint: drop.tint, middleGrey: drop.middleGrey, edgeGrey: drop.edgeGrey, inColour: drop.inColour, landing: drop.landing, born: seconds };
-      worms.push(worm);
+      if (worm.landing) worms.push(worm);
+      else {
+        // Under the colour one, if there is one, so that it stays on top
+        let colourOne = worms.findIndex((w) => w.landing);
+        worms.splice(colourOne < 0 ? worms.length : colourOne, 0, worm);
+      }
+      // A colour drop: a moment later the camera dives into it (see the dive)
+      if (worm.landing && dive && diveFalls && dive.fallStart === undefined) dive.fallStart = seconds + diveAfter;
       // If there are too many, the oldest that isn't already going fades away (see leaveTime)
-      let staying = worms.filter((w) => w.leaving === undefined);
+      let staying = worms.filter((w) => w.leaving === undefined && !w.landing);
       if (staying.length > mostWorms) staying[0].leaving = seconds;
       continue;
     }
     drawDrop(drop, t);
   }
+  diveCamera(diving, false);
+  if (diving !== null) diveEnd(diving);
 
   counter+=0.01
 
@@ -161,6 +180,18 @@ function dropRain(x, y, inColour = false) {
     x: x ?? random(dropMargin, 1 - dropMargin) * width,
     y: y ?? random(dropTop, dropBottom) * height,
   };
+  // Not inside the colour wormhole: the rain falls around it
+  let colourOne = worms.find((w) => w.landing) ?? (dive ? { home: dive.at } : null);
+  let clear = (spot) => Math.hypot(spot.x - colourOne.home.x, spot.y - colourOne.home.y) > colourSize * Math.max(width, height) * 0.5 + colourClear;
+  for (let tries = 0; x === undefined && colourOne && !clear(at) && tries < 60; tries++) {
+    // Anywhere that can be seen, now that the camera's looking down on the colour one
+    let middle = dive ? dive.at : { x: width / 2, y: height / 2 };
+    at = { x: middle.x + random(-0.5, 0.5) * width, y: middle.y + random(-0.5, 0.5) * height };
+  }
+  if (x === undefined && colourOne && !clear(at)) {
+    nextDrop = millis() / 1000 + random(...dropEvery); // Nowhere clear to land this time: no drop
+    return;
+  }
   let drop = { at, start: millis() / 1000, inColour };
   pickColours(drop); // Its wormhole's colours: the drop's the inner one, the colour of the wormhole's middle
   if (inColour) {
@@ -186,17 +217,104 @@ function landingColour(s) {
 
 // Clicking drops a raindrop in colour, where it's clicked
 function mousePressed() {
+  if (dive) return; // Only one
   dropRain(mouseX, mouseY, true);
+  dive = { start: millis() / 1000, at: { x: mouseX, y: mouseY }, from: horizon, fromFlat: flatness, glow: glowAt(mouseY) };
+}
+
+// The dive: as a colour drop's dropped, the rain stops, and the camera eases round until it's right above where it'll
+// land, looking straight down at it, in the middle of the screen. A moment after it's landed, the grey wormholes fade
+// and the camera falls into the colour wormhole, faster and faster, so that its rings, round from right above, rush
+// out past like a tunnel. At the bottom it all goes black, and it goes on into the wormhole, out in space, at its
+// psychworm stage.
+let diveFalls = false; // Whether it goes on to fall in and into the wormhole (off for now: the camera just comes over the top)
+let aboveTime = 3.5; // How many seconds from dropping it the camera takes to get right above it
+let diveAfter = 0.3; // How many seconds after the colour drop lands the camera starts to fall
+let diveTime = 3; // How many seconds the fall takes
+let diveHorizon = -40; // Where the horizon ends up, looking straight down (see horizon: further below 0 is looking down more,
+// and this far there's no perspective left)
+let diveZoom = 40; // How many times nearer the water it ends up
+let diveDark = 0.25; // How much of the end of it goes to black (as a share of it)
+let diveTo = '/#psychworm'; // Where it goes on to: the wormhole, at its psychworm stage
+let dive = null; // Once a colour drop's dropped: { start, at (where it'll land), from and fromFlat (the camera before), fallStart }
+let lineScale = 1; // How much the lines are drawn thinner, so they stay as they were while the camera's zoomed in
+let glowScale = 1; // How much of the front glow there is (none once the camera's right above)...
+let heldGlow = 0; // ...and how much glow there is everywhere instead, so it stays as bright as it was
+
+// How much the front glow brightens a line this far down the screen, as the camera is now (see fadeFor)
+function glowAt(y) {
+  let top = horizon * height;
+  let below = height - top;
+  let gone = top + below * fadeGone;
+  let full = Math.min(1, (below * (fadeFull - fadeGone)) / (height - gone));
+  let t = constrain((y - gone) / (height - gone), 0, 1);
+  return t < full ? 0 : frontGlow * ((t - full) / (1 - full || 1));
+}
+
+// How far into the fall it is (0 to 1), or null if there's no dive. Starting to fall, it sends the others away.
+function startDive(seconds) {
+  if (!dive) return null;
+  if (dive.fallStart === undefined || seconds < dive.fallStart) return 0;
+  if (!dive.falling) {
+    dive.falling = true;
+    for (let w of worms) if (!w.landing && w.leaving === undefined) w.leaving = seconds;
+    drops = drops.filter((d) => d.inColour);
+  }
+  return constrain((seconds - dive.fallStart) / diveTime, 0, 1);
+}
+
+// The camera, during the dive: easing round to right above where the drop's landing, then falling in toward it.
+// Called before drawing (begin) and after (to put the canvas back).
+function diveCamera(t, begin) {
+  let g = drawingContext;
+  if (t === null) return;
+  if (!begin) {
+    g.restore();
+    lineScale = 1;
+    return;
+  }
+  let above = constrain((millis() / 1000 - dive.start) / aboveTime, 0, 1);
+  above = above * above * (3 - 2 * above);
+  horizon = lerp(dive.from, diveHorizon, above);
+  // ...and from right above, a ring on the water is round, not flattened
+  flatness = lerp(dive.fromFlat, 1, above);
+  // ...and nothing's nearer than anything else, so nothing glows for being near
+  glowScale = 1 - above;
+  heldGlow = dive.glow * above; // ...but everything as bright as where the drop landed was
+  let zoom = Math.exp(Math.log(diveZoom) * t * t); // Faster and faster
+  g.save();
+  g.translate(lerp(dive.at.x, width / 2, above), lerp(dive.at.y, height / 2, above));
+  g.scale(zoom, zoom);
+  g.translate(-dive.at.x, -dive.at.y);
+  lineScale = 1 / zoom;
+}
+
+// The end of the dive: going to black, and on into the wormhole
+function diveEnd(t) {
+  let dark = constrain((t - (1 - diveDark)) / diveDark, 0, 1);
+  if (dark > 0) {
+    let g = drawingContext;
+    g.fillStyle = `rgba(0,0,0,${dark})`;
+    g.fillRect(0, 0, width, height);
+  }
+  if (t >= 1 && !dive.gone) {
+    dive.gone = true;
+    location.href = diveTo;
+  }
 }
 
 // Each worm's trail moves on one place: its head goes where it's wandered to, and every ring moves one place down
-// (It moves on a place only every so often, at growSpeed, and in between the rings grow smoothly: see ringSize.)
+// (It moves on a place only every so often, at its speed, and in between the rings grow smoothly: see ringSize.)
+// How quickly a wormhole's rings spread: the colour one's more slowly than the rest, so it has time to be looked at
+function speedOf(worm) {
+  return worm.landing ? growSpeed * colourGrowSpeed : growSpeed;
+}
 function moveWorm(worm){
   let { xLoc, yLoc } = worm;
    let head = headAt(worm)
    xLoc[numSegments-1] = head.x
    yLoc[numSegments-1] = head.y
-  worm.phase = (worm.phase ?? 0) + growSpeed;
+  worm.phase = (worm.phase ?? 0) + speedOf(worm);
   while (worm.phase >= 1) {
     worm.phase -= 1;
     worm.made = (worm.made ?? 0) + 1; // How many rings it has made
@@ -236,18 +354,27 @@ function drawWorms() {
       if (worm.xLoc[i] === undefined) continue; // The worm's still growing
       // Fainter the later in its life it was made, so the middle goes calm as the rings spread, and fading away
       // altogether if the worm's going
-      let madeAt = ((worm.made ?? 0) - (numSegments - 1 - i)) / (growSpeed * 60); // Seconds into the worm's life
-      let strength = centreFade > 0 ? Math.pow(constrain(1 - madeAt / centreFade, 0, 1), centreFadeCurve) : 1;
+      let madeAt = ((worm.made ?? 0) - (numSegments - 1 - i)) / (speedOf(worm) * 60); // Seconds into the worm's life
+      let strength = centreFade > 0 && !worm.landing ? Math.pow(constrain(1 - madeAt / centreFade, 0, 1), centreFadeCurve) : 1;
       strength *= leaving;
       // The faded rings in the calm middle can't be seen, so only the biggest of them is drawn, as just a black fill,
       // which hides what's behind the middle (going out from the smallest, it's the last before they show)
       let calm = strength <= 0.003;
       if (calm && i > 0 && worm.xLoc[i - 1] !== undefined && !calmDrawn) {
-        let madeNext = ((worm.made ?? 0) - (numSegments - i)) / (growSpeed * 60);
+        let madeNext = ((worm.made ?? 0) - (numSegments - i)) / (speedOf(worm) * 60);
         if (centreFade > 0 && madeNext >= centreFade && leaving > 0) continue; // A bigger one's still calm too
       }
       if (calm && calmDrawn) continue;
       let { d, s } = ringSize(i, worm.phase);
+      if (worm.landing) {
+        // The colour one: a burst of rings from its middle, for its first few seconds, all bright, spreading out and
+        // slowing as they go, closer and closer to its edge without ever getting there, so that they all bunch up
+        // round its rim, and its middle's left dark once the last of them has gone out
+        let edge = colourSize * Math.max(width, height);
+        d = edge * (1 - Math.exp((-colourBunch * d) / (edge * colourReach)));
+        s = d / edge;
+        strength = constrain((colourBurst - madeAt) / 0.4, 0, 1) * leaving; // The rings it made after the burst are dark
+      }
       let ringSeed = worm.offset + ((worm.made ?? 0) - (numSegments - 1 - i)) * 0.37; // The same all its life
       let shape = ringShape(worm.xLoc[i], worm.yLoc[i], d, splashLift(worm, d, worm.yLoc[i]), ringSeed);
       if (!shape) continue;
@@ -283,7 +410,9 @@ function headAt(worm) {
 // A raindrop, this far through falling (t, from 0 to 1): a circle, speeding up, as things fall
 function drawDrop(drop, t) {
   let fall = t * t;
-  let y = lerp(-dropSize, drop.at.y, fall);
+  // From above the top of the screen (a colour drop from a whole screen above where it lands, since the camera moves
+  // to look down on it as it falls)
+  let y = lerp(drop.inColour ? drop.at.y - height : -dropSize, drop.at.y, fall);
   let g = drawingContext; // Straight onto the canvas, like the rings
   // Filled black, like the rings, so it hides what it passes over, with its outline in just the colour the middle of
   // its wormhole will be, where it lands: made brighter, faded toward the horizon and glowing toward the front, as the
@@ -304,7 +433,7 @@ function drawDrop(drop, t) {
   g.fillStyle = 'black';
   g.fill();
   g.strokeStyle = seenColour(drop.inner, drop.at.y, drop, 0); // As the middle, where s is 0
-  g.lineWidth = dropLine;
+  g.lineWidth = dropLine * lineScale;
   g.stroke();
 }
 
@@ -317,7 +446,7 @@ function seenColour(colour, y, who, s) {
   let full = Math.min(1, (below * (fadeFull - fadeGone)) / (height - gone));
   let t = constrain((y - gone) / (height - gone), 0, 1); // How far along the gradient it is
   if (t < full) return `rgba(${Math.round(r)},${Math.round(gr)},${Math.round(b)},${Math.pow(t / full, fadeCurve)})`;
-  let glow = frontGlow * ((t - full) / (1 - full || 1));
+  let glow = frontGlow * glowScale * ((t - full) / (1 - full || 1)) + heldGlow;
   let mix = (v) => Math.round(v + (255 - v) * glow);
   return `rgb(${mix(r)},${mix(gr)},${mix(b)})`;
 }
@@ -534,7 +663,7 @@ function drawRing(shape, colour, weight, who, s, strength = 1) {
   if (!colour || strength <= 0.003) return; // A calm middle: just the fill
   let [r, gr, b] = shown(colour, who, s).map(Math.round);
   g.strokeStyle = fadeFor(r, gr, b, strength, top, below);
-  g.lineWidth = weight;
+  g.lineWidth = weight * lineScale;
   g.stroke();
 }
 
@@ -548,7 +677,7 @@ function fadeFor(r, gr, b, strength, top, below) {
   gr = Math.round(gr / 4) * 4;
   b = Math.round(b / 4) * 4;
   strength = Math.round(strength * 32) / 32;
-  let key = `${r},${gr},${b},${strength},${height},${horizon}`;
+  let key = `${r},${gr},${b},${strength},${height},${Math.round(horizon * 10) / 10},${Math.round(glowScale * 20) / 20},${Math.round(heldGlow * 50) / 50}`;
   let fade = fades.get(key);
   if (fade) return fade;
   if (fades.size > 4000) fades.clear(); // Not keeping them for ever
@@ -560,7 +689,7 @@ function fadeFor(r, gr, b, strength, top, below) {
     fade.addColorStop((k / 4) * full, `rgba(${r},${gr},${b},${strength * Math.pow(k / 4, fadeCurve)})`);
   }
   for (let k = 1; k <= 3; k++) {
-    let glow = frontGlow * (k / 3);
+    let glow = frontGlow * glowScale * (k / 3) + heldGlow;
     let mix = (v) => Math.min(255, Math.round(v + (255 - v) * glow));
     fade.addColorStop(full + (1 - full) * (k / 3), `rgba(${mix(r)},${mix(gr)},${mix(b)},${strength})`);
   }
