@@ -9,12 +9,21 @@ let gap = 40; // How far apart the rings are, in pixels (the biggest is numSegme
 let centreFade = 4; // How many seconds into a wormhole's life the rings it makes have faded away completely, so that
 // its middle goes calm as its rings spread out (0 = no fading)
 let centreFadeCurve = 1.5; // How they fade over that time (1 = evenly, more = fading sooner)
-let colourGrowSpeed = 0.4; // How quickly the colour wormhole's rings spread, compared to the others'
-let colourSize = 0.95; // How wide the colour wormhole gets, as a share of the screen's width or height, whichever's
+let colourGrowSpeed = 0.6; // How quickly the colour wormhole's rings spread, compared to the others'
+let colourSize = 1.15; // How wide the colour wormhole gets, as a share of the screen's width or height, whichever's
 // more (its rings stop there), so that just round its edges the rain can still be seen falling
-let colourBurst = 3; // How many seconds its rings come out of its middle for, before it goes dark there
-let colourBunch = 3; // How much its rings slow and bunch up as they near its edge (bigger = sooner, and closer together)
+let colourBurst = Infinity; // How many seconds its rings come out of its middle for, before it goes dark there
+// (Infinity = they keep coming)
+let colourStart = 300; // How big its rings are when they first appear, in pixels across (0 = a point, like the others)
+let colourOpen = 5; // How many seconds that takes to open up to, from rings starting at a point (0 = straight away)
+let colourBunch = 3; // How much its rings slow and bunch up as they near its edge (bigger = sooner, and closer
+// together; 0 = they don't, and keep spreading evenly out past it, off the screen)
 let colourReach = 2.5; // How long they take to get most of the way to its edge, compared to spreading there at their speed
+let colourPop = 0.96; // How near its edge its rings get, bunched up there, before they pop out of existence, as a
+// share of its size (colourSize), so that round the screen's edges the white rings can still be seen
+function colourPopSize() {
+  return colourPop * colourSize * Math.max(width, height);
+}
 let colourClear = 40; // How far outside it the rain keeps from landing, in pixels
 let growSpeed = 0.3; // How quickly the rings spread out (1 = a ring's width every frame, as it was; less = slower,
 // still smoothly, and just as far apart)
@@ -182,7 +191,7 @@ function dropRain(x, y, inColour = false) {
   };
   // Not inside the colour wormhole: the rain falls around it
   let colourOne = worms.find((w) => w.landing) ?? (dive ? { home: dive.at } : null);
-  let clear = (spot) => Math.hypot(spot.x - colourOne.home.x, spot.y - colourOne.home.y) > colourSize * Math.max(width, height) * 0.5 + colourClear;
+  let clear = (spot) => Math.hypot(spot.x - colourOne.home.x, spot.y - colourOne.home.y) > colourPopSize() * 0.5 + colourClear;
   for (let tries = 0; x === undefined && colourOne && !clear(at) && tries < 60; tries++) {
     // Anywhere that can be seen, now that the camera's looking down on the colour one
     let middle = dive ? dive.at : { x: width / 2, y: height / 2 };
@@ -370,9 +379,14 @@ function drawWorms() {
         // The colour one: a burst of rings from its middle, for its first few seconds, all bright, spreading out and
         // slowing as they go, closer and closer to its edge without ever getting there, so that they all bunch up
         // round its rim, and its middle's left dark once the last of them has gone out
+        // (With colourBunch 0 they don't slow: they keep spreading, evenly spaced, on past its edge.)
         let edge = colourSize * Math.max(width, height);
-        d = edge * (1 - Math.exp((-colourBunch * d) / (edge * colourReach)));
-        s = d / edge;
+        // Each ring starts as big as the void in the middle was when it was made, so the void opens up over time
+        let opened = colourOpen > 0 ? constrain(madeAt / colourOpen, 0, 1) : 1;
+        d += colourStart * opened * opened * (3 - 2 * opened); // Easing in and out
+        if (colourBunch > 0) d = edge * (1 - Math.exp((-colourBunch * d) / (edge * colourReach)));
+        if (d >= colourPopSize()) continue; // Popped, once bunched up at its rim, so white rings show round it
+        s = Math.min(1, d / colourPopSize()); // Cyan in the middle to red where they pop
         strength = constrain((colourBurst - madeAt) / 0.4, 0, 1) * leaving; // The rings it made after the burst are dark
       }
       let ringSeed = worm.offset + ((worm.made ?? 0) - (numSegments - 1 - i)) * 0.37; // The same all its life
