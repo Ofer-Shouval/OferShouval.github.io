@@ -51,6 +51,25 @@ let wormTime = 1.2; // ...and over how many seconds they go from tunnel to worm
 let wormRush = 1.8; // How many times faster its rings come out while the worm's growing, so that it grows quickly...
 let rushUp = 0.5; // ...speeding up over this many seconds, from wormAt...
 let rushDown = 3; // ...and back down over this many, once the tunnel's gone
+let springAt = 1.6; // How many seconds after the worm starts it springs forward, its rings coming out faster still...
+let springRush = 4; // ...this many times faster...
+let springUp = 0.4; // ...easing into it over this many seconds...
+let springFor = 3; // ...staying that fast for this many...
+let springDown = 3; // ...and easing off over this many
+let stretch = 0.55; // How much longer it stretches as it springs forward, as a share of its length, before springing
+// back past it a little, and settling (0 = it doesn't)
+let stretchTime = 1.5; // How many seconds each stretch and spring back takes...
+let stretchSettle = 6; // ...and how many seconds it takes to settle, its stretching ramping down to nothing
+
+// How much longer the worm is just now, as it stretches and springs back, this many seconds after landing (1 = as it
+// usually is)
+function wormStretch(life) {
+  let t = life - ready() - wormAt - springAt;
+  if (t <= 0 || !stretch) return 1;
+  let settling = constrain(t / stretchSettle, 0, 1);
+  let left = 1 - settling * settling * (3 - 2 * settling); // How much of its stretch is left, ramping down, eased
+  return 1 + stretch * left * Math.sin((2 * Math.PI * t) / stretchTime);
+}
 let wormLength = 70; // How many of its rings make the worm (the newest are its head; the rest go)
 let wormWeaveWide = 1.3; // How far its path weaves from side to side, as a share of the screen's width...
 let wormWeaveTall = 0.6; // ...and up and down, as a share of its height
@@ -61,44 +80,6 @@ let wormHorizon = 0.25; // How far down the screen the point straight ahead of t
 let wormCameraAbove = 0.5; // How far the camera is above it, as a share of the screen's height
 let tunnelGoneAt = 3.3; // When the rings made before the worm start fading away...
 let tunnelGoneTime = 3; // ...and how many seconds that takes
-let wormTrail = 0.05; // How much of the trails fade each frame in the middle of the screen (1 = none, as now)
-let trailIn = 3; // How many seconds the trails round the edges take to come in...
-let edgeTrailLead = 0.5; // ...starting this many seconds before the camera's right above it (see aboveTime)
-let edgeTrail = 0.08; // How much of the trails round the edges of the screen fade each frame, after the camera's
-// right above it, while the tunnel's there (1 = none; less = longer, smudging more)
-let edgeFrom = 0.2; // How far out from the middle of the screen they start, as a share of the way to its nearer
-// sides (they're all there from those sides out)
-let edgeTrailOut = 1.5; // How many seconds they take to go, ending as the tunnel's gone
-let trailMiddle = 1; // How much of what's drawn fades each frame just now, in the middle of the screen...
-let trailEdge = 1; // ...and at its edges (1 = all of it: no trails)
-
-// The black that clears the screen, as see-through as the trails are, from the middle of the screen to its edges, or
-// that fills the rings (rings: true): see-through altogether where the trails are all there, since the rings are many,
-// one inside another, and each one's fill would clear a little more, until there were none. It's a fill style for the
-// canvas as it's turned just now, so it's the same wherever the camera is.
-function fillFor(rings = false) {
-  if (trailMiddle >= 1 && trailEdge >= 1) return 'black';
-  let g = drawingContext;
-  let back = g.getTransform().inverse();
-  let density = pixelDensity();
-  let middle = back.transformPoint(new DOMPoint((width / 2) * density, (height / 2) * density));
-  let edge = back.transformPoint(new DOMPoint(0, 0));
-  let corner = Math.hypot(middle.x - edge.x, middle.y - edge.y); // How far its corners are, as it's turned...
-  let side = (corner * Math.min(width, height)) / 2 / Math.hypot(width / 2, height / 2); // ...and its nearer sides
-  let fade = g.createRadialGradient(middle.x, middle.y, side * edgeFrom, middle.x, middle.y, side);
-  // How long a trail lasts goes with one over how much of it fades each frame, so it goes from the middle's to the
-  // edges' by the same share each step out, for the smudging to build up evenly, with no edge to it
-  let amount = (1 - trailEdge) / (1 - edgeTrail); // How far the trails have come in (0 to 1)
-  for (let k = 0; k <= 10; k++) {
-    let t = k / 10;
-    let alpha = trailMiddle * Math.pow(trailEdge / trailMiddle, t);
-    // The rings' fills give way quickly, going out, since there are so many of them, one inside another
-    if (rings) alpha = lerp(1, Math.max(0, 1 - t / ringFillGive), amount) * Math.min(1, trailMiddle);
-    fade.addColorStop(t, `rgba(0,0,0,${alpha})`);
-  }
-  return fade;
-}
-let ringFillGive = 0.2; // How far out the rings' fills are gone, as a share of the way the smudging builds up over
 let wormBody = 2; // How big it's drawn (its widest is this many eighths of the screen's width, at full size)
 
 // How far it's got turning into the worm, 0 to 1, this many seconds after landing (eased in and out)
@@ -125,7 +106,9 @@ function wormRing(worm, along, born, tail) {
   });
   let place = weave(born);
   let camera = weave(tail);
-  let closer = 1 / lerp(wormHeadDistance, wormTailDistance, along);
+  // Stretched, its tail comes nearer the camera, and squashed, it goes further off (see wormStretch)
+  let stretched = along * wormStretch(millis() / 1000 - worm.born);
+  let closer = 1 / Math.max(0.2, lerp(wormHeadDistance, wormTailDistance, stretched));
   // On the screen, and then where that is before the camera's turned to look down on it (it's centred on its home)
   let x = width / 2 + (place.x - camera.x) * closer;
   let y = wormHorizon * height + (wormCameraAbove * height - (place.y - camera.y)) * closer;
@@ -234,23 +217,7 @@ let nextDrop = 0; // When the next one falls, in seconds
 
 function draw() {
   let seconds = millis() / 1000;
-  // As the camera gets right above the wormhole and the worm forms, the screen's only partly cleared each frame round
-  // its edges, so what's drawn there leaves trails that fade, and the colours smudge together, until the tunnel's
-  // gone. The middle's cleared as usual. The rings' black fills are see-through there too (see fillFor), so they
-  // don't wipe the trails away.
-  trailMiddle = 1;
-  trailEdge = 1;
-  if (dive) {
-    let since = seconds - dive.start - aboveTime; // From when the camera's right above it
-    let done = tunnelGoneAt + tunnelGoneTime;
-    let edging = Math.min(constrain((since + edgeTrailLead) / trailIn, 0, 1), constrain((done - since) / edgeTrailOut, 0, 1));
-    trailEdge = lerp(1, edgeTrail, edging);
-  }
-  if (trailMiddle >= 1 && trailEdge >= 1) background(0);
-  else {
-    drawingContext.fillStyle = fillFor();
-    drawingContext.fillRect(0, 0, width, height);
-  }
+  background(0);
 
   let diving = startDive(seconds); // How far into the dive it is, from 0 to 1, or null if it isn't diving
   if (seconds > nextDrop && (!dive || !diveFalls)) dropRain();
@@ -449,7 +416,12 @@ function speedOf(worm) {
   let up = constrain((life - ready() - wormAt) / rushUp, 0, 1);
   let down = constrain((life - ready() - tunnelGoneAt - tunnelGoneTime) / rushDown, 0, 1);
   let rush = up * (1 - down);
-  return growSpeed * colourGrowSpeed * lerp(1, wormRush, rush * rush * (3 - 2 * rush));
+  // ...and on top of that its spring, once the worm's head is out: a surge that eases in, holds while the worm shoots
+  // out to its full length, and eases off again
+  let ease = (t) => t * t * (3 - 2 * t);
+  let springing = life - ready() - wormAt - springAt;
+  let spring = ease(constrain(springing / springUp, 0, 1)) * (1 - ease(constrain((springing - springUp - springFor) / springDown, 0, 1)));
+  return growSpeed * colourGrowSpeed * lerp(1, wormRush, ease(rush)) * lerp(1, springRush, spring);
 }
 function moveWorm(worm){
   let { xLoc, yLoc } = worm;
@@ -489,9 +461,7 @@ function ringSize(i, phase = 0) {
 // that each hides what's behind it. Only what can be seen is drawn: going the other way, from the newest's smallest
 // ring outward, it stops at the first ring that covers the whole screen, since everything before that is hidden behind
 // it (and it's black itself, like the background), and it leaves out any ring that's off the screen altogether.
-let ringFillStyle = 'black'; // The rings' fill, for this frame (see fillFor)
 function drawWorms() {
-  ringFillStyle = fillFor(true);
   let seen = [];
   let seconds = millis() / 1000;
   findSeen: for (let w = worms.length - 1; w >= 0; w--) {
@@ -524,6 +494,7 @@ function drawWorms() {
         // round its rim, and its middle's left dark once the last of them has gone out
         // (With colourBunch 0 they don't slow: they keep spreading, evenly spaced, on past its edge.)
         let edge = colourEdge(worm.home);
+        d = Math.max(0, d - gap); // Its newest ring starts as a point, not a ring's width across
         // Each ring starts as big as the void in the middle was when it was made, so the void opens up over time
         let opened = colourOpen > 0 ? constrain(madeAt / colourOpen, 0, 1) : 1;
         let life = seconds - worm.born;
@@ -596,13 +567,12 @@ function drawWorms() {
   // tail's nearest
   let headFirst = seen.filter((ring) => ring.headFirst);
   let order = seen.filter((ring) => !ring.headFirst).reverse().concat(headFirst);
-  for (let { shape, worm, i, s, strength, calm, filled, headFirst } of order) {
+  for (let { shape, worm, i, s, strength, calm, filled } of order) {
     let c1 = worm.inner; // As it was: the blend goes from c2 for the biggest rings to c1 for the smallest
     let c2 = worm.outer;
    let c = calm ? null : worm.landing ? landingColour(s) : lerpColor(c1, c2, constrain(s + random(-shimmer, shimmer), 0, 1))
     let weight = map(i, 0, numSegments,3,0.2)
-    // (The worm's own rings are filled solid black, smudging or not, so it stays solid)
-    drawRing(shape, c, weight, worm, s, strength, filled && (headFirst ? 'solid' : true));
+    drawRing(shape, c, weight, worm, s, strength, filled);
   }
   ringsDrawn = seen.length;
 }
@@ -873,7 +843,7 @@ function drawRing(shape, colour, weight, who, s, strength = 1, filled = true) {
   for (let n = 0; n < xs.length; n++) g.lineTo(xs[n], ys[n]);
   g.closePath();
   if (filled) {
-    g.fillStyle = filled === 'solid' ? 'black' : ringFillStyle;
+    g.fillStyle = 'black';
     g.fill();
   }
   if (!colour || strength <= 0.003) return; // A calm middle: just the fill
