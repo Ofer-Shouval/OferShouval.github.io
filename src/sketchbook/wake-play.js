@@ -8,14 +8,18 @@ let numSegments = 188;
 let gap = 40; // How far apart the rings are, in pixels (the biggest is numSegments * gap across)
 let centreFade = 4; // How many seconds into a wormhole's life the rings it makes have faded away completely, so that
 // its middle goes calm as its rings spread out (0 = no fading)
-let centreFadeCurve = 1.5; // How they fade over that time (1 = evenly, more = fading sooner)
+let centreFadeCurve = 10; // How they fade over that time (1 = evenly, more = fading sooner)
 let colourGrowSpeed = 0.6; // How quickly the colour wormhole's rings spread, compared to the others'
 let colourSize = 1.1; // How wide the colour wormhole gets, as a share of what it takes to reach the screen's furthest
 // corner from its middle (its rings stop there), so that more than 1 covers the whole screen, corners and all
 let colourBurst = Infinity; // How many seconds its rings come out of its middle for, before it goes dark there
 // (Infinity = they keep coming)
-let colourStart = 300; // How big its rings are when they first appear, in pixels across (0 = a point, like the others)
-let colourOpen = 5; // How many seconds that takes to open up to, from rings starting at a point (0 = straight away)
+let colourStart = 0; // How big its rings are when they first appear, in pixels across (0 = a point, like the others)
+let colourOpen = 2; // How many seconds that takes to open up to, from rings starting at a point (0 = straight away)
+let colourFadeIn = 0; // How many seconds each new ring takes to fade in, from nothing, as it comes out of the middle
+// (0 = it's there straight away)
+let colourFlicker = 0.7; // How much they flicker while they fade in, steadying as they get there (0 = not at all, 1 =
+// right down to nothing now and then)
 let colourBunch = 3; // How much its rings slow and bunch up as they near its edge (bigger = sooner, and closer
 // together; 0 = they don't, and keep spreading evenly out past it, off the screen)
 let colourReach = 2.5; // How long they take to get most of the way to its edge, compared to spreading there at their speed
@@ -37,12 +41,16 @@ let colourSpinMix = 0.6; // How much their speeds differ from ring to ring (0 = 
 // as fast)
 // Then it turns into a worm: its rings spin faster and faster, its middle closes up, and its rings shrink and slide
 // into a worm, seen from just above and behind, as in the wormhole's psychworm stage (its numbers are psychworm's)
-let spinUpAt = 7; // How many seconds after landing its rings start spinning faster
-let spinUp = 0.5; // How quickly they speed up (their speed goes up with the square of the time since)
-let closeAt = 10; // How many seconds after landing the void in its middle starts closing up...
-let closeTime = 2; // ...and how many seconds that takes
-let wormAt = 11; // How many seconds after landing its rings start turning into the worm...
-let wormTime = 4; // ...and how many seconds that takes
+// (These are all in seconds from when the camera's right above it: see ready)
+let spinUpAt = -1; // When its rings start spinning faster (less than 0 = before the camera's there)
+let spinUp = 3; // How quickly they speed up (their speed goes up with the square of the time since)
+let closeAt = 0; // When the void in its middle, if it has one (see colourStart), starts closing up...
+let closeTime = 0.7; // ...and how many seconds that takes
+let wormAt = 0; // When the rings it makes start coming out as the worm...
+let wormTime = 1.2; // ...and over how many seconds they go from tunnel to worm
+let wormRush = 1.8; // How many times faster its rings come out while the worm's growing, so that it grows quickly...
+let rushUp = 0.5; // ...speeding up over this many seconds, from wormAt...
+let rushDown = 3; // ...and back down over this many, once the tunnel's gone
 let wormLength = 70; // How many of its rings make the worm (the newest are its head; the rest go)
 let wormWeaveWide = 1.3; // How far its path weaves from side to side, as a share of the screen's width...
 let wormWeaveTall = 0.6; // ...and up and down, as a share of its height
@@ -51,16 +59,61 @@ let wormHeadDistance = 4; // How far its head is from the camera...
 let wormTailDistance = 0.9; // ...and its tail (1 = at its full size, less = nearer)
 let wormHorizon = 0.25; // How far down the screen the point straight ahead of the camera is
 let wormCameraAbove = 0.5; // How far the camera is above it, as a share of the screen's height
+let tunnelGoneAt = 3.3; // When the rings made before the worm start fading away...
+let tunnelGoneTime = 3; // ...and how many seconds that takes
+let wormTrail = 0.05; // How much of the trails fade each frame in the middle of the screen (1 = none, as now)
+let trailIn = 3; // How many seconds the trails round the edges take to come in...
+let edgeTrailLead = 0.5; // ...starting this many seconds before the camera's right above it (see aboveTime)
+let edgeTrail = 0.08; // How much of the trails round the edges of the screen fade each frame, after the camera's
+// right above it, while the tunnel's there (1 = none; less = longer, smudging more)
+let edgeFrom = 0.2; // How far out from the middle of the screen they start, as a share of the way to its nearer
+// sides (they're all there from those sides out)
+let edgeTrailOut = 1.5; // How many seconds they take to go, ending as the tunnel's gone
+let trailMiddle = 1; // How much of what's drawn fades each frame just now, in the middle of the screen...
+let trailEdge = 1; // ...and at its edges (1 = all of it: no trails)
+
+// The black that clears the screen, as see-through as the trails are, from the middle of the screen to its edges, or
+// that fills the rings (rings: true): see-through altogether where the trails are all there, since the rings are many,
+// one inside another, and each one's fill would clear a little more, until there were none. It's a fill style for the
+// canvas as it's turned just now, so it's the same wherever the camera is.
+function fillFor(rings = false) {
+  if (trailMiddle >= 1 && trailEdge >= 1) return 'black';
+  let g = drawingContext;
+  let back = g.getTransform().inverse();
+  let density = pixelDensity();
+  let middle = back.transformPoint(new DOMPoint((width / 2) * density, (height / 2) * density));
+  let edge = back.transformPoint(new DOMPoint(0, 0));
+  let corner = Math.hypot(middle.x - edge.x, middle.y - edge.y); // How far its corners are, as it's turned...
+  let side = (corner * Math.min(width, height)) / 2 / Math.hypot(width / 2, height / 2); // ...and its nearer sides
+  let fade = g.createRadialGradient(middle.x, middle.y, side * edgeFrom, middle.x, middle.y, side);
+  // How long a trail lasts goes with one over how much of it fades each frame, so it goes from the middle's to the
+  // edges' by the same share each step out, for the smudging to build up evenly, with no edge to it
+  let amount = (1 - trailEdge) / (1 - edgeTrail); // How far the trails have come in (0 to 1)
+  for (let k = 0; k <= 10; k++) {
+    let t = k / 10;
+    let alpha = trailMiddle * Math.pow(trailEdge / trailMiddle, t);
+    // The rings' fills give way quickly, going out, since there are so many of them, one inside another
+    if (rings) alpha = lerp(1, Math.max(0, 1 - t / ringFillGive), amount) * Math.min(1, trailMiddle);
+    fade.addColorStop(t, `rgba(0,0,0,${alpha})`);
+  }
+  return fade;
+}
+let ringFillGive = 0.2; // How far out the rings' fills are gone, as a share of the way the smudging builds up over
 let wormBody = 2; // How big it's drawn (its widest is this many eighths of the screen's width, at full size)
 
 // How far it's got turning into the worm, 0 to 1, this many seconds after landing (eased in and out)
+// How many seconds after landing the camera's right above it, where it eases round to as the drop falls (see the
+// dive), which is when it starts turning into the worm
+function ready() {
+  return aboveTime - dropTime;
+}
 function wormMorph(life) {
-  let t = constrain((life - wormAt) / wormTime, 0, 1);
+  let t = constrain((life - ready() - wormAt) / wormTime, 0, 1);
   return t * t * (3 - 2 * t);
 }
 // How far its rings have turned, this many seconds after landing, for rings at their usual speed
 function spinAngle(life) {
-  let past = Math.max(0, life - spinUpAt);
+  let past = Math.max(0, life - ready() - spinUpAt);
   return colourSpin * (life + (spinUp * past * past * past) / 3);
 }
 // Where a ring of the worm is, and how big, seen from behind: along is 0 at its head and 1 at its tail; born is which
@@ -180,8 +233,24 @@ let leaveTime = 1.5; // How many seconds the oldest takes to fade away when it g
 let nextDrop = 0; // When the next one falls, in seconds
 
 function draw() {
-  background(0);
   let seconds = millis() / 1000;
+  // As the camera gets right above the wormhole and the worm forms, the screen's only partly cleared each frame round
+  // its edges, so what's drawn there leaves trails that fade, and the colours smudge together, until the tunnel's
+  // gone. The middle's cleared as usual. The rings' black fills are see-through there too (see fillFor), so they
+  // don't wipe the trails away.
+  trailMiddle = 1;
+  trailEdge = 1;
+  if (dive) {
+    let since = seconds - dive.start - aboveTime; // From when the camera's right above it
+    let done = tunnelGoneAt + tunnelGoneTime;
+    let edging = Math.min(constrain((since + edgeTrailLead) / trailIn, 0, 1), constrain((done - since) / edgeTrailOut, 0, 1));
+    trailEdge = lerp(1, edgeTrail, edging);
+  }
+  if (trailMiddle >= 1 && trailEdge >= 1) background(0);
+  else {
+    drawingContext.fillStyle = fillFor();
+    drawingContext.fillRect(0, 0, width, height);
+  }
 
   let diving = startDive(seconds); // How far into the dive it is, from 0 to 1, or null if it isn't diving
   if (seconds > nextDrop && (!dive || !diveFalls)) dropRain();
@@ -374,7 +443,13 @@ function diveEnd(t) {
 // (It moves on a place only every so often, at its speed, and in between the rings grow smoothly: see ringSize.)
 // How quickly a wormhole's rings spread: the colour one's more slowly than the rest, so it has time to be looked at
 function speedOf(worm) {
-  return worm.landing ? growSpeed * colourGrowSpeed : growSpeed;
+  if (!worm.landing) return growSpeed;
+  // The colour one's rush, while its worm grows (see wormRush)
+  let life = millis() / 1000 - worm.born;
+  let up = constrain((life - ready() - wormAt) / rushUp, 0, 1);
+  let down = constrain((life - ready() - tunnelGoneAt - tunnelGoneTime) / rushDown, 0, 1);
+  let rush = up * (1 - down);
+  return growSpeed * colourGrowSpeed * lerp(1, wormRush, rush * rush * (3 - 2 * rush));
 }
 function moveWorm(worm){
   let { xLoc, yLoc } = worm;
@@ -389,6 +464,10 @@ function moveWorm(worm){
       xLoc[i] = xLoc[i+1];
       yLoc[i] = yLoc[i+1];
     }
+    // ...and when each ring came out, in seconds into its life, since the colour one's don't all come at one speed
+    worm.madeAt ??= [];
+    for (let i = 0; i < numSegments - 2; i++) worm.madeAt[i] = worm.madeAt[i + 1];
+    worm.madeAt[numSegments - 2] = millis() / 1000 - worm.born;
   }
 }
 
@@ -410,7 +489,9 @@ function ringSize(i, phase = 0) {
 // that each hides what's behind it. Only what can be seen is drawn: going the other way, from the newest's smallest
 // ring outward, it stops at the first ring that covers the whole screen, since everything before that is hidden behind
 // it (and it's black itself, like the background), and it leaves out any ring that's off the screen altogether.
+let ringFillStyle = 'black'; // The rings' fill, for this frame (see fillFor)
 function drawWorms() {
+  ringFillStyle = fillFor(true);
   let seen = [];
   let seconds = millis() / 1000;
   findSeen: for (let w = worms.length - 1; w >= 0; w--) {
@@ -421,7 +502,9 @@ function drawWorms() {
       if (worm.xLoc[i] === undefined) continue; // The worm's still growing
       // Fainter the later in its life it was made, so the middle goes calm as the rings spread, and fading away
       // altogether if the worm's going
-      let madeAt = ((worm.made ?? 0) - (numSegments - 1 - i)) / (speedOf(worm) * 60); // Seconds into the worm's life
+      let madeAt = worm.landing
+        ? worm.madeAt?.[i] ?? 0
+        : ((worm.made ?? 0) - (numSegments - 1 - i)) / (speedOf(worm) * 60); // Seconds into the worm's life
       let strength = centreFade > 0 && !worm.landing ? Math.pow(constrain(1 - madeAt / centreFade, 0, 1), centreFadeCurve) : 1;
       strength *= leaving;
       // The faded rings in the calm middle can't be seen, so only the biggest of them is drawn, as just a black fill,
@@ -444,7 +527,7 @@ function drawWorms() {
         // Each ring starts as big as the void in the middle was when it was made, so the void opens up over time
         let opened = colourOpen > 0 ? constrain(madeAt / colourOpen, 0, 1) : 1;
         let life = seconds - worm.born;
-        let closing = constrain((life - closeAt) / closeTime, 0, 1);
+        let closing = constrain((life - ready() - closeAt) / closeTime, 0, 1);
         closing = closing * closing * (3 - 2 * closing);
         d += colourStart * opened * opened * (3 - 2 * opened) * (1 - closing); // Easing in and out, then closing up
         if (colourBunch > 0) d = edge * (1 - Math.exp((-colourBunch * d) / (edge * colourReach)));
@@ -453,24 +536,38 @@ function drawWorms() {
         // furthest corner (and blue from there out), so the whole of it can be seen
         s = Math.min(1, d / (colourGradient * (colourEdge(worm.home) / colourSize)));
         strength = constrain((colourBurst - madeAt) / 0.4, 0, 1) * leaving; // The rings it made after the burst are dark
-        // Turning into the worm: each of the newest rings shrinks and slides to its place along it, and the older
-        // ones fade, and go once it's halfway (from then on the worm's drawn head first, so its tail's on top)
-        morph = wormMorph(life);
-        if (morph > 0) {
-          let age = numSegments - 1 - i + (worm.phase ?? 0); // How many rings out it is, smoothly
-          let along = age / wormLength;
-          if (along > 1) {
-            if (morph >= 0.5) continue;
-            strength *= 1 - morph * 2;
-          } else {
-            let born = (worm.made ?? 0) - (numSegments - 1 - i);
-            let tail = (worm.made ?? 0) + (worm.phase ?? 0) - wormLength;
-            let target = wormRing(worm, along, born, tail);
-            x = lerp(x, target.x, morph);
-            y = lerp(y, target.y, morph);
-            d = lerp(d, target.d, morph);
-            s = lerp(s, along, morph); // Its colours along it, from its head to its tail, as psychworm's
+        // Turning into the worm: the rings it makes from wormAt on come out as the worm, which grows out of the
+        // tunnel's middle, its head the newest ring, far off, and its tail coming back toward the camera as they
+        // age. The rings made before stay as they are, centred and full size, spreading out past the screen's edges,
+        // and fade away once the worm's all there. (Those made over wormTime are partly each.)
+        morph = wormMorph(madeAt);
+        let age = numSegments - 1 - i + (worm.phase ?? 0); // How many rings out it is, smoothly
+        if (morph < 1) {
+          let gone = constrain((life - ready() - tunnelGoneAt) / tunnelGoneTime, 0, 1);
+          if (gone >= 1) continue;
+          strength *= 1 - gone * (1 - morph);
+          // Those partly the worm fade away as they near its tail, and go past it, so they don't gather at its tip, or
+          // get pulled off after it
+          if (morph > 0) {
+            if (age >= wormLength) continue;
+            strength *= constrain((wormLength - age) / (0.15 * wormLength), 0, 1);
           }
+        }
+        // Each new ring of the tunnel fades in as it comes out of the middle, flickering (the worm's don't)
+        let ringAge = life - madeAt; // Seconds since it came out
+        let fadedIn = colourFadeIn > 0 ? constrain(ringAge / colourFadeIn, 0, 1) : 1;
+        let flicker = 1 - colourFlicker * (1 - fadedIn) * random();
+        strength *= lerp(fadedIn * fadedIn * flicker, 1, morph);
+        if (morph > 0) {
+          let along = age / wormLength; // 0 at its head, 1 at its tail
+          if (along >= 1 && morph >= 1) continue; // Past its tail
+          let born = (worm.made ?? 0) - (numSegments - 1 - i);
+          let tail = (worm.made ?? 0) + (worm.phase ?? 0) - wormLength;
+          let target = wormRing(worm, Math.min(along, 1), born, tail);
+          x = lerp(x, target.x, morph);
+          y = lerp(y, target.y, morph);
+          d = lerp(d, target.d, morph);
+          s = lerp(s, Math.min(along, 1), morph); // Its colours along it, from its head to its tail, as psychworm's
         }
       }
       let ringSeed = worm.offset + ((worm.made ?? 0) - (numSegments - 1 - i)) * 0.37; // The same all its life
@@ -484,22 +581,28 @@ function drawWorms() {
       if (d <= 0.5) continue; // The worm's thin head and tail
       let shape = ringShape(x, y, d, splashLift(worm, d, y), ringSeed, spin);
       if (!shape) continue;
-      if (shape.covers) break findSeen;
+      // The colour one's rings that are partly tunnel and partly worm are just outlines, not filled: they're out of
+      // step with the tunnel's, and filled they'd hide its bigger rings
+      let filled = !(worm.landing && morph > 0 && morph < 1);
+      if (shape.covers && filled) break findSeen;
       if (calm) calmDrawn = true;
       if (shape.offScreen) continue;
-      seen.push({ shape, worm, i, s, strength, calm, headFirst: morph >= 0.5 });
+      // Only the rings that are all worm are drawn head first, in front: those partly the tunnel are still big, and go
+      // behind it, with the tunnel
+      seen.push({ shape, worm, i, s, strength, calm, filled, headFirst: morph >= 1 });
     }
   }
   // Drawn from the back: the oldest ring first, except the worm's, which is drawn head first, since from behind its
   // tail's nearest
   let headFirst = seen.filter((ring) => ring.headFirst);
   let order = seen.filter((ring) => !ring.headFirst).reverse().concat(headFirst);
-  for (let { shape, worm, i, s, strength, calm } of order) {
+  for (let { shape, worm, i, s, strength, calm, filled, headFirst } of order) {
     let c1 = worm.inner; // As it was: the blend goes from c2 for the biggest rings to c1 for the smallest
     let c2 = worm.outer;
    let c = calm ? null : worm.landing ? landingColour(s) : lerpColor(c1, c2, constrain(s + random(-shimmer, shimmer), 0, 1))
     let weight = map(i, 0, numSegments,3,0.2)
-    drawRing(shape, c, weight, worm, s, strength);
+    // (The worm's own rings are filled solid black, smudging or not, so it stays solid)
+    drawRing(shape, c, weight, worm, s, strength, filled && (headFirst ? 'solid' : true));
   }
   ringsDrawn = seen.length;
 }
@@ -762,14 +865,17 @@ function ringShape(x, y, diameter, lift = 0, seed = 0, spin = 0) {
   return { xs, ys, top, below, offScreen, covers };
 }
 
-function drawRing(shape, colour, weight, who, s, strength = 1) {
+// filled: whether it's filled black, hiding what's behind it
+function drawRing(shape, colour, weight, who, s, strength = 1, filled = true) {
   let { xs, ys, top, below } = shape;
   let g = drawingContext;
   g.beginPath();
   for (let n = 0; n < xs.length; n++) g.lineTo(xs[n], ys[n]);
   g.closePath();
-  g.fillStyle = 'black';
-  g.fill();
+  if (filled) {
+    g.fillStyle = filled === 'solid' ? 'black' : ringFillStyle;
+    g.fill();
+  }
   if (!colour || strength <= 0.003) return; // A calm middle: just the fill
   let [r, gr, b] = shown(colour, who, s).map(Math.round);
   g.strokeStyle = fadeFor(r, gr, b, strength, top, below);
