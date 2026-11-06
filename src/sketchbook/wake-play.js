@@ -10,8 +10,8 @@ let centreFade = 4; // How many seconds into a wormhole's life the rings it make
 // its middle goes calm as its rings spread out (0 = no fading)
 let centreFadeCurve = 1.5; // How they fade over that time (1 = evenly, more = fading sooner)
 let colourGrowSpeed = 0.6; // How quickly the colour wormhole's rings spread, compared to the others'
-let colourSize = 1.15; // How wide the colour wormhole gets, as a share of the screen's width or height, whichever's
-// more (its rings stop there), so that just round its edges the rain can still be seen falling
+let colourSize = 1.1; // How wide the colour wormhole gets, as a share of what it takes to reach the screen's furthest
+// corner from its middle (its rings stop there), so that more than 1 covers the whole screen, corners and all
 let colourBurst = Infinity; // How many seconds its rings come out of its middle for, before it goes dark there
 // (Infinity = they keep coming)
 let colourStart = 300; // How big its rings are when they first appear, in pixels across (0 = a point, like the others)
@@ -21,8 +21,66 @@ let colourBunch = 3; // How much its rings slow and bunch up as they near its ed
 let colourReach = 2.5; // How long they take to get most of the way to its edge, compared to spreading there at their speed
 let colourPop = 0.96; // How near its edge its rings get, bunched up there, before they pop out of existence, as a
 // share of its size (colourSize), so that round the screen's edges the white rings can still be seen
-function colourPopSize() {
-  return colourPop * colourSize * Math.max(width, height);
+// How big the colour wormhole gets, across: big enough to reach from its middle to the screen's furthest corner
+function colourEdge(at) {
+  let far = Math.hypot(Math.max(at.x, width - at.x), Math.max(at.y, height - at.y));
+  return colourSize * 2 * far;
+}
+function colourPopSize(at) {
+  return colourPop * colourEdge(at);
+}
+let colourGradient = 0.9; // How far out its colours go, from cyan in its middle round through red and back to blue, as
+// a share of the way to the screen's furthest corner (less = the blues come sooner)
+let colourSpin = 0.3; // How quickly its rings spin, in turns of their wobbly shapes, in radians a second (0 = not at
+// all; less than 0 = the other way)
+let colourSpinMix = 0.6; // How much their speeds differ from ring to ring (0 = all the same; 1 = from still to twice
+// as fast)
+// Then it turns into a worm: its rings spin faster and faster, its middle closes up, and its rings shrink and slide
+// into a worm, seen from just above and behind, as in the wormhole's psychworm stage (its numbers are psychworm's)
+let spinUpAt = 7; // How many seconds after landing its rings start spinning faster
+let spinUp = 0.5; // How quickly they speed up (their speed goes up with the square of the time since)
+let closeAt = 10; // How many seconds after landing the void in its middle starts closing up...
+let closeTime = 2; // ...and how many seconds that takes
+let wormAt = 11; // How many seconds after landing its rings start turning into the worm...
+let wormTime = 4; // ...and how many seconds that takes
+let wormLength = 70; // How many of its rings make the worm (the newest are its head; the rest go)
+let wormWeaveWide = 1.3; // How far its path weaves from side to side, as a share of the screen's width...
+let wormWeaveTall = 0.6; // ...and up and down, as a share of its height
+let wormBend = 0.8; // How much of the weave its body takes up, head to tail (in Perlin noise, as psychworm's 4 seconds)
+let wormHeadDistance = 4; // How far its head is from the camera...
+let wormTailDistance = 0.9; // ...and its tail (1 = at its full size, less = nearer)
+let wormHorizon = 0.25; // How far down the screen the point straight ahead of the camera is
+let wormCameraAbove = 0.5; // How far the camera is above it, as a share of the screen's height
+let wormBody = 2; // How big it's drawn (its widest is this many eighths of the screen's width, at full size)
+
+// How far it's got turning into the worm, 0 to 1, this many seconds after landing (eased in and out)
+function wormMorph(life) {
+  let t = constrain((life - wormAt) / wormTime, 0, 1);
+  return t * t * (3 - 2 * t);
+}
+// How far its rings have turned, this many seconds after landing, for rings at their usual speed
+function spinAngle(life) {
+  let past = Math.max(0, life - spinUpAt);
+  return colourSpin * (life + (spinUp * past * past * past) / 3);
+}
+// Where a ring of the worm is, and how big, seen from behind: along is 0 at its head and 1 at its tail; born is which
+// ring it is, so it stays at its own place on the path; tail is the tail's (fractional), which the camera follows
+function wormRing(worm, along, born, tail) {
+  let weave = (b) => ({
+    x: (noise(worm.offset + b * (wormBend / wormLength)) - 0.5) * 2 * wormWeaveWide * width,
+    y: (noise(worm.offset + b * (wormBend / wormLength), 100) - 0.5) * 2 * wormWeaveTall * height,
+  });
+  let place = weave(born);
+  let camera = weave(tail);
+  let closer = 1 / lerp(wormHeadDistance, wormTailDistance, along);
+  // On the screen, and then where that is before the camera's turned to look down on it (it's centred on its home)
+  let x = width / 2 + (place.x - camera.x) * closer;
+  let y = wormHorizon * height + (wormCameraAbove * height - (place.y - camera.y)) * closer;
+  return {
+    x: worm.home.x + x - width / 2,
+    y: worm.home.y + y - height / 2,
+    d: Math.sin(along * Math.PI) * (width / 8) * wormBody * closer,
+  };
 }
 let colourClear = 40; // How far outside it the rain keeps from landing, in pixels
 let growSpeed = 0.3; // How quickly the rings spread out (1 = a ring's width every frame, as it was; less = slower,
@@ -191,7 +249,7 @@ function dropRain(x, y, inColour = false) {
   };
   // Not inside the colour wormhole: the rain falls around it
   let colourOne = worms.find((w) => w.landing) ?? (dive ? { home: dive.at } : null);
-  let clear = (spot) => Math.hypot(spot.x - colourOne.home.x, spot.y - colourOne.home.y) > colourPopSize() * 0.5 + colourClear;
+  let clear = (spot) => Math.hypot(spot.x - colourOne.home.x, spot.y - colourOne.home.y) > colourPopSize(colourOne.home) * 0.5 + colourClear;
   for (let tries = 0; x === undefined && colourOne && !clear(at) && tries < 60; tries++) {
     // Anywhere that can be seen, now that the camera's looking down on the colour one
     let middle = dive ? dive.at : { x: width / 2, y: height / 2 };
@@ -375,31 +433,68 @@ function drawWorms() {
       }
       if (calm && calmDrawn) continue;
       let { d, s } = ringSize(i, worm.phase);
+      let x = worm.xLoc[i], y = worm.yLoc[i];
+      let morph = 0;
       if (worm.landing) {
         // The colour one: a burst of rings from its middle, for its first few seconds, all bright, spreading out and
         // slowing as they go, closer and closer to its edge without ever getting there, so that they all bunch up
         // round its rim, and its middle's left dark once the last of them has gone out
         // (With colourBunch 0 they don't slow: they keep spreading, evenly spaced, on past its edge.)
-        let edge = colourSize * Math.max(width, height);
+        let edge = colourEdge(worm.home);
         // Each ring starts as big as the void in the middle was when it was made, so the void opens up over time
         let opened = colourOpen > 0 ? constrain(madeAt / colourOpen, 0, 1) : 1;
-        d += colourStart * opened * opened * (3 - 2 * opened); // Easing in and out
+        let life = seconds - worm.born;
+        let closing = constrain((life - closeAt) / closeTime, 0, 1);
+        closing = closing * closing * (3 - 2 * closing);
+        d += colourStart * opened * opened * (3 - 2 * opened) * (1 - closing); // Easing in and out, then closing up
         if (colourBunch > 0) d = edge * (1 - Math.exp((-colourBunch * d) / (edge * colourReach)));
-        if (d >= colourPopSize()) continue; // Popped, once bunched up at its rim, so white rings show round it
-        s = Math.min(1, d / colourPopSize()); // Cyan in the middle to red where they pop
+        if (d >= colourPopSize(worm.home)) continue; // Popped, once bunched up at its rim, so white rings show round it
+        // Cyan in the middle, through red and magenta, and back to blue by the time they've reached the screen's
+        // furthest corner (and blue from there out), so the whole of it can be seen
+        s = Math.min(1, d / (colourGradient * (colourEdge(worm.home) / colourSize)));
         strength = constrain((colourBurst - madeAt) / 0.4, 0, 1) * leaving; // The rings it made after the burst are dark
+        // Turning into the worm: each of the newest rings shrinks and slides to its place along it, and the older
+        // ones fade, and go once it's halfway (from then on the worm's drawn head first, so its tail's on top)
+        morph = wormMorph(life);
+        if (morph > 0) {
+          let age = numSegments - 1 - i + (worm.phase ?? 0); // How many rings out it is, smoothly
+          let along = age / wormLength;
+          if (along > 1) {
+            if (morph >= 0.5) continue;
+            strength *= 1 - morph * 2;
+          } else {
+            let born = (worm.made ?? 0) - (numSegments - 1 - i);
+            let tail = (worm.made ?? 0) + (worm.phase ?? 0) - wormLength;
+            let target = wormRing(worm, along, born, tail);
+            x = lerp(x, target.x, morph);
+            y = lerp(y, target.y, morph);
+            d = lerp(d, target.d, morph);
+            s = lerp(s, along, morph); // Its colours along it, from its head to its tail, as psychworm's
+          }
+        }
       }
       let ringSeed = worm.offset + ((worm.made ?? 0) - (numSegments - 1 - i)) * 0.37; // The same all its life
-      let shape = ringShape(worm.xLoc[i], worm.yLoc[i], d, splashLift(worm, d, worm.yLoc[i]), ringSeed);
+      // The colour one's rings each spin a little, at their own speeds
+      let spin = 0;
+      if (worm.landing && colourSpin) {
+        let own = Math.sin(ringSeed * 12.9898) * 43758.5453;
+        own -= Math.floor(own); // From 0 to 1, the same all the ring's life
+        spin = spinAngle(seconds - worm.born) * lerp(1 - colourSpinMix, 1 + colourSpinMix, own);
+      }
+      if (d <= 0.5) continue; // The worm's thin head and tail
+      let shape = ringShape(x, y, d, splashLift(worm, d, y), ringSeed, spin);
       if (!shape) continue;
       if (shape.covers) break findSeen;
       if (calm) calmDrawn = true;
       if (shape.offScreen) continue;
-      seen.push({ shape, worm, i, s, strength, calm });
+      seen.push({ shape, worm, i, s, strength, calm, headFirst: morph >= 0.5 });
     }
   }
-  for (let n = seen.length - 1; n >= 0; n--) {
-    let { shape, worm, i, s, strength, calm } = seen[n];
+  // Drawn from the back: the oldest ring first, except the worm's, which is drawn head first, since from behind its
+  // tail's nearest
+  let headFirst = seen.filter((ring) => ring.headFirst);
+  let order = seen.filter((ring) => !ring.headFirst).reverse().concat(headFirst);
+  for (let { shape, worm, i, s, strength, calm } of order) {
     let c1 = worm.inner; // As it was: the blend goes from c2 for the biggest rings to c1 for the smallest
     let c2 = worm.outer;
    let c = calm ? null : worm.landing ? landingColour(s) : lerpColor(c1, c2, constrain(s + random(-shimmer, shimmer), 0, 1))
@@ -608,7 +703,8 @@ let ringNoiseMost = 80; // ...but never more than this, in pixels across
 let ringNoiseBumps = [3, 9]; // How many bumps round a ring, at the least and most
 let ringNoiseDrift = 0.4; // How quickly the bumps move round (0 = each ring keeps its shape)
 
-function ringShape(x, y, diameter, lift = 0, seed = 0) {
+// spin: how far its shape is turned round, in radians
+function ringShape(x, y, diameter, lift = 0, seed = 0, spin = 0) {
   if (diameter <= 0) return null;
   // Where (x, y) is on the water: how far away (z), and how far to the side
   let top = horizon * height; // Where the horizon is on the screen
@@ -643,7 +739,7 @@ function ringShape(x, y, diameter, lift = 0, seed = 0) {
     let angle = (n / points) * Math.PI * 2;
     // Pushed in and out by its waves
     let r = radius;
-    for (let wave of waves) r += churnOnWater * wave.size * Math.sin(wave.bumps * angle + wave.phase);
+    for (let wave of waves) r += churnOnWater * wave.size * Math.sin(wave.bumps * (angle - spin) + wave.phase);
     let pz = Math.max(0.05, z + Math.sin(angle) * r); // Not behind the camera
     let px = side + Math.cos(angle) * r;
     xs[n] = width / 2 + (px * across) / pz;
