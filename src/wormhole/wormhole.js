@@ -60,6 +60,26 @@ const after = '/art/'; // Where it goes after the last stage
 // someone enters. Entering turns the sound on. The sound switch is hidden until then, and then it's at the bottom.
 const welcomeTime = 6; // How many seconds "welcome to my wormhole" is up for
 const introGap = 1.3; // How many seconds from it starting to fade out to the rest starting to fade in
+// The wake's rings: they keep spreading all their lives, fading as they go, so the ones further out are the faintest,
+// and they're drawn as if by hand (see drawWakeRing), with little ripples within them now and then (see drawWithin)
+const wakeGrow = 1.8; // How big they get, compared to how big the wake's rings used to get at their biggest
+const wakeSpreadCurve = 1; // How they spread over their lives (1 = steadily, less = quickly at first, then slowing)
+const wakeFadeCurve = 1.5; // How much more they fade as they spread (1 = as they used to, more = fainter further out)
+const wakeWeightAtTop = 0.4; // How thick their lines are at the top of the screen, compared to at the bottom
+const wakeWobble = 0.03; // How much their edges wobble, as a share of how big they've got past wakeWobbleFrom
+const wakeWobbleFrom = 60; // How wide they get before they start to wobble, in pixels (the small ones in the middle stay round)
+const wakeWobbleMost = 14; // The most they wobble, in pixels
+const wakeHandPress = 0.45; // How much their lines swell and thin as they go round, as if pressed and lifted (0 = even)
+const wakeHandTaper = 0.12; // How much of the way round their lines' start and end taper over
+const wakeHandTaperLeast = 0.15; // How thin their lines start and end, compared to the rest
+const wakeHandGap = 0.04; // How far short of meeting itself a line can stop, or past it go, as a share of the way round
+const withinPerSecond = 3; // How many little ripples a second come up within the rings
+const withinFrom = 0.2; // Which rings they come up in, by how far through their lives they are, from...
+const withinTo = 0.75; // ...to (0 is the oldest, 1 the newest)
+const withinSize = [20, 60]; // How wide they get, in pixels across, at the bottom of the screen
+const withinRings = [2, 3]; // How many rings each has
+const withinTime = [0.8, 1.5]; // How many seconds they take to spread and fade
+const withinStrength = 0.7; // How strong they are, from 0 to 1
 const morphTime = 2.5; // How quickly the settings drift to the next stage's, in seconds (bigger = slower)
 // Pressing to begin forms the worm where it was pressed: the wake's scattered all over the screen, so first it gathers
 // into a circle around there, then into the worm, which then drifts off from there on its own way
@@ -772,6 +792,106 @@ export default function wormhole(p, container) {
   }
 
 
+  // A ring of the wake, as if drawn by hand: filled black, so it hides what's behind it, with its edge wobbling more
+  // the bigger it's got (the small ones in the middle stay round), and its line pressing and lifting as it goes round,
+  // starting thin and tapering off where it comes back round, a little short of itself or a little past. Each ring's
+  // its own, from its seed, for all its life. amount: how much of all that (it goes as the wake turns into the worm).
+  function drawWakeRing(x, y, w, h, colour, weight, seed, amount) {
+    if (w <= 0 || h <= 0) return;
+    const g = p.drawingContext;
+    const hash = (k) => {
+      const v = Math.sin(seed * 9187.31 + k * 47.853) * 43758.5453;
+      return v - Math.floor(v);
+    };
+    const count = Math.max(16, Math.min(72, Math.round((w + h) / 6)));
+    const wobble = Math.min(wakeWobble * Math.max(0, w - wakeWobbleFrom), wakeWobbleMost) * amount; // In pixels across
+    const waves = [0, 1, 2].map((k) => ({ bumps: 3 + Math.floor(hash(k) * 6), size: (0.5 + hash(k + 3)) / 3, phase: hash(k + 6) * Math.PI * 2 }));
+    const xs = new Float32Array(count);
+    const ys = new Float32Array(count);
+    for (let n = 0; n < count; n++) {
+      const angle = (n / count) * Math.PI * 2;
+      let out = 0;
+      for (const wave of waves) out += wave.size * Math.sin(wave.bumps * angle + wave.phase);
+      const r = 1 + (out * wobble) / w; // As a share of its size
+      xs[n] = x + (Math.cos(angle) * w * r) / 2;
+      ys[n] = y + (Math.sin(angle) * h * r) / 2;
+    }
+    g.beginPath();
+    for (let n = 0; n < count; n++) g.lineTo(xs[n], ys[n]);
+    g.closePath();
+    g.fillStyle = 'black';
+    g.fill();
+    if (colour[3] <= 0.5) return;
+    g.strokeStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},${colour[3] / 255})`;
+    // The line, in short pieces of their own thickness, round at the ends so they join up
+    const start = Math.floor(hash(9) * count);
+    const ending = p.lerp(-wakeHandGap, wakeHandGap, hash(10)) * amount;
+    const press = [hash(11), hash(12)].map((v) => v * Math.PI * 2);
+    const bumps = [2 + Math.floor(hash(13) * 3), 5 + Math.floor(hash(14) * 4)];
+    const pieces = new Map();
+    const steps = Math.round(count * (1 + Math.max(0, ending)));
+    for (let k = 0; k < steps; k++) {
+      const along = k / count;
+      if (ending < 0 && along > 1 + ending) break;
+      const n = (start + k) % count;
+      const m = (n + 1) % count;
+      const angle = (n / count) * Math.PI * 2;
+      const pressing = 1 + wakeHandPress * amount * (0.6 * Math.sin(bumps[0] * angle + press[0]) + 0.4 * Math.sin(bumps[1] * angle + press[1]));
+      const end = 1 + Math.max(0, ending) - along;
+      const taper = Math.min(1, along / wakeHandTaper, Math.max(0, end) / wakeHandTaper);
+      const thick = weight * pressing * p.lerp(1, p.lerp(wakeHandTaperLeast, 1, taper), amount);
+      const bin = Math.max(1, Math.round(thick * 4)) / 4;
+      let path = pieces.get(bin);
+      if (!path) pieces.set(bin, (path = new Path2D()));
+      path.moveTo(xs[n], ys[n]);
+      path.lineTo(xs[m], ys[m]);
+    }
+    g.lineCap = 'round';
+    for (const [thick, path] of pieces) {
+      g.lineWidth = thick;
+      g.stroke(path);
+    }
+    g.lineCap = 'butt';
+  }
+
+  // Little ripples within the wake's rings: now and then, somewhere inside one of the bigger ones, a little ripple of
+  // a few rings spreads and fades, in that ring's colour, flattened by distance as the wake is
+  const withinCandidates = []; // The rings it could be in, this frame
+  let wakeRipples = [];
+  function drawWithin() {
+    const amount = now.flat * (1 - now.space);
+    if (amount > 0.01 && withinCandidates.length && !calm && p.random() < (withinPerSecond * Math.min(0.1, p.deltaTime / 1000)) * amount) {
+      const ring = p.random(withinCandidates);
+      const angle = p.random(Math.PI * 2);
+      const reach = p.random(0.1, 0.7);
+      wakeRipples.push({
+        x: ring.x + (Math.cos(angle) * ring.w * reach) / 2,
+        y: ring.y + (Math.sin(angle) * ring.h * reach) / 2,
+        size: p.random(...withinSize) * ring.depth,
+        flat: 0.375 * ring.depth,
+        rings: Math.round(p.random(...withinRings)),
+        time: p.random(...withinTime),
+        start: seconds,
+        colour: ring.colour,
+      });
+    }
+    withinCandidates.length = 0;
+    wakeRipples = wakeRipples.filter((r) => seconds - r.start < r.time);
+    const g = p.drawingContext;
+    for (const r of wakeRipples) {
+      const t = (seconds - r.start) / r.time;
+      for (let k = 0; k < r.rings; k++) {
+        const w = r.size * Math.sqrt(t) * (1 - k / (r.rings + 1)); // Each inside the last
+        if (w <= 0) continue;
+        g.beginPath();
+        g.ellipse(r.x, r.y, w / 2, (w / 2) * r.flat, 0, 0, Math.PI * 2);
+        g.strokeStyle = `rgba(${r.colour[0]},${r.colour[1]},${r.colour[2]},${(1 - t) * withinStrength * amount})`;
+        g.lineWidth = 1.2;
+        g.stroke();
+      }
+    }
+  }
+
   function moveWorm(dt) {
     const idle = seconds - pointer.lastMoved > idleTime;
     const before = { ...at };
@@ -790,6 +910,7 @@ export default function wormhole(p, container) {
     let next;
     if (still && !calm && now.scatter > 0.5) next = { x: p.random(p.width), y: p.random(p.height) };
     else next = { x: at.x + p.random(-70, 70) * now.scatter, y: at.y + p.random(-30, 30) * now.scatter };
+    next.seed = Math.random(); // Its own wobble and line, for all its life (see drawWakeRing)
     trail.push(next);
     if (trail.length > stages[0].settings.length) trail.shift();
     return p.dist(before.x, before.y, at.x, at.y);
@@ -993,19 +1114,28 @@ export default function wormhole(p, container) {
       const { x, y } = trail[i];
       // Having been through the ring, this part of the worm is a flower
       const isFlower = ringDistance !== null ? distance > ringDistance : stages[current].settings.bloom === 1 || now.bloom > 0.01 || tunnel > 0.01;
-      const fade = p.lerp(1, p.sin(along * p.HALF_PI), now.flat);
-      p.strokeWeight(p.lerp(wormWeight, white ? p.random(1.8, 2) : 1.8, now.flat));
+      // The wake's rings fade as they spread, so the ones furthest out are the faintest
+      const fade = p.lerp(1, Math.pow(p.sin(along * p.HALF_PI), wakeFadeCurve), now.flat);
+      // ...and they're thinner toward the top of the screen
+      const weight = p.lerp(wormWeight, (white ? p.random(1.8, 2) : 1.8) * p.lerp(wakeWeightAtTop, 1, Math.max(0, y / p.height)), now.flat);
+      p.strokeWeight(weight);
+      let colour;
       if (white) {
-        p.stroke(255, 255 * fade);
+        colour = [255, 255, 255, 255 * fade];
       } else {
         const sine = p.abs(p.sin(along * p.PI));
         const cosine = p.abs(p.cos(along * p.PI));
-        p.stroke(shimmer(now.low) * sine, shimmer(now.low) * cosine, 255 - shimmer(100) * sine, 255 * fade);
+        colour = [shimmer(now.low) * sine, shimmer(now.low) * cosine, 255 - shimmer(100) * sine, 255 * fade];
       }
+      p.stroke(...colour);
       const size = p.sin(along * p.PI) * now.body;
+      // The wake's rings keep spreading all their lives, rather than growing and shrinking back (the worm's are still
+      // fullest in the middle)
+      const spread = Math.pow(1 - along, wakeSpreadCurve) * wakeGrow * now.body;
       const depth = y / p.height; // The wake gets bigger toward the bottom of the screen
-      let w = size * p.lerp(round, 200 * depth, now.flat);
-      let h = size * p.lerp(round, 75 * depth * depth, now.flat);
+      let w = p.lerp(size * round, spread * 200 * depth, now.flat);
+      let h = p.lerp(size * round, spread * 75 * depth * depth, now.flat);
+      if (now.flat > 0.01 && now.space < 0.01 && !white && along > withinFrom && along < withinTo) withinCandidates.push({ x, y, w, h, depth, colour });
       let seenX = x;
       let seenY = y;
       if (now.space > 0.01) {
@@ -1069,8 +1199,10 @@ export default function wormhole(p, container) {
         const wobbleX = Math.sin(seconds * bloomWobbleSpeed + segment * 0.7) * wobble;
         const wobbleY = Math.cos(seconds * bloomWobbleSpeed * 1.3 + segment * 0.5) * wobble;
         drawFlower(flower, seenX + Math.cos(flower.burstAngle) * thrown + flower.blastX + wobbleX, seenY + Math.sin(flower.burstAngle) * thrown + flower.blastY + wobbleY, (w * grown) / (flower.petalLength * 2), 1 - wormAbsorbed, flowerContext, 1 + (boost / boostMost) * boostSpin); // Spinning faster as it speeds up
-      } else p.ellipse(seenX, seenY, w, h);
+      } else if (now.flat > 0.01) drawWakeRing(seenX, seenY, w, h, colour, weight, trail[i].seed ?? 0.5, now.flat);
+      else p.ellipse(seenX, seenY, w, h);
     }
+    drawWithin();
     showFaint();
     if (formAt && seconds - formStart > formTime && now.space > 0.999) formAt = null;
     // (Its trail's still short when the page has only just opened, which would make it look tiny)
