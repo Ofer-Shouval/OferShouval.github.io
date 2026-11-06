@@ -54,12 +54,12 @@ let rushDown = 3; // ...and back down over this many, once the tunnel's gone
 let springAt = 1.6; // How many seconds after the worm starts it springs forward, its rings coming out faster still...
 let springRush = 4; // ...this many times faster...
 let springUp = 0.4; // ...easing into it over this many seconds...
-let springFor = 3; // ...staying that fast for this many...
-let springDown = 3; // ...and easing off over this many
+let springFor = 0; // ...staying that fast for this many...
+let springDown = 4; // ...and easing out of it over this many (quickly at first, then more and more gently)
 let stretch = 0.55; // How much longer it stretches as it springs forward, as a share of its length, before springing
 // back past it a little, and settling (0 = it doesn't)
-let stretchTime = 1.5; // How many seconds each stretch and spring back takes...
-let stretchSettle = 6; // ...and how many seconds it takes to settle, its stretching ramping down to nothing
+let stretchTime = 2.5; // How many seconds each stretch and spring back takes...
+let stretchSettle = 3; // ...and how many seconds it takes to settle, its stretching ramping down to nothing
 
 // How much longer the worm is just now, as it stretches and springs back, this many seconds after landing (1 = as it
 // usually is)
@@ -420,7 +420,8 @@ function speedOf(worm) {
   // out to its full length, and eases off again
   let ease = (t) => t * t * (3 - 2 * t);
   let springing = life - ready() - wormAt - springAt;
-  let spring = ease(constrain(springing / springUp, 0, 1)) * (1 - ease(constrain((springing - springUp - springFor) / springDown, 0, 1)));
+  let calming = constrain((springing - springUp - springFor) / springDown, 0, 1);
+  let spring = ease(constrain(springing / springUp, 0, 1)) * (1 - calming) * (1 - calming); // Easing out
   return growSpeed * colourGrowSpeed * lerp(1, wormRush, ease(rush)) * lerp(1, springRush, spring);
 }
 function moveWorm(worm){
