@@ -554,7 +554,13 @@ export default function pond(p, container) {
     let headFirst = seen.filter((ring) => ring.headFirst);
     let order = seen.filter((ring) => !ring.headFirst).reverse().concat(headFirst);
     wormNow = [];
+    let starsDrawn = false;
     for (let { shape, worm, i, s, strength, calm, filled, headFirst, along } of order) {
+      // The stars go over the tunnel and behind the worm
+      if (headFirst && !starsDrawn) {
+        drawStars(worm);
+        starsDrawn = true;
+      }
       let c1 = worm.inner; // As it was: the blend goes from c2 for the biggest rings to c1 for the smallest
       let c2 = worm.outer;
      let c = calm ? null : worm.landing ? landingColour(s) : p.lerpColor(c1, c2, p.constrain(s + p.random(-shimmer, shimmer), 0, 1))
@@ -975,6 +981,66 @@ export default function pond(p, container) {
     return { x: middle.x / density, y: middle.y / density, d: (right - left) * scale };
   }
 
+  // The stars, streaking past as the worm flies forward through space, as the wormhole has them in its psychworm stage
+  // (see drawStars there): they come in from the moment the worm springs out of the wormhole, streaming from the point
+  // it's heading for, and the wormhole carries them on just as they are
+  let starsIn = 1.5; // How many seconds they take to come in, from when it springs out (see springAt)
+  let starCount = 120; // (These are the wormhole's)
+  let starSpeed = 0.35; // How much of the way to the camera a star comes each second
+  let focusFollow = 0.06; // How quickly the point they stream from catches up with where the worm's heading
+  let stars = [];
+  let starFocus = null;
+  let starTime = 0;
+
+  function drawStars(worm) {
+    let seconds = p.millis() / 1000;
+    let dt = Math.min(0.1, seconds - starTime);
+    starTime = seconds;
+    let since = seconds - dive.start - aboveTime - wormAt - springAt; // From when the worm springs out
+    if (since <= 0) return;
+    let shown = p.constrain(since / starsIn, 0, 1);
+    shown = shown * shown * (3 - 2 * shown);
+    if (!stars.length) for (let k = 0; k < starCount; k++) stars.push({ x: p.random(-1, 1), y: p.random(-1, 1), z: p.random(0.05, 1) });
+    // Where the worm's heading: its head, out where it'd be at its full distance (see wormRing)
+    let path = (b) => ({
+      x: (p.noise(worm.offset + b * (wormBend / wormLength)) - 0.5) * 2 * wormWeaveWide * p.width,
+      y: (p.noise(worm.offset + b * (wormBend / wormLength), 100) - 0.5) * 2 * wormWeaveTall * p.height,
+    });
+    let made = (worm.made ?? 0) + (worm.phase ?? 0);
+    let head = path(made);
+    let camera = path(made - wormLength);
+    let heading = {
+      x: p.width / 2 + (head.x - camera.x) / wormHeadDistance,
+      y: wormHorizon * p.height + (wormCameraAbove * p.height - (head.y - camera.y)) / wormHeadDistance,
+    };
+    starFocus ??= { ...heading };
+    starFocus.x += (heading.x - starFocus.x) * focusFollow;
+    starFocus.y += (heading.y - starFocus.y) * focusFollow;
+    let reach = Math.max(p.width, p.height) * 0.5;
+    let g = p.drawingContext;
+    g.save();
+    let density = p.pixelDensity();
+    g.setTransform(density, 0, 0, density, 0, 0); // On the screen, not the water
+    for (let star of stars) {
+      let fromX = starFocus.x + (star.x * reach) / star.z;
+      let fromY = starFocus.y + (star.y * reach) / star.z;
+      star.z -= starSpeed * dt;
+      if (star.z < 0.05) {
+        star.x = p.random(-1, 1);
+        star.y = p.random(-1, 1);
+        star.z = 1;
+        continue;
+      }
+      g.strokeStyle = `rgba(255,255,255,${(1 - star.z) * shown})`;
+      g.lineWidth = 1 + (1 - star.z);
+      g.beginPath();
+      g.moveTo(fromX, fromY);
+      g.lineTo(starFocus.x + (star.x * reach) / star.z, starFocus.y + (star.y * reach) / star.z);
+      g.stroke();
+    }
+    g.restore();
+  }
+
   // straight: going straight to a stage of the wormhole, from a link, without the pond's worm
   function handOver(straight = false, worm = null, seconds = 0) {
     if (handedOver) return;
@@ -1000,6 +1066,8 @@ export default function pond(p, container) {
       spin: spinAngle(life), // How far its rings have spun (each at its own speed: see colourSpinMix)...
       spinRate: (spinAngle(life + 0.05) - spinAngle(life)) / 0.05, // ...and how quickly they're spinning
       spinMix: colourSpinMix,
+      stars, // The stars, as they are, so they carry on (see drawStars)
+      focus: starFocus,
       counter, // How far its rings' bumps have drifted round (see ringNoiseDrift)
       noise: { amount: ringNoise, most: ringNoiseMost, bumps: ringNoiseBumps, drift: ringNoiseDrift, points: ripplePoints, spacing: pointSpacing },
       low: landingLow, // Its colours

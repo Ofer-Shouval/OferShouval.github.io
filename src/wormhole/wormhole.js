@@ -1284,7 +1284,7 @@ export default function wormhole(p, container, options = {}) {
         star.z = 1;
         continue;
       }
-      p.stroke(255, 255 * (1 - star.z) * now.space * (1 - now.bloom) * (1 - tunnel) * settled()); // (Coming in, from the pond)
+      p.stroke(255, 255 * (1 - star.z) * now.space * (1 - now.bloom) * (1 - tunnel)); // (From the pond, they're its stars)
       p.strokeWeight(1 + (1 - star.z));
       p.line(fromX, fromY, focus.x + (star.x * reach) / star.z, focus.y + (star.y * reach) / star.z);
     }
@@ -1379,11 +1379,13 @@ export default function wormhole(p, container, options = {}) {
       // Its colours are the pond's, and the screen's cleared each frame, as it was, so the worm's just as it was
       // (holding still leaves trails)
       Object.assign(stages[psychworm].settings, { low: fromPond.low, wash: 255 });
+      // The pond's stars, carrying on just as they were
+      stars.push(...fromPond.stars.map((star) => ({ ...star })));
       pondLeave = fromPond.leave;
       const middle = { x: p.width / 2, y: p.height / 2 };
       trail = Array.from({ length: stages[psychworm].settings.length }, () => ({ ...middle, seed: p.random() }));
       at = { ...middle };
-      focus = { x: p.width / 2, y: p.height * spaceHorizon };
+      focus = fromPond.focus ? { ...fromPond.focus } : { x: p.width / 2, y: p.height * spaceHorizon }; // Where its stars streamed from
       steer = { ...middle };
       Object.assign(pointer, { ...middle, lastMoved: 0 });
       lastPointer = { ...middle };
