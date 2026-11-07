@@ -544,14 +544,6 @@ export default function wakeWatercolor(p, container) {
       g.drawImage(wash, xValue[i] - (w * stretch) / 2, yValue[i] - (h * stretch) / 2, w * stretch, h * stretch);
     }
     g.globalAlpha = 1;
-    // Now and then, a smudge from one of the rings, dragged the way the mouse is going
-    if (live && smudgeable.length && p.random() < smudgesPerSecond / Math.max(1, p.frameRate() || 60)) {
-      const ring = p.random(smudgeable);
-      ring.colour = gelInColour && !white ? wakeColour(ring.along) : `rgb(${gelColour.join(',')})`;
-      const moving = p.mouseX !== p.pmouseX || p.mouseY !== p.pmouseY;
-      smudge(ring, moving ? Math.atan2(p.mouseY - p.pmouseY, p.mouseX - p.pmouseX) : null);
-    }
-    smudgeable.length = 0;
     frameShift = (frameShift + 1) % variants; // Every ring moves one place down the trail each frame
 
     if (p.pmouseX != p.mouseX || p.pmouseY != p.mouseY) {
@@ -564,5 +556,4 @@ export default function wakeWatercolor(p, container) {
   };
 
   let frameShift = 0;
-  const smudgeable = []; // The rings drawn this frame that could be smudged: the ones near the middle of their lives
 }
