@@ -23,7 +23,8 @@ import { mouseWidth, mouseHeight, mouseFeetX, mouseFeetY, mouseSteps, mouseStrid
 p5.disableFriendlyErrors = import.meta.env.PROD;
 
 let horizon = 0.45; // How far down the screen the horizon is (0 = the top, 1 = the bottom)
-let cameraHeight = 375; // How high off the ground the camera is, in the frames' own pixels (a figure is about 150 tall)
+let cameraHeight = 375; // How high off the ground the camera is, in the frames' own pixels (a figure is about 150 tall). It dips lower while the mouse is still (see pushCamera())
+let cameraHeightUsual = cameraHeight;
 let curl = 0.1; // How much the ground curls upward with distance, as a fraction of the screen's height (0 = flat)
 let curlTip = 0.12; // How much the figures tip back as the ground curls, so they look shorter in the distance (0 = not at all)
 let ratio = 0.9; // Each row is this much the size of the one in front of it (smaller = bunch up faster)
@@ -83,13 +84,26 @@ let tripStops = [1, 2]; // How many times it stops and changes direction on the 
 let tripSwerve = [0.2, 0.4]; // How far off the straight line it goes to each stop, compared to how long the trip is
 let tripPause = [0.2, 0.45]; // How many seconds it stops for
 let tripShortest = 40; // A trip shorter than this, in pixels, doesn't stop on the way
-let mouseSpot = { x: 0.5, y: 0.86 }; // Where the camera keeps the mouse, as a fraction of the screen's width and height
+let mouseSpot = { x: 0.5, y: 0.8 }; // Where the camera keeps the mouse, as a fraction of the screen's width and height
 let mouseScale = 0.5; // How big it's drawn, compared to the people at the same distance
 let mouseWeight = 6; // How thick its lines are, before it's shrunk to that size
 let mouseSwings = 6; // How many pictures of its tail swinging it goes through per second, sitting
 let mouseWalkSteps = 36; // ...and of its walk, walking. This sets how fast it goes, since it only moves as far as its feet push it.
 let mouseBowTime = 0.12; // How many seconds it takes to get up and lower its head before it sets off, or to sit back up after it stops
 let mouseViewStick = 1.2; // How far past halfway to the next way of facing it has to be heading before it changes to that
+// When the mouse stands still, the camera slowly dips lower, down toward it, so everything looks bigger while the
+// horizon stays where it is, and it rises back up as soon as the mouse moves (see pushCamera())
+let pushZoom = 1.5; // How much bigger everything looks, dipped all the way down (the camera's this many times lower)
+let pushInTime = 3.5; // About how many seconds it takes to dip all the way down
+let pushOutTime = 2; // ...and to rise back up, once the mouse moves
+let pushWait = 0.6; // How many seconds the mouse has to have been still before it starts
+let pushed = 0; // How far down it's dipped now (0 = not at all, 1 = all the way)
+let pushWalking = 0.45; // How far down it stays while the mouse is walking (0 = right back up, 1 = it doesn't rise)
+let pushTurn = 0.9; // How gently it turns round when the mouse starts or stops, in seconds (bigger = gentler)
+let pushStiffness = null; // How stiff its spring is now
+let pushGoal = 0; // Where it's heading, eased itself, so even its pull changes gently (see pushTurn)
+let pushSpeed = 0; // How quickly that's changing, each second (it moves like a weight on a spring, so it never jerks)
+let stillFor = 0; // How long the mouse has been still
 let mouseFollow = 5; // How quickly the camera catches up with it (bigger = quicker)
 let mouseEntersFrom = -0.17; // Where it starts when the page opens, in the units of mouse.depth: just off the bottom of the screen
 // Coming from the wormhole's art portal, the little worm comes out of its hole first (see hole_worm.js), and the mouse
@@ -120,7 +134,7 @@ function setup() {
   canvas.position(0, 0);
   canvas.style('z-index', '-1');
   // Sharp enough for the biggest figures on this screen, and no bigger
-  resolution = constrain(bottomSize() * 1.1 * density, 1, 3);
+  resolution = constrain(bottomSize() * 1.1 * density * pushZoom, 1, 3); // (Sharp enough pushed in, too)
   setupHoles(); // (Before the sheets, since painting those finishes with the brush)
   mouseSheet = paintMouse(brushName, mouseWeight, resolution * mouseScale);
   setupMouseControls();
@@ -506,7 +520,7 @@ function tripStopsTo(hole) {
 // far away each hole is. How far down the screen comes from this page's ground, so they stay put on it
 // among the crowd.
 function placeHoles() {
-  let scale = Math.exp(view.depth);
+  let scale = Math.exp(view.depth) * (cameraHeightUsual / cameraHeight); // (Bigger as the camera dips, see pushCamera())
   let bottom = bottomSize();
   for (let hole of holes) {
     let rowSideways = view.x * hole.size;
@@ -642,7 +656,33 @@ function furthestInView() {
   return Math.max(sizeAt(0), (furthestSize * height) / 900);
 }
 
+// Dip the camera lower while the mouse is still, and back up while it moves (see pushZoom). Everything on the ground
+// stays where it is down the screen, since that only depends on the camera's height times how big things look, so it
+// all just looks bigger, spreading out from the middle of the screen, with the horizon where it was.
+function pushCamera() {
+  let seconds = Math.min(deltaTime / 1000, 0.1);
+  let still = !mouse.walking && mouse.falling === null && !mouseTarget && mouse.depth >= 0;
+  stillFor = still ? stillFor + seconds : 0;
+  let wanted = stillFor > pushWait ? 1 : pushWalking;
+  pushGoal += (wanted - pushGoal) * (1 - Math.exp(-seconds / pushTurn));
+  let goal = pushGoal;
+  // A spring that's just stiff enough not to overshoot: it speeds up gently, and slows gently into place, and when the
+  // mouse starts or stops it turns round smoothly, from however it was moving, instead of jumping to a new speed
+  pushStiffness ??= 4.7 / pushInTime;
+  pushStiffness += (4.7 / (wanted === 1 ? pushInTime : pushOutTime) - pushStiffness) * (1 - Math.exp(-seconds / pushTurn)); // (Eased too, so nothing changes all at once)
+  let stiffness = pushStiffness; // (Settles about this many seconds after it sets off)
+  for (let step = 0, steps = 4; step < steps; step++) {
+    let dt = seconds / steps;
+    pushSpeed += (stiffness * stiffness * (goal - pushed) - 2 * stiffness * pushSpeed) * dt;
+    pushed += pushSpeed * dt;
+  }
+  pushed = constrain(pushed, -0.1, 1.1); // (Only a safety net: clamping it tightly would make a kink)
+  // Lower by an even share each time, so it looks like it's moving at an even pace
+  cameraHeight = cameraHeightUsual / Math.pow(pushZoom, pushed);
+}
+
 function draw() {
+  pushCamera();
   moveMouse();
   placeHoles();
   background(255);
