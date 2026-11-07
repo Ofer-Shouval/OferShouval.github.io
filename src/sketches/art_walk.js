@@ -742,6 +742,137 @@ function draw() {
   ctx.globalAlpha = 1;
 }
 
+// The colours of the Luminin, for the mouse's inside and its footprints: the stabilized close-up of it plays, hidden
+let lumininVideo = null;
+const lumininClip = '/media/lumininCloseupStabilized.mp4';
+
+function startLumininVideo() {
+  const video = document.createElement('video');
+  video.src = lumininClip;
+  video.muted = true;
+  video.loop = true;
+  video.playsInline = true;
+  video.play().catch(() => {});
+  return video;
+}
+
+const lumininReady = () => lumininVideo && lumininVideo.readyState >= 2 && lumininVideo.videoWidth;
+
+// Footprints: each time a foot comes down, a print in a colour from the Luminin, left on the ground where it was, that
+// fades away. They're kept where they are in the world, so they stay put on the ground as the view moves.
+let footprints = [];
+let lastFootfall = null; // Which footfall of its walk it was on last frame
+let colourPicker = null; // A tiny canvas for picking colours out of the video
+const footprintLife = 6; // How many seconds a print lasts, fading all the while
+const footprintsPerStride = 2; // How many prints each stride of its walk leaves (a stride's mouseSteps pictures)
+const footprintSize = 7; // How big a print is, in the mouse's own measure
+const footprintApart = 5; // How far apart its left and right prints are, side to side, in the mouse's own measure
+const footprintMost = 80; // The most there can be at once
+const footprintSaturate = 1.8; // How much the picked colours are pushed up
+
+function pickLumininColour() {
+  if (!lumininReady()) return `hsl(${Math.random() * 360}, 90%, 55%)`;
+  colourPicker ??= document.createElement('canvas');
+  colourPicker.width = colourPicker.height = 1;
+  const context = colourPicker.getContext('2d', { willReadFrequently: true });
+  const video = lumininVideo;
+  // A bright spot: a few tries, keeping the brightest
+  let best = null;
+  let bestLight = -1;
+  for (let i = 0; i < 6; i++) {
+    context.filter = `saturate(${footprintSaturate})`;
+    context.drawImage(video, Math.random() * video.videoWidth, Math.random() * video.videoHeight, 4, 4, 0, 0, 1, 1);
+    const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
+    const light = Math.max(r, g, b);
+    if (light > bestLight) {
+      bestLight = light;
+      best = `rgb(${r},${g},${b})`;
+    }
+  }
+  return best;
+}
+
+function leaveFootprints(seconds) {
+  if (!mouse.walking) {
+    lastFootfall = null;
+    return;
+  }
+  const footfall = Math.floor((mouse.walked * footprintsPerStride) / mouseSteps);
+  if (lastFootfall !== null && footfall !== lastFootfall) {
+    footprints.push({ x: mouse.x, depth: mouse.depth, side: footfall % 2 ? 1 : -1, facing: mouse.facing, colour: pickLumininColour(), at: seconds });
+    if (footprints.length > footprintMost) footprints.shift();
+  }
+  lastFootfall = footfall;
+}
+
+function showFootprints(ctx, seconds) {
+  footprints = footprints.filter((print) => seconds - print.at < footprintLife);
+  const bottom = bottomSize();
+  for (const print of footprints) {
+    const size = sizeOf(print.depth) * mouseScale;
+    const age = (seconds - print.at) / footprintLife;
+    ctx.globalAlpha = 0.85 * (1 - age) * (1 - age);
+    ctx.fillStyle = print.colour;
+    // Lying on the ground: squashed down, the left and right feet a little apart, nearer and further
+    ctx.setTransform(print.facing * size * density, 0, 0, size * density, screenX(print.x, sizeOf(print.depth)) * density, groundAt(sizeOf(print.depth), bottom) * density);
+    const y = print.side * footprintApart * 0.35;
+    ctx.beginPath();
+    ctx.ellipse(0, y, footprintSize * 0.6, footprintSize * 0.28, 0, 0, Math.PI * 2); // The pad
+    for (const toe of [-1, 0, 1]) ctx.ellipse(footprintSize * 0.85, y + toe * footprintSize * 0.22, footprintSize * 0.18, footprintSize * 0.1, 0, 0, Math.PI * 2); // Toes, ahead
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// Inside the mouse, where it's white, a psychedelic pattern from the Luminin: the hidden close-up video (see lumininVideo),
+// with its colours pushed up and its hues turning slowly round, showing through its white parts, under its
+// black lines. Where it's white is found once, from its pictures (see insideSheet()).
+let mouseInside = null; // Its pictures, with only the white parts kept, see-through everywhere else
+let mouseInsideCut = null; // Where this frame's picture of its inside is made
+const mouseInsideZoom = 0.25; // How much of the video's width shows inside it (smaller = closer in, bigger colours)
+const mouseInsideSaturate = 2.2; // How much its colours are pushed up
+const mouseInsideHueTurn = 40; // How many degrees its hues turn round each second
+
+function insideSheet() {
+  const canvas = document.createElement('canvas');
+  canvas.width = mouseSheet.width;
+  canvas.height = mouseSheet.height;
+  const context = canvas.getContext('2d');
+  context.drawImage(mouseSheet, 0, 0);
+  const image = context.getImageData(0, 0, canvas.width, canvas.height);
+  const data = image.data;
+  for (let i = 0; i < data.length; i += 4) {
+    const light = (data[i] + data[i + 1] + data[i + 2]) / (3 * 255);
+    // Only what's white: the black lines, and their soft edges, go see-through
+    data[i + 3] = Math.round(data[i + 3] * Math.max(0, (light - 0.5) / 0.5));
+  }
+  context.putImageData(image, 0, 0);
+  return canvas;
+}
+
+function showMouseInside(ctx, seconds, cellX, cellY, cellWidth, cellHeight) {
+  const video = lumininVideo;
+  if (!video || video.readyState < 2 || !video.videoWidth) return; // Plain white until the video's ready
+  mouseInside ??= insideSheet();
+  mouseInsideCut ??= document.createElement('canvas');
+  const cut = mouseInsideCut;
+  if (cut.width !== Math.ceil(cellWidth) || cut.height !== Math.ceil(cellHeight)) {
+    cut.width = Math.ceil(cellWidth);
+    cut.height = Math.ceil(cellHeight);
+  }
+  const context = cut.getContext('2d');
+  context.globalCompositeOperation = 'copy';
+  context.drawImage(mouseInside, cellX, cellY, cellWidth, cellHeight, 0, 0, cut.width, cut.height);
+  context.globalCompositeOperation = 'source-in';
+  context.filter = `saturate(${mouseInsideSaturate}) hue-rotate(${(seconds * mouseInsideHueTurn) % 360}deg)`;
+  const sourceWide = video.videoWidth * mouseInsideZoom;
+  const sourceTall = (sourceWide * cut.height) / cut.width;
+  context.drawImage(video, (video.videoWidth - sourceWide) / 2, (video.videoHeight - sourceTall) / 2, sourceWide, sourceTall, 0, 0, cut.width, cut.height);
+  context.filter = 'none';
+  context.globalCompositeOperation = 'source-over';
+  ctx.drawImage(cut, -mouseFeetX, -mouseFeetY, mouseWidth, mouseHeight);
+}
+
 // The mouse, drawn facing whichever way it's going (see moveMouse())
 function showMouse(ctx, seconds) {
   let bigger = sizeOf(mouse.depth);
@@ -752,7 +883,16 @@ function showMouse(ctx, seconds) {
   let size = bigger * mouseScale * (1 - (mouse.falling ?? 0)); // Dropping into a hole, it gets smaller
   ctx.globalAlpha = 1;
   ctx.setTransform(mouse.facing * size * density, 0, 0, size * density, screenX(mouse.x, bigger) * density, groundAt(bigger, bottomSize()) * density);
-  ctx.drawImage(mouseSheet, (Math.floor(step) % mouseSteps) * cellWidth, (mouse.view * mouseActions + action) * cellHeight, cellWidth, cellHeight, -mouseFeetX, -mouseFeetY, mouseWidth, mouseHeight);
+  let cellX = (Math.floor(step) % mouseSteps) * cellWidth;
+  let cellY = (mouse.view * mouseActions + action) * cellHeight;
+  lumininVideo ??= startLumininVideo();
+  leaveFootprints(seconds);
+  ctx.save();
+  showFootprints(ctx, seconds); // Under it
+  ctx.restore();
+  ctx.setTransform(mouse.facing * size * density, 0, 0, size * density, screenX(mouse.x, bigger) * density, groundAt(bigger, bottomSize()) * density);
+  ctx.drawImage(mouseSheet, cellX, cellY, cellWidth, cellHeight, -mouseFeetX, -mouseFeetY, mouseWidth, mouseHeight);
+  showMouseInside(ctx, seconds, cellX, cellY, cellWidth, cellHeight);
 }
 
 // How far down the screen the ground is under a figure of this size.
