@@ -1347,3 +1347,14 @@ a.card:hover {
     width: 95%;
   }
 }
+
+/* Luminin page */
+.luminin-lede { font-size: 1.2em; }
+.luminin-flow { display: flex; flex-wrap: wrap; gap: 0.5em; align-items: center; justify-content: center; margin: 1em 0; opacity: 0.85; }
+.luminin-flow span { border: 1px solid currentColor; padding: 0.3em 0.7em; }
+.luminin-sim { min-height: 320px; display: flex; align-items: center; justify-content: center; text-align: center; }
+.luminin-ideas li { margin-bottom: 0.6em; }
+.performance { display: grid; grid-template-columns: 3fr 2fr; gap: 1.2em; align-items: center; margin: 1.5em 0; }
+.performance video { width: 100%; }
+.performance h3 { margin-top: 0; }
+@media (max-width: 700px) { .performance { grid-template-columns: 1fr; } }

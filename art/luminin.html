@@ -15,86 +15,145 @@
 
   <main class="page">
     <a class="back-link" href="/art/">&larr; art</a>
+
+    <!-- 1. Open on it being played -->
     <h1>the luminin</h1>
+    <video data-src="/media/lumininCloseupStabilized.mp4" autoplay muted loop playsinline></video>
+    <p class="luminin-lede">
+      An instrument that turns a performer's motion into light.
+    </p>
     <p>
       The Luminin is a motion controlled visual instrument which turns the movements of its performer into a dazzling light show.
     </p>
 
-    <h2>since 2021</h2>
-    <div class="placeholder">
-      TODO: a short overview of where the Luminin is today — current version, how it's changed, where it's been used.
+    <!-- 2. How it works -->
+    <h2>how it works</h2>
+    <div class="luminin-flow">
+      <span>performer</span> &rarr; <span>controller</span> &rarr; <span>Raspberry Pi</span> &rarr; <span>LED screens</span>
     </div>
-
-    <!-- Timeline: newest first. Copy a timeline-item per milestone (new version, show, residency, press...). -->
-    <div class="timeline">
-      <div class="timeline-item">
-        <div class="card-meta">YEAR</div>
-        <h3>Milestone title</h3>
-        <p>TODO: what changed or happened — hardware, software, performance.</p>
-        <div class="placeholder">TODO: photo or video</div>
-      </div>
-      <div class="timeline-item">
-        <div class="card-meta">YEAR</div>
-        <h3>Milestone title</h3>
-        <p>TODO: what changed or happened — hardware, software, performance.</p>
-        <div class="placeholder">TODO: photo or video</div>
-      </div>
-    </div>
-
-    <h2>1.0 &mdash; 2021</h2>
-    <div class="container">
-      <iframe class="responsive-iframe" src="https://player.vimeo.com/video/573319415" frameborder=0 allowfullscreen></iframe>
-
-    </div>
-    <p>
-      Modular in design and built with cheap, easy to obtain materials,
-      the Luminin is a proof of concept for a DIY platform which would provide musicians and performers with the tools to design and
-      innovate the visual aspects of their performance while on a budget.</p>
 
     <!-- @include luminin_system.html -->
 
-    <video data-src="/media/lumininGif1_intro.mp4" poster="/media/lumininGif1_intro_poster.jpg" autoplay muted loop playsinline></video>
+    <div class="imageGrid">
+      <img src="/media/lumininPic3_controller.jpg" loading="lazy" alt="The Luminin controller on a guitar headstock">
+      <img src="/media/lumininPic1_screens.jpg" loading="lazy" alt="The two hand-built LED screens">
+    </div>
     <p>
       The controller, mounted on a guitar headstock, contains an MPU accelerometer/gyroscope that measures the motions of a performer and transmits the data to a Raspberry Pi.
-    </p>
-    <div class="imageGrid">
-      <img src="/media/lumininPic3_controller.jpg" loading="lazy">
-      <img src="/media/lumininPic1_screens.jpg" loading="lazy">
-
-    </div>
-
-    <p>
       The Pi runs a Processing sketch which uses data to create a series of animations and displays them across two hand built 26x52” LED screens.
     </p>
     <video data-src="/media/lumininGif_demonstration.mp4" poster="/media/lumininGif_demonstration_poster.jpg" autoplay muted loop playsinline></video>
+
+    <h3>try it</h3>
+    <!-- Luminin simulation goes here: move the mouse / tilt the phone to paint light like the controller does. -->
+    <div id="luminin-sim" class="placeholder luminin-sim">
+      Luminin simulation &mdash; coming soon.<br>
+      Move to paint with light, the way the controller does.
+    </div>
+
+    <!-- 3. The idea -->
+    <h2>the idea</h2>
+    <ul class="luminin-ideas">
+      <li><strong>Played live.</strong> The light comes from a performer's movement in the moment, so it keeps the risk and life of live playing.</li>
+      <li><strong>A score, not eye candy.</strong> A light show is to a song what a film score is to a film: it serves the music.</li>
+      <li><strong>Screens as canvas.</strong> Sprites are brushes leaving temporary trails of paint; how long trails last, their colour and motion set the mood.</li>
+    </ul>
     <p>
       By tying movement to visual output, and bestowing a performer with power to modify and manipulate their
       visual environment with a flick of the wrist, the Luminin opens the door for a new artistic
-      language a syntax for the choreography of light and image.
+      language: a syntax for the choreography of light and image.
     </p>
-
     <p>
-      For updates on the project follow me on <a href="https://www.instagram.com/o.wake_music/"> instagram</a>
-      If you are interested in reading my full thesis paper, which goes far deeper into the technical details and philosophical
-      motivations behind this project, you can download a copy of the pdf <a href="/media/G_21SP_ShouvalO_Thesis-signedLB.pdf" download> here </a>
-
+      Modular in design and built with cheap, easy to obtain materials,
+      the Luminin is a proof of concept for a DIY platform which would provide musicians and performers with the tools to design and
+      innovate the visual aspects of their performance while on a budget.
     </p>
-    <h2>odysseus</h2>
+    <p>
+      My full thesis goes far deeper into the technical details and philosophical motivations behind this project:
+      <a href="/media/G_21SP_ShouvalO_Thesis-signedLB.pdf" download>download the pdf</a>.
+    </p>
+
+    <!-- 4. Live: the Luminin in real shows -->
+    <h2>live</h2>
+    <p>TODO: a line on playing the Luminin live with O. Wake, the panels behind the band.</p>
+
+    <h3>full set &mdash; baby's all right</h3>
     <div class="container">
-      <iframe class="responsive-iframe" src="https://www.youtube-nocookie.com/embed/1tQot8G7MDU" title="O. Wake - Odysseus (Official Music Video)" frameborder="0" allow="fullscreen; picture-in-picture; encrypted-media" allowfullscreen></iframe>
+      <iframe class="responsive-iframe" src="https://www.youtube-nocookie.com/embed/pXr-H7jDfHc" title="O. Wake live at Baby's All Right" frameborder="0" allow="fullscreen; picture-in-picture; encrypted-media" allowfullscreen loading="lazy"></iframe>
     </div>
-    <p>
-      The music video for O. Wake's "Odysseus", filmed with the Luminin as its backdrop.
-    </p>
+    <p>TODO: date, and a sentence on the show.</p>
 
+    <h3>from the shows</h3>
+    <!-- Short clips of specific songs: one .live-clip per song. Compress to a few MB, mp4, in public/media/. -->
+    <div class="imageGrid">
+      <div class="placeholder">TODO: clip — song title, venue, date</div>
+      <div class="placeholder">TODO: clip — song title, venue, date</div>
+      <div class="placeholder">TODO: clip — song title, venue, date</div>
+      <div class="placeholder">TODO: clip — song title, venue, date</div>
+    </div>
+    <!-- Photos of the band with the panels behind: lazy-loaded jpgs, about 1600px wide. -->
+    <div class="imageGrid">
+      <div class="placeholder">TODO: photo</div>
+      <div class="placeholder">TODO: photo</div>
+      <div class="placeholder">TODO: photo</div>
+      <div class="placeholder">TODO: photo</div>
+    </div>
+
+    <!-- 5. Close-ups: one song per row. TODO: check titles and write a line on each song's mood. -->
+    <h2>close-ups</h2>
+    <div class="performance">
+      <video data-src="/media/lumininGif1_intro.mp4" poster="/media/lumininGif1_intro_poster.jpg" autoplay muted loop playsinline></video>
+      <div><h3>intro</h3><p>TODO: a sentence on the song and the light's mood.</p></div>
+    </div>
+    <div class="performance">
+      <video data-src="/media/lumininGif3_riper.mp4" poster="/media/lumininGif3_riper_poster.jpg" autoplay muted loop playsinline></video>
+      <div><h3>riper than ripe</h3><p>TODO: a sentence on the song and the light's mood.</p></div>
+    </div>
+    <div class="performance">
+      <video data-src="/media/lumininGif4_unfamiliar.mp4" poster="/media/lumininGif4_unfamiliar_poster.jpg" autoplay muted loop playsinline></video>
+      <div><h3>unfamiliar</h3><p>TODO: a sentence on the song and the light's mood.</p></div>
+    </div>
+    <div class="performance">
+      <video data-src="/media/lumininGif2_jkolitm.mp4" poster="/media/lumininGif2_jkolitm_poster.jpg" autoplay muted loop playsinline></video>
+      <div><h3>TODO: full title (jkolitm)</h3><p>TODO: a sentence on the song and the light's mood.</p></div>
+    </div>
+    <div class="performance">
+      <video data-src="/media/lumininGif6_red.mp4" poster="/media/lumininGif6_red_poster.jpg" autoplay muted loop playsinline></video>
+      <div><h3>red</h3><p>TODO: a sentence on the song and the light's mood.</p></div>
+    </div>
+    <div class="performance">
+      <video data-src="/media/lumininGif5_hdme.mp4" poster="/media/lumininGif5_hdme_poster.jpg" autoplay muted loop playsinline></video>
+      <div><h3>TODO: full title (hdme)</h3><p>TODO: a sentence on the song and the light's mood.</p></div>
+    </div>
+
+    <!-- 6. Versions, newest first -->
+    <h2>versions</h2>
+    <div class="timeline">
+      <div class="timeline-item">
+        <div class="card-meta">TODO: year</div>
+        <h3>odysseus</h3>
+        <div class="container">
+          <iframe class="responsive-iframe" src="https://www.youtube-nocookie.com/embed/1tQot8G7MDU" title="O. Wake - Odysseus (Official Music Video)" frameborder="0" allow="fullscreen; picture-in-picture; encrypted-media" allowfullscreen></iframe>
+        </div>
+        <p>The music video for O. Wake's "Odysseus", filmed with the Luminin as its backdrop.</p>
+      </div>
+      <div class="timeline-item">
+        <div class="card-meta">2021</div>
+        <h3>1.0</h3>
+        <div class="container">
+          <iframe class="responsive-iframe" src="https://player.vimeo.com/video/573319415" frameborder=0 allowfullscreen></iframe>
+        </div>
+        <p>The first Luminin, built as my MFA thesis at Pratt.</p>
+      </div>
+      <!-- Copy a timeline-item per further milestone (new version, show, residency...). -->
+    </div>
+
+    <!-- 7. Close with the music -->
+    <h2>the music</h2>
     <p>
-      - action gifs -
+      The Luminin exists to serve songs. Hear them on the <a href="/music/">music page</a>,
+      and follow <a href="https://www.instagram.com/o.wake_music/">O. Wake on instagram</a> for updates.
     </p>
-    <video data-src="/media/lumininGif3_riper.mp4" poster="/media/lumininGif3_riper_poster.jpg" autoplay muted loop playsinline></video>
-    <video data-src="/media/lumininGif4_unfamiliar.mp4" poster="/media/lumininGif4_unfamiliar_poster.jpg" autoplay muted loop playsinline></video>
-    <video data-src="/media/lumininGif2_jkolitm.mp4" poster="/media/lumininGif2_jkolitm_poster.jpg" autoplay muted loop playsinline></video>
-    <video data-src="/media/lumininGif6_red.mp4" poster="/media/lumininGif6_red_poster.jpg" autoplay muted loop playsinline></video>
-    <video data-src="/media/lumininGif5_hdme.mp4" poster="/media/lumininGif5_hdme_poster.jpg" autoplay muted loop playsinline></video>
   </main>
 </body>
 
