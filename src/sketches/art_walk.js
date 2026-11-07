@@ -570,11 +570,11 @@ function showSign(ctx, hole) {
   ctx.globalAlpha = 1;
   let postHeight = holeBack - hole.signBottom;
   let postMargin = (signMargin * postHeight) / signPen.post;
-  ctx.drawImage(hole.sign.post, middle - signMargin * scale, hole.signBottom - postMargin, signMargin * 2 * scale, postHeight + postMargin * 2);
+  ctx.drawImage(duskBoard(hole.sign.post, (hole.signBottom + holeBack) / 2), middle - signMargin * scale, hole.signBottom - postMargin, signMargin * 2 * scale, postHeight + postMargin * 2);
   let marginX = signMargin * scale;
   let marginY = (signMargin * hole.signHeight) / signPen.height;
   ctx.drawImage(
-    hole.sign.board,
+    duskBoard(hole.sign.board, hole.signBottom - hole.signHeight / 2),
     middle - hole.signWidth / 2 - marginX, hole.signBottom - hole.signHeight - marginY,
     hole.signWidth + marginX * 2, hole.signHeight + marginY * 2,
   );
@@ -588,7 +588,7 @@ function showHole(ctx, hole) {
   ctx.setTransform(density, 0, 0, density, 0, 0);
   ctx.globalAlpha = alpha * Math.min(1, pow(hole.width / holeWidth / bottomSize(), distanceFade)); // The same fade as the crowd's
   ctx.globalCompositeOperation = 'difference';
-  ctx.drawImage(hole.picture, hole.left - margin, hole.ground - hole.height / 2 - margin, hole.width + margin * 2, hole.height + margin * 2);
+  ctx.drawImage(duskHole(hole.picture, hole.ground), hole.left - margin, hole.ground - hole.height / 2 - margin, hole.width + margin * 2, hole.height + margin * 2);
   ctx.globalCompositeOperation = 'source-over';
 }
 
@@ -686,6 +686,7 @@ function draw() {
   moveMouse();
   placeHoles();
   background(255);
+  if (duskOn) showGround(drawingContext);
   let seconds = millis() / 1000;
   crowdStarted ??= seconds;
   // It grows by the same share of itself all the way, so that they keep arriving at a pace that shows
@@ -780,6 +781,103 @@ function draw() {
   for (let hole of holes) showHole(ctx, hole);
   ctx.setTransform(density, 0, 0, density, 0, 0);
   ctx.globalAlpha = 1;
+  showDusk(ctx);
+}
+
+// Dusk: the ground's a light grey, a little darker and bluer further back, with the black lines on it. Only the ground's dark, so the
+// mouse, its inside and its footprints stay as bright as ever. The holes are turned to match (see duskHole()), and
+// the corners are a little darker still.
+let duskOn = true;
+const duskNear = [255, 255, 255]; // The ground nearest the camera, at the bottom of the screen: white
+const duskFar = [214, 219, 230]; // ...and furthest away, at the top: a little darker and bluer
+let duskGradient = null; // The ground's colours, made once for the height of the screen
+
+// The ground's colour this far down the screen
+function groundColourAt(y) {
+  const t = Math.min(1, Math.max(0, y / height));
+  return duskFar.map((far, i) => Math.round(far + (duskNear[i] - far) * t));
+}
+
+function showGround(ctx) {
+  if (!duskGradient || duskGradient.height !== height) {
+    duskGradient = ctx.createLinearGradient(0, 0, 0, height);
+    duskGradient.addColorStop(0, `rgb(${duskFar.join(',')})`);
+    duskGradient.addColorStop(1, `rgb(${duskNear.join(',')})`);
+    duskGradient.height = height;
+  }
+  ctx.setTransform(density, 0, 0, density, 0, 0);
+  ctx.fillStyle = duskGradient;
+  ctx.fillRect(0, 0, width, height);
+}
+const duskEdges = 0; // How much darker it gets out at the corners (0 = not at all)
+let duskCorners = null; // The darkening at the corners, painted once for the size of the screen
+const duskHoles = new Map(); // Each hole's picture in the ground's colour, made once
+
+// A hole's picture is white, drawn so it turns whatever's under it inside out, which on white ground makes it black
+// with the crowd walking across it in white. In the ground's own colour instead, on this ground it does the same:
+// black, with the crowd across it in that dark blue grey.
+// A sign's board, its white turned the ground's colour round it, so it fits in, made once for each shade
+const duskBoards = new Map();
+function duskBoard(board, y) {
+  if (!duskOn) return board;
+  const key = groundColourAt(Math.round((y / height) * 16) / 16 * height).join(',');
+  let tints = duskBoards.get(board);
+  if (!tints) duskBoards.set(board, (tints = new Map()));
+  let tinted = tints.get(key);
+  if (!tinted) {
+    tinted = document.createElement('canvas');
+    tinted.width = board.width;
+    tinted.height = board.height;
+    const context = tinted.getContext('2d');
+    context.drawImage(board, 0, 0);
+    context.globalCompositeOperation = 'multiply'; // White takes the colour, black stays black
+    context.fillStyle = `rgb(${key})`;
+    context.fillRect(0, 0, tinted.width, tinted.height);
+    context.globalCompositeOperation = 'destination-in'; // ...and only where the board is
+    context.drawImage(board, 0, 0);
+    tints.set(key, tinted);
+  }
+  return tinted;
+}
+
+function duskHole(picture, y) {
+  if (!duskOn) return picture;
+  const colour = groundColourAt(Math.round((y / height) * 16) / 16 * height); // (In a few steps, so it's only made a few times)
+  const key = `${colour.join(',')}`;
+  let tints = duskHoles.get(picture);
+  if (!tints) duskHoles.set(picture, (tints = new Map()));
+  let tinted = tints.get(key);
+  if (!tinted) {
+    tinted = document.createElement('canvas');
+    tinted.width = picture.width;
+    tinted.height = picture.height;
+    const context = tinted.getContext('2d');
+    context.drawImage(picture, 0, 0);
+    context.globalCompositeOperation = 'source-in';
+    context.fillStyle = `rgb(${key})`;
+    context.fillRect(0, 0, tinted.width, tinted.height);
+    tints.set(key, tinted);
+  }
+  return tinted;
+}
+
+function paintCorners() {
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.ceil(width);
+  canvas.height = Math.ceil(height);
+  const context = canvas.getContext('2d');
+  const corners = context.createRadialGradient(canvas.width / 2, canvas.height * 0.55, Math.min(canvas.width, canvas.height) * 0.35, canvas.width / 2, canvas.height * 0.55, Math.hypot(canvas.width, canvas.height) * 0.6);
+  corners.addColorStop(0, 'rgba(0,0,0,0)');
+  corners.addColorStop(1, `rgba(0,0,8,${duskEdges})`);
+  context.fillStyle = corners;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  return canvas;
+}
+
+function showDusk(ctx) {
+  if (!duskOn) return;
+  if (!duskCorners || duskCorners.width !== Math.ceil(width) || duskCorners.height !== Math.ceil(height)) duskCorners = paintCorners();
+  ctx.drawImage(duskCorners, 0, 0, width, height);
 }
 
 // The colours of the Luminin, for the mouse's inside and its footprints: the stabilized close-up of it plays, hidden
@@ -1006,6 +1104,7 @@ function showFootprints(ctx, seconds) {
 let mouseInside = null; // Its pictures, with only the white parts kept, see-through everywhere else
 let mouseInsideCut = null; // Where this frame's picture of its inside is made
 const mouseInsideZoom = 0.25; // How much of the video's width shows inside it (smaller = closer in, bigger colours)
+const mouseInsideBright = 1.6; // How much brighter than the video it is, glowing against the dusk
 const mouseInsideSaturate = 2.2; // How much its colours are pushed up
 const mouseInsideHueTurn = 40; // How many degrees its hues turn round each second
 
@@ -1040,7 +1139,7 @@ function showMouseInside(ctx, seconds, cellX, cellY, cellWidth, cellHeight) {
   context.globalCompositeOperation = 'copy';
   context.drawImage(mouseInside, cellX, cellY, cellWidth, cellHeight, 0, 0, cut.width, cut.height);
   context.globalCompositeOperation = 'source-in';
-  context.filter = `saturate(${mouseInsideSaturate}) hue-rotate(${(seconds * mouseInsideHueTurn) % 360}deg)`;
+  context.filter = `brightness(${mouseInsideBright}) saturate(${mouseInsideSaturate}) hue-rotate(${(seconds * mouseInsideHueTurn) % 360}deg)`;
   const sourceWide = video.videoWidth * mouseInsideZoom;
   const sourceTall = (sourceWide * cut.height) / cut.width;
   context.drawImage(video, (video.videoWidth - sourceWide) / 2, (video.videoHeight - sourceTall) / 2, sourceWide, sourceTall, 0, 0, cut.width, cut.height);
