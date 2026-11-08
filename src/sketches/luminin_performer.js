@@ -53,7 +53,7 @@ const SHOW_LIGHT = false; // The controller's light blooming and leaving a trail
 // behind a sheet of paper
 const PANEL = { across: 16, down: 32 };
 const SKETCH_SIZE = 0.7; // The sketch's size, for each pixel of the space left of the screens
-const GUITAR_SIZE = 1.35; // ...and the guitar's length
+const GUITAR_SIZE = 1.0; // ...and the guitar's length
 const LAYOUT = layoutFor(W, H);
 
 export function createPerformer(holder, { onButton }) {
@@ -95,13 +95,26 @@ export function createPerformer(holder, { onButton }) {
     if (body && body.letGo) body.letGo(name);
   }
   const KEYS = { ArrowDown: 'down', ArrowUp: 'up', s: 'tiltDown', w: 'tiltUp', a: 'sway', d: 'sway' };
-  canvas.addEventListener('keydown', (event) => {
-    const name = KEYS[event.key];
-    if (!name) return;
+  // The keys work whenever the stage is on screen (not while typing, or with a modifier held), and light up their
+  // button while they're down
+  let onScreen = false;
+  new IntersectionObserver((entries) => (onScreen = entries.some((entry) => entry.isIntersecting))).observe(canvas);
+  const buttonFor = (name) => holder.querySelector(`[data-move="${name}"]`);
+  const ours = (event) =>
+    onScreen && !event.metaKey && !event.ctrlKey && !event.altKey && !event.target.closest?.('input, textarea, select, [contenteditable]');
+  addEventListener('keydown', (event) => {
+    const name = KEYS[event.key.length === 1 ? event.key.toLowerCase() : event.key];
+    if (!name || !ours(event)) return;
     event.preventDefault();
+    buttonFor(name)?.classList.add('pressed');
     if (!event.repeat) play(name);
   });
-  canvas.addEventListener('keyup', (event) => letGo(KEYS[event.key]));
+  addEventListener('keyup', (event) => {
+    const name = KEYS[event.key.length === 1 ? event.key.toLowerCase() : event.key];
+    if (!name) return;
+    buttonFor(name)?.classList.remove('pressed');
+    letGo(name);
+  });
   for (const button of holder.querySelectorAll('[data-move]')) {
     const name = button.dataset.move;
     if (HELD_MOVES.has(name)) {
@@ -250,6 +263,15 @@ export function createPerformer(holder, { onButton }) {
       },
       // The moves playing (a held one until it's eased all the way out)
       moves: () => [...jolts.map((j) => j.name), ...Object.keys(holds).filter((name) => holds[name].amount > 0)],
+      // Where the guitar's body and its controller are when it's at rest (for their names)
+      spots() {
+        const now = pose;
+        pose = { ...REST };
+        const controller = onStage(MUSTANG.controller);
+        const top = onStage([MUSTANG.pivot[0] - MUSTANG.width * 0.05, MUSTANG.pivot[1] - MUSTANG.height * 0.42]);
+        pose = now;
+        return { guitar: top, controller };
+      },
       // The controller's own LEDs, lit as its firmware lights them, and the glow they cast
       lights(c) {
         if (!image.width) return;
@@ -554,6 +576,8 @@ export function createPerformer(holder, { onButton }) {
       }
       ledContext.putImageData(image, 0, 0);
     } else ledContext.clearRect(0, 0, leds.width, leds.height);
+    // What the screens show, for the page's background to light up with (see luminin_background.js)
+    window.dispatchEvent(new CustomEvent('luminin:leds', { detail: leds }));
 
     for (let side = 0; side < 2; side++) {
       const c = litContext;
@@ -592,46 +616,63 @@ export function createPerformer(holder, { onButton }) {
     }
   }
 
-  // ------------------------------------------------------------ Labels, on hover
-  // While the pointer's over the stage, the data's way through the rig is drawn on it (as the page's system diagram has
-  // it): from the controller, over the air to the receiver and on to the Pi running the sketch, and from the sketch to
-  // the screens. Whatever's under the pointer is named
+  // ------------------------------------------------------------ The Raspberry Pi, and labels on hover
+  // The Pi that runs the sketch, drawn small to the left of it, as a line drawing like the page's
+  // system diagram. Pointing at a part shows the data's way to or from it on the stage (as the diagram has it): from
+  // the controller over the air to the receiver and on to the Pi, from the Pi to the sketch it runs, and from the Pi to
+  // the screens. What it is, and what's flowing, are written over the stage, so they don't cover any of it
+  const PI_BOARD = (() => {
+    const { x, y, size } = LAYOUT.sketch;
+    const gap = x; // Left of the sketch
+    const w = Math.round(gap * 0.6);
+    const h = Math.round(w * (56 / 85)); // A Raspberry Pi's 85 x 56 mm
+    return { x: Math.round((gap - w) / 2), y: Math.round(y + (size - h) / 2), w, h };
+  })();
+  function raspberryPi() {
+    const { x, y, w, h } = PI_BOARD;
+    const u = w / 85; // A mm
+    const c = context;
+    c.save();
+    c.fillStyle = 'rgba(8, 8, 10, 0.9)';
+    c.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+    c.lineWidth = 1;
+    // The board, its corners rounded, and its four mounting holes
+    c.beginPath();
+    c.roundRect(x, y, w, h, 3 * u);
+    c.fill();
+    c.stroke();
+    for (const [hx, hy] of [[3.5, 3.5], [61.5, 3.5], [3.5, 52.5], [61.5, 52.5]]) {
+      c.beginPath();
+      c.arc(x + hx * u, y + hy * u, 1.4 * u, 0, Math.PI * 2);
+      c.stroke();
+    }
+    // The GPIO header along the top edge: two rows of twenty pins
+    for (let i = 0; i < 20; i++) {
+      for (let j = 0; j < 2; j++) c.strokeRect(x + (7 + i * 2.54) * u, y + (1 + j * 2.54) * u, 1.6 * u, 1.6 * u);
+    }
+    // The processor, and the USB and Ethernet ports hanging off the right edge
+    c.strokeRect(x + 22 * u, y + 20 * u, 15 * u, 15 * u);
+    for (const [py, ph] of [[2, 15], [21, 15], [39, 16]]) c.strokeRect(x + 70 * u, y + py * u, 17 * u, ph * u);
+    c.restore();
+  }
   const NAMES = {
-    controller: ['the controller', 'an accelerometer and gyroscope on the headstock (an MPU on an ESP32),', 'read 20 times a second; its own 8 x 4 LEDs light up with the tilt and jolts'],
-    guitar: ['the guitar', "Ofer's Fender Mustang, played with the controller on its headstock"],
-    sketch: ['the sketch', 'Processing, on the Raspberry Pi; the dots are the 32 x 32 pixels the screens take'],
-    left: ['the left screen', '16 x 32 LEDs behind paper, showing the left half of the sketch'],
-    right: ['the right screen', '16 x 32 LEDs behind paper, showing the right half of the sketch'],
+    controller: ['controller', 'motion sensor and 8 x 4 LEDs on the headstock'],
+    pi: ['raspberry pi', 'runs the sketch, drives the screens'],
+    guitar: ['guitar', 'Fender Mustang'],
+    sketch: ['sketch', 'Processing; dots = the LEDs\' pixels'],
+    left: ['left screen', '16 x 32 LEDs behind paper: the left half'],
+    right: ['right screen', '16 x 32 LEDs behind paper: the right half'],
   };
   function under([x, y], sketch) {
+    const inside = (r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
     if (Math.hypot(x - controllerOnScreen[0], y - controllerOnScreen[1]) < 16) return 'controller';
+    if (inside(PI_BOARD)) return 'pi';
     if (x >= 0 && y >= 0 && x < W && y < H && maskContext.getImageData(Math.floor(x), Math.floor(y), 1, 1).data[3] > 60) return 'guitar';
     const { x: sx, y: sy, size } = LAYOUT.sketch;
-    if (sketch && x >= sx && x <= sx + size && y >= sy && y <= sy + size) return 'sketch';
+    if (sketch && inside({ x: sx, y: sy, w: size, h: size })) return 'sketch';
     const { xs, y: py, width, height } = LAYOUT.screens;
-    for (const [i, name] of [[0, 'left'], [1, 'right']]) if (x >= xs[i] && x <= xs[i] + width && y >= py && y <= py + height) return name;
+    for (const [i, name] of [[0, 'left'], [1, 'right']]) if (inside({ x: xs[i], y: py, w: width, h: height })) return name;
     return null;
-  }
-  const FONT = '11px Inconsolata, monospace';
-  // A few lines of text in a dark box, the first brighter, kept on the stage
-  function note(lines, x, y, { above = false } = {}) {
-    context.save();
-    context.font = FONT;
-    const width = Math.max(...lines.map((line) => context.measureText(line).width)) + 14;
-    const height = lines.length * 14 + 8;
-    x = clamp(x, 4, W - width - 4);
-    y = clamp(above ? y - height : y, 4, H - height - 4);
-    context.fillStyle = 'rgba(8, 8, 10, 0.85)';
-    context.fillRect(x, y, width, height);
-    context.strokeStyle = 'rgba(255, 255, 255, 0.35)';
-    context.lineWidth = 1;
-    context.strokeRect(x + 0.5, y + 0.5, width - 1, height - 1);
-    context.textBaseline = 'top';
-    lines.forEach((line, i) => {
-      context.fillStyle = i ? 'rgba(255, 255, 255, 0.7)' : 'white';
-      context.fillText(line, x + 7, y + 5 + i * 14);
-    });
-    context.restore();
   }
   // A dashed line flowing from a to b, bowed to one side, with an arrowhead at b; where its middle is
   function flow(a, b, bow) {
@@ -656,26 +697,74 @@ export function createPerformer(holder, { onButton }) {
     context.restore();
     return [(a[0] + 2 * mid[0] + b[0]) / 4, (a[1] + 2 * mid[1] + b[1]) / 4];
   }
-  function labels(sketch) {
+  // Each part's name, just above it, staying put
+  function names(sketch) {
+    const c = context;
+    c.save();
+    c.font = '10px Inconsolata, monospace';
+    c.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    c.textAlign = 'center';
+    c.textBaseline = 'bottom';
+    const lift = 5;
     const { x: sx, y: sy, size } = LAYOUT.sketch;
-    const { xs, y: py, height } = LAYOUT.screens;
+    const { xs, y: py, width } = LAYOUT.screens;
+    if (sketch) c.fillText('sketch', sx + size / 2, sy - lift);
+    c.fillText('raspberry pi', PI_BOARD.x + PI_BOARD.w / 2, PI_BOARD.y - lift);
+    c.fillText('left screen', xs[0] + width / 2, py - lift);
+    c.fillText('right screen', xs[1] + width / 2, py - lift);
+    const spots = body.spots && body.spots();
+    if (spots) {
+      c.fillText('guitar', spots.guitar[0], spots.guitar[1] - lift);
+      c.fillText('controller', spots.controller[0], spots.controller[1] - 16);
+    }
+    c.restore();
+  }
+
+  // The words go in the lines over the stage, which say how to play it when nothing's pointed at
+  const info = holder.querySelector('.luminin-sim-readout');
+  const playing = info && info.innerHTML;
+  let said = null;
+  function say(lines) {
+    if (!info) return;
+    const html = lines ? lines.map((line, i) => (i ? `<span>${line}</span>` : `<strong>${line}</strong>`)).join('<br>') : playing;
+    if (html !== said) info.innerHTML = said = html;
+  }
+  function labels(sketch) {
+    const name = hover && under(hover, sketch);
+    if (!name) return say(null);
+    const { x: sx, y: sy, size } = LAYOUT.sketch;
+    const { xs, y: py, width } = LAYOUT.screens;
+    const P = PI_BOARD;
     const r = readings;
     const n = (v) => (Math.round(v * 100) / 100).toString();
-    if (sketch) {
-      // Controller to the sketch
-      const at = flow(controllerOnScreen, [sx + size / 2, sy + size + 4], -0.25);
-      note([
-        'controller > ESP-NOW (over the air) > Wemos D1 Mini > serial JSON > Raspberry Pi',
-        `zTilt ${n(r.zTilt)}  totalAcc ${n(r.totalAcc)}  gyroX ${Math.round(r.gyroX)}  gyroY ${Math.round(r.gyroY)}`,
-        `upJolt ${r.upJolt}  downJolt ${r.downJolt}  forwardJolt ${r.forwardJolt}  backJolt ${r.backJolt}`,
-      ], at[0] - 20, at[1] - 10, { above: true });
-      // The sketch to the screens
-      const to = [xs[0] - 4, py + height * 0.22];
-      const at2 = flow([sx + size + 4, sy + size * 0.5], to, -0.15);
-      note(['sketch > Fadecandy server > USB > two Fadecandy boards > 512 LEDs each', 'each LED takes the one pixel at its dot'], at2[0] - 40, at2[1] - 46);
+    const lines = [...NAMES[name]];
+    const readout = `zTilt ${n(r.zTilt)} &middot; gyro ${Math.round(r.gyroX)}, ${Math.round(r.gyroY)} &middot; jolts &uarr;${r.upJolt} &darr;${r.downJolt}`;
+    const air = 'controller &rarr; ESP-NOW &rarr; Wemos &rarr; serial &rarr; Pi';
+    const leds = 'Fadecandy &rarr; USB &rarr; screens';
+    // The data's way: in from the controller, to the sketch, and out to each screen
+    const fromController = () => flow(controllerOnScreen, [P.x + P.w / 2, P.y + P.h + 2], -0.2);
+    const toSketch = () => flow([P.x + P.w + 2, P.y + P.h / 2], [sx - 3, sy + size / 2], 0);
+    // ...from under the Pi, round under the sketch, into each screen
+    const toScreens = (which) => {
+      const below = sy + size + (LAYOUT.guitar.middle[1] - sy - size) * 0.25;
+      for (const i of which) flow([P.x + P.w / 2, P.y + P.h + 2], [xs[i] + 8, below + i * 18], 0.18);
+    };
+    if (name === 'controller') {
+      fromController();
+      lines.push(air, readout);
+    } else if (name === 'pi') {
+      fromController();
+      toSketch();
+      toScreens([0, 1]);
+      lines.push(`${air} &rarr; ${leds}`, readout);
+    } else if (name === 'sketch') {
+      toSketch();
+      lines.push('Pi &rarr; Processing');
+    } else if (name === 'left' || name === 'right') {
+      toScreens([name === 'left' ? 0 : 1]);
+      lines.push(`Pi &rarr; ${leds}`);
     }
-    const name = under(hover, sketch);
-    if (name) note(NAMES[name], hover[0] + 14, hover[1] + 14);
+    say(lines);
   }
 
   // ------------------------------------------------------------ Drawing
@@ -704,6 +793,7 @@ export function createPerformer(holder, { onButton }) {
       }
     }
     screens(sketch);
+    raspberryPi();
 
     // The performer, feet on the stage
     maskContext.clearRect(0, 0, W, H);
@@ -720,7 +810,8 @@ export function createPerformer(holder, { onButton }) {
     if (body.lights) body.lights(context);
     if (SHOW_LIGHT) bloom(glowColour, light);
     if (SHOW_GRAPH) graph();
-    if (hover) labels(sketch);
+    names(sketch);
+    labels(sketch);
   }
 
   // The controller's light leaves a fading trail as it moves, like a brush on the screens
@@ -989,16 +1080,16 @@ const clamp = (x, low, high) => Math.min(high, Math.max(low, x));
 
 // Where everything goes on the stage, worked out from its size, on an even grid (one spacing between everything and
 // round the edge): the Luminin's two screens on the right, full height, as big as that makes them at their 1 x 2
-// shape; on the left, a song's sketch at the top (as on the laptop running it), small and centred in the space, its
-// top level with theirs; and the guitar under it, from the left edge and longer than the space is wide, so it reaches
-// over the screens
+// shape; on the left, a song's sketch at the top (as on the laptop running it), small, its top level with theirs,
+// against the screens' side, with room to its left for the Raspberry Pi; and the guitar under it, filling the lower
+// left
 function layoutFor(width, height) {
   const space = Math.round(height * 0.04);
   const tall = height - space * 2;
   const wide = (tall * PANEL.across) / PANEL.down;
   const left = Math.max(0, width - space * 4 - wide * 2);
   const size = Math.round(left * SKETCH_SIZE);
-  const sketch = { x: space + (left - size) / 2, y: space, size };
+  const sketch = { x: space + left - size, y: space, size };
   const below = { top: sketch.y + size + space, bottom: height - space };
   const length = left * GUITAR_SIZE;
   const guitar = {

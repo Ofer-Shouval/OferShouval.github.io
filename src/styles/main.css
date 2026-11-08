@@ -431,6 +431,39 @@ ul {
 }
 
 
+/* Pages whose sections settle into place: scrolling stays free, but stopping near a section's heading glides it the
+   rest of the way, to just under the navbar */
+html:has(.snap-sections) {
+  scroll-snap-type: y proximity;
+  scroll-padding-top: 64px;
+}
+.snap-sections > h2 {
+  scroll-snap-align: start;
+}
+
+/* The teaser is square: as tall as the page's other videos, centred (over .container's 16:9) */
+.container.luminin-teaser {
+  width: min(100%, 393.75px);
+  padding-top: 0;
+  aspect-ratio: 1 / 1;
+  margin: 0 auto 24px;
+}
+
+/* Over it, while the simulation plays, the light of its screens, diffused over the whole page (luminin_background.js) */
+.luminin-glow {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity 0.8s;
+  pointer-events: none;
+}
+.luminin-glow.lit {
+  opacity: 0.6;
+}
+
 /* The line drawing of the Luminin 1.0 system (src/partials/luminin_system.html). On a narrow screen
    it scrolls sideways, since its labels would be too small to read if it shrank to fit. */
 
@@ -1364,10 +1397,17 @@ a.card:hover {
 .luminin-stage { position: relative; max-width: 700px; margin: 24px auto 0; }
 .luminin-stage canvas { display: block; width: 100%; height: auto; background-color: rgba(11, 11, 13, 0.6); outline: none; cursor: grab; touch-action: none; }
 .luminin-stage canvas:active { cursor: grabbing; }
-.luminin-gestures { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 8px; }
-.luminin-gestures button { padding: 4px 10px; border: 1px solid #7a7a7a; background: none; color: white; font-family: 'Inconsolata', monospace; font-size: 13px; cursor: pointer; }
+.luminin-gestures { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 10px 0 24px; }
+.luminin-gestures button { user-select: none; -webkit-user-select: none; padding: 4px 10px; border: 1px solid #7a7a7a; background: none; color: white; font-family: 'Inconsolata', monospace; font-size: 13px; cursor: pointer; }
 .luminin-gestures button:hover { background-color: rgba(100, 100, 100, 0.6); }
-.page .luminin-sim-readout { margin: 8px auto 24px; color: #7a7a7a; font-family: 'Inconsolata', monospace; font-size: 13px; text-align: center; }
+/* Held down, by the pointer or its key */
+.luminin-gestures button:active, .luminin-gestures button.pressed { background-color: rgba(255, 255, 255, 0.85); color: black; }
+/* The key that plays it */
+.luminin-gestures kbd { display: inline-block; min-width: 1.4em; margin-left: 4px; padding: 0 3px; border: 1px solid rgba(255, 255, 255, 0.5); border-radius: 3px; font-family: inherit; font-size: 11px; line-height: 1.4; text-align: center; }
+.page .luminin-sim-readout { margin: 0 0 8px; min-height: 5.6em; color: #7a7a7a; font-family: 'Inconsolata', monospace; font-size: 13px; line-height: 1.4; text-align: left; }
+/* While a part of the simulation's pointed at, it says what it is and what's flowing (luminin_performer.js) */
+.page .luminin-sim-readout strong { color: white; font-weight: normal; }
+.page .luminin-sim-readout span { color: rgba(255, 255, 255, 0.75); }
 .luminin-ideas li { margin-bottom: 0.6em; }
 .performance { display: grid; grid-template-columns: 3fr 2fr; gap: 1.2em; align-items: center; margin: 1.5em 0; }
 .performance video { width: 100%; }

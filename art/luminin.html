@@ -13,29 +13,32 @@
   <video id="luminin-background" class="luminin-background" src="/media/lumininSmear.mp4" muted loop playsinline></video>
   <script type="module" src="/src/scripts/luminin_background.js"></script>
 
-  <main class="page">
+  <main class="page snap-sections">
     <a class="back-link" href="/art/">&larr; art</a>
 
     <!-- 1. Open on it being played -->
     <h1>the luminin</h1>
+    <!-- The teaser, the same as the 1.0 film further down; it's square, so its frame is too (.luminin-teaser) -->
+    <div class="container luminin-teaser">
+      <iframe class="responsive-iframe" src="https://player.vimeo.com/video/573319415" title="The Luminin: teaser" frameborder="0" allow="fullscreen; picture-in-picture" allowfullscreen></iframe>
+    </div>
     <!-- The Luminin, simulated: the guitar with the controller, the sketch it plays, and the screens (see src/sketches/luminin_sim.js and luminin_performer.js) -->
     <figure class="luminin-stage">
       <p class="sim-label">the luminin, simulated</p>
-      <canvas tabindex="0" aria-label="A Fender Mustang guitar in silhouette with the Luminin controller on its headstock, under the sketch it plays (Unfamiliar State), dotted where its LEDs take their colour from. The down and up arrows jolt the guitar down and up, and holding S or W tilts it down or up, and holding A or D swings it side to side; clicking the controller moves to the next song."></canvas>
+      <p class="luminin-sim-readout">point at a part &middot; click the controller for the next song</p>
+      <canvas tabindex="0" aria-label="A Fender Mustang guitar in silhouette with the Luminin controller on its headstock, under the sketch it plays (Unfamiliar State), dotted where its LEDs take their colour from. While it's on screen, the down and up arrows jolt the guitar down and up, holding S or W tilts it down or up, and holding A or D twists it side to side; clicking the controller moves to the next song."></canvas>
       <div class="luminin-gestures">
-        <button data-move="down">jolt down</button>
-        <button data-move="up">jolt up</button>
-        <button data-move="tiltDown">tilt down (hold)</button>
-        <button data-move="tiltUp">tilt up (hold)</button>
-        <button data-move="sway">side to side (hold)</button>
+        <button data-move="down">jolt down <kbd>&darr;</kbd></button>
+        <button data-move="up">jolt up <kbd>&uarr;</kbd></button>
+        <button data-move="tiltDown">tilt down (hold) <kbd>S</kbd></button>
+        <button data-move="tiltUp">tilt up (hold) <kbd>W</kbd></button>
+        <button data-move="sway">side to side (hold) <kbd>A</kbd> <kbd>D</kbd></button>
       </div>
     </figure>
-    <p class="luminin-sim-readout">jolt, tilt or swing the guitar &middot; click the controller for the next song</p>
     <!-- Where the sketch itself draws; the stage shows what it needs of it, so this stays hidden -->
     <figure class="luminin-sim" hidden></figure>
     <script type="module" src="/src/sketches/luminin_sim.js"></script>
 
-    <video data-src="/media/lumininCloseupStabilized.mp4" autoplay muted loop playsinline></video>
     <p class="luminin-lede">
       An instrument that turns a performer's motion into light.
     </p>
