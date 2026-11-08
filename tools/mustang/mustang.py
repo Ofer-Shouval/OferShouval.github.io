@@ -69,15 +69,18 @@ if lit:
 rgba.save(out, optimize=True)
 print(out, rgba.size)
 
-# For the simulation: where the controller is in the image, where the guitar's held (its middle, at the bridge, on the
-# neck's line), and how many pixels make a cm
+# For the simulation: where the controller is in the image, where the guitar's held (its middle, on the neck's line),
+# where its bridge is, and how many pixels make a cm
 if len(sys.argv) > 2 and sys.argv[2].endswith('.json'):
     import json
     PIVOT = (440, 448)
+    # The bridge: a 24" (61 cm) scale back from the nut, which is where the headstock starts (x 925), on the neck's line
+    BRIDGE = (925 - 61 * per_cm, 448)
     json.dump({
         'width': int(W), 'height': int(H),
         'controller': [float((CONTROLLER['centre'][0] - x0) * SCALE), float((CONTROLLER['centre'][1] - y0) * SCALE)],
         'pivot': [float((PIVOT[0] - x0) * SCALE), float((PIVOT[1] - y0) * SCALE)],
+        'bridge': [float((BRIDGE[0] - x0) * SCALE), float((BRIDGE[1] - y0) * SCALE)],
         'perCm': round(float(per_cm * SCALE), 2),
     }, open(sys.argv[2], 'w'))
     print(sys.argv[2])

@@ -10,14 +10,16 @@
 //   puppet   the 3D puppet (luminin_puppet.js), drawn as a flat black silhouette, moving smoothly through its poses;
 //            set aside for now, as it didn't look right
 //
-// For now there are only the jolts down and up (the guitar does both; the sprites and the puppet only the jolt down). What the controller would
+// For now there are the jolts down and up, and three held moves: the tilts down and up, and side to side (the guitar
+// does them all; the sprites and the puppet only the jolt down). What the controller would
 // read comes from how the headstock moves, as the real one's accelerometer and gyroscope would see it: how far it's
 // tipped (zTilt), sudden jerks down and up (downJolt, upJolt), swings toward the audience and back (forwardJolt,
 // backJolt), how hard it's moving (totalAcc), how fast it's turning (gyroX, gyroY), and the little bit of noise the
 // guitar's own hum puts into all of them. A screen beside it graphs those numbers as they come in. (Earlier performers
 // are kept in archive/luminin-performer.)
 //
-// To play it, the buttons under it, or the down and up arrows. Clicking the controller presses its button for the next song.
+// To play it, the buttons under it, or the keys: the down and up arrows jolt it, and S and W tilt it down and up for
+// as long as they're held, and A or D swings it side to side. Clicking the controller presses its button for the next song.
 
 import SHEET from './luminin_performer_frames.json';
 import MUSTANG from './luminin_mustang.json';
@@ -29,8 +31,10 @@ const FEET = [260, 480]; // Where the performer stands on the stage
 const STANDING = 330; // ...and how tall, in pixels
 
 // The jolts each move is tied to: a move's motion only counts toward its own (the catch at the bottom of a jolt down
-// would otherwise read as a jolt up, and the dip before a jolt up as a jolt down)
-const TIED = { down: ['downJolt'], up: ['upJolt'] };
+// would otherwise read as a jolt up, and the dip before a jolt up as a jolt down). With moves combined, any of those
+// playing counts
+const TIED = { down: ['downJolt'], up: ['upJolt'], tiltDown: [], tiltUp: [], sway: ['forwardJolt', 'backJolt'] };
+const HELD_MOVES = new Set(['tiltDown', 'tiltUp', 'sway']); // Kept up for as long as they're held
 
 const HUM = 0.04; // The guitar's vibration, in g
 const NECK = 85; // How far the controller is from the guitar's middle, in cm (for how fast it's swinging)
@@ -38,13 +42,17 @@ const NECK = 85; // How far the controller is from the guitar's middle, in cm (f
 // How the motion becomes the controller's numbers (roughly in the ranges the original sketches expect)
 const JOLT_FADE = 0.98; // How much of a jolt is left each time round the controller's loop
 const JOLT_LOOP = 0.05; // ...which comes round every 50 ms
-const GYRO_SCALE = 0.1; // For each degree a second
+const GYRO_LERP = 30; // How slowly the firmware's gyro readings follow (a 30th of the way each loop)
+const GYRO_NOISE = 3; // The gyroscope's own jitter, in degrees a second
 
 const SHOW_STAGE = false; // The stage (the screens behind the performer, and the room's haze and beams), off for now
 // (the canvas is see-through)
 const SHOW_GRAPH = false; // The graph of the controller's readings, off for now
 const SHOW_LIGHT = false; // The controller's light blooming and leaving a trail, off for now
-const SKETCH = { x: 20, y: 10, size: 300 }; // Where a song's sketch is shown, as on the laptop
+// The Luminin's screens: two panels of 16 x 32 LEDs, side by side (making the 32 x 32 the sketch is sampled at), each
+// behind a sheet of paper
+const PANEL = { across: 16, down: 32 };
+const LAYOUT = layoutFor(W, H);
 
 export function createPerformer(holder, { onButton }) {
   const canvas = holder.querySelector('canvas');
@@ -62,6 +70,7 @@ export function createPerformer(holder, { onButton }) {
   let last = null; // The controller's last position and velocity
   let smoothAcc = [0, 0, 0];
   let lastTurn = null;
+  let lerpedGyro = [0, 0];
   const jolts = {}; // The jolts as the controller keeps them, before they're rounded to send
   let controllerOnScreen = [0, 0];
   let readings = {};
@@ -80,16 +89,26 @@ export function createPerformer(holder, { onButton }) {
     const [x, y] = toCanvas(event);
     if (Math.hypot(x - controllerOnScreen[0], y - controllerOnScreen[1]) < 22) onButton();
   });
-  const KEYS = { ArrowDown: 'down', ArrowUp: 'up' };
+  function letGo(name) {
+    if (body && body.letGo) body.letGo(name);
+  }
+  const KEYS = { ArrowDown: 'down', ArrowUp: 'up', s: 'tiltDown', w: 'tiltUp', a: 'sway', d: 'sway' };
   canvas.addEventListener('keydown', (event) => {
     const name = KEYS[event.key];
     if (!name) return;
     event.preventDefault();
     if (!event.repeat) play(name);
   });
+  canvas.addEventListener('keyup', (event) => letGo(KEYS[event.key]));
   for (const button of holder.querySelectorAll('[data-move]')) {
     const name = button.dataset.move;
-    button.addEventListener('click', () => play(name));
+    if (HELD_MOVES.has(name)) {
+      // Held for as long as the button's pressed
+      button.addEventListener('pointerdown', () => play(name));
+      for (const end of ['pointerup', 'pointerleave', 'pointercancel']) button.addEventListener(end, () => letGo(name));
+      button.addEventListener('keydown', (event) => (event.key === ' ' || event.key === 'Enter') && !event.repeat && play(name));
+      button.addEventListener('keyup', (event) => (event.key === ' ' || event.key === 'Enter') && letGo(name));
+    } else button.addEventListener('click', () => play(name));
   }
 
   function toCanvas(event) {
@@ -99,30 +118,46 @@ export function createPerformer(holder, { onButton }) {
 
   // ------------------------------------------------------------ Just the guitar
   function guitarBody(now) {
-    const LENGTH = 300; // How long the guitar is on the stage, in pixels
-    const HELD = [SKETCH.x + 68, 405]; // Where its middle is on the stage: the guitar centred under the sketch
+    const LENGTH = LAYOUT.guitar.length; // How long the guitar is on the stage, in pixels
+    const HELD = LAYOUT.guitar.middle; // Where its middle is on the stage
     const s = LENGTH / MUSTANG.width;
     const perCm = MUSTANG.perCm * s;
-    // Poses: how far its neck is tipped up (radians) and how far it's lifted (px), and when they're reached (s)
-    const REST = { angle: 0.25, lift: 0 };
-    const MOVES = {
+    // Poses: how far its neck is tipped up (radians), how far it's lifted (px), and how far it's twisted round toward
+    // the audience (radians, about its bridge, as the player turns)
+    const REST = { angle: 0.25, lift: 0, twist: 0 };
+    // Moves combine: each adds its own motion to the resting pose, and any number can play at once
+    // Jolts: poses (as changes from resting) and when they're reached (s), played once
+    const JOLTS = {
       // Wound up, the neck lifting, then brought down hard, past level, and back up to where it was held
       down: [
-        { t: 0.14, angle: 0.55, lift: 14 },
-        { t: 0.32, angle: -0.45, lift: -20 },
-        { t: 0.44, angle: -0.32, lift: -14 },
-        { t: 0.78, angle: 0.1, lift: -4 },
-        { t: 1.15, ...REST },
+        { t: 0.14, angle: 0.3, lift: 14 },
+        { t: 0.32, angle: -0.7, lift: -20 },
+        { t: 0.44, angle: -0.57, lift: -14 },
+        { t: 0.78, angle: -0.15, lift: -4 },
+        { t: 1.15, angle: 0, lift: 0 },
       ],
       // Dipped, the neck dropping, then thrust up hard, well past where it was held, and settling back
       up: [
-        { t: 0.14, angle: 0, lift: -10 },
-        { t: 0.32, angle: 1.0, lift: 18 },
-        { t: 0.44, angle: 0.88, lift: 14 },
-        { t: 0.78, angle: 0.4, lift: 4 },
-        { t: 1.15, ...REST },
+        { t: 0.14, angle: -0.25, lift: -10 },
+        { t: 0.32, angle: 0.75, lift: 18 },
+        { t: 0.44, angle: 0.63, lift: 14 },
+        { t: 0.78, angle: 0.15, lift: 4 },
+        { t: 1.15, angle: 0, lift: 0 },
       ],
     };
+    // Held moves: eased in (slowly, well under the firmware's jolt speed) for as long as they're held, and eased out
+    // when they're let go. The tilts lower or raise the neck and sway a little there; the twist turns the guitar
+    // toward the audience and away in a slow rhythm
+    const HOLDS = {
+      tiltDown: { angle: -0.8, lift: -8, easeIn: 0.7, easeOut: 0.6 },
+      tiltUp: { angle: 0.65, lift: 6, easeIn: 0.7, easeOut: 0.6 },
+      sway: { twist: 1.0, period: 3.2, easeIn: 0.8, easeOut: 0.6 },
+    };
+    // How far the neck can go, combined, so the headstock stays on the stage (it eases into these)
+    const ANGLE_LIMITS = [-0.6, 1.25];
+    // The twist in 3D: the guitar's a flat board turned about an upright line through its bridge, seen in perspective
+    // from the audience
+    const EYE = 200 * perCm; // How far away it's seen from (px)
     // Drawn once at its size on the stage, so it isn't shrunk from the full image every frame
     const image = document.createElement('canvas');
     const source = new Image();
@@ -136,48 +171,98 @@ export function createPerformer(holder, { onButton }) {
     source.src = `${import.meta.env.BASE_URL}sprites/mustang-luminin.png`;
 
     let pose = { ...REST };
-    let move = null;
-    // A point in the image, on the stage, as the guitar's held
-    const onStage = ([x, y]) => {
-      const dx = (x - MUSTANG.pivot[0]) * s;
-      const dy = (y - MUSTANG.pivot[1]) * s;
+    let jolts = []; // Those playing: their name and when they began
+    const holds = {}; // Each held move's: whether it's held, how far in it is (0-1), and when it began
+    // Where a point on the guitar (in the image as drawn at its size on the stage) is on the stage: tipped up in its own
+    // plane about its middle, twisted about the bridge, then seen in perspective
+    const tipped = (u, v) => {
+      const dx = u - MUSTANG.pivot[0] * s;
+      const dy = v - MUSTANG.pivot[1] * s;
       const [c, n] = [Math.cos(-pose.angle), Math.sin(-pose.angle)];
-      return [HELD[0] + dx * c - dy * n, HELD[1] - pose.lift + dx * n + dy * c];
+      return [dx * c - dy * n, dx * n + dy * c];
     };
+    const project = (u, v) => {
+      const [px, py] = tipped(u, v);
+      const bridge = tipped(MUSTANG.bridge[0] * s, MUSTANG.bridge[1] * s)[0];
+      const x = bridge + (px - bridge) * Math.cos(pose.twist);
+      const z = (px - bridge) * Math.sin(pose.twist); // Toward the audience
+      const f = EYE / (EYE - z);
+      return [HELD[0] + x * f, HELD[1] - pose.lift + py * f];
+    };
+    const onStage = ([x, y]) => project(x * s, y * s);
+    // A jolt's change from resting at time t into it, on a smooth curve through its poses
+    function joltAt(keys, t) {
+      keys = [{ t: 0, angle: 0, lift: 0 }, ...keys];
+      let i = 0;
+      while (i < keys.length - 2 && keys[i + 1].t <= t) i++;
+      const k = [i - 1, i, i + 1, i + 2].map((j) => keys[clamp(j, 0, keys.length - 1)]);
+      const u = clamp((t - k[1].t) / (k[2].t - k[1].t), 0, 1);
+      return { angle: curve(k.map((p) => p.angle), u), lift: curve(k.map((p) => p.lift), u) };
+    }
+    const ease = (x) => x * x * (3 - 2 * x);
     return {
-      // Starts from wherever it is, so one can cut into another
       play(name) {
-        if (!MOVES[name]) return;
-        move = { name, start: now(), keys: [{ t: 0, ...pose }, ...MOVES[name]] };
-      },
-      update() {
-        if (!move) return;
-        const t = now() - move.start;
-        const keys = move.keys;
-        if (t >= keys[keys.length - 1].t) {
-          move = null;
-          pose = { ...REST };
-          return;
+        if (JOLTS[name]) jolts.push({ name, start: now() });
+        else if (HOLDS[name]) {
+          const hold = (holds[name] ||= { amount: 0, start: now() });
+          if (!hold.amount) hold.start = now();
+          hold.held = true;
         }
-        let i = 0;
-        while (i < keys.length - 2 && keys[i + 1].t <= t) i++;
-        const k = [i - 1, i, i + 1, i + 2].map((j) => keys[clamp(j, 0, keys.length - 1)]);
-        const u = clamp((t - k[1].t) / (k[2].t - k[1].t), 0, 1);
-        pose = { angle: curve(k.map((p) => p.angle), u), lift: curve(k.map((p) => p.lift), u) };
       },
-      move: () => move && move.name,
+      letGo(name) {
+        if (holds[name]) holds[name].held = false;
+      },
+      update(dt) {
+        const t = now();
+        const change = { angle: 0, lift: 0, twist: 0 };
+        jolts = jolts.filter((j) => t - j.start < JOLTS[j.name].at(-1).t);
+        for (const j of jolts) {
+          const c = joltAt(JOLTS[j.name], t - j.start);
+          change.angle += c.angle;
+          change.lift += c.lift;
+        }
+        for (const [name, hold] of Object.entries(holds)) {
+          const spec = HOLDS[name];
+          hold.amount = clamp(hold.amount + (hold.held ? dt / spec.easeIn : -dt / spec.easeOut), 0, 1);
+          const e = ease(hold.amount);
+          const since = t - hold.start;
+          if (name === 'sway') change.twist += Math.sin((since / spec.period) * Math.PI * 2) * spec.twist * e;
+          else {
+            change.angle += (spec.angle + Math.sin(since * 2.4) * 0.025) * e;
+            change.lift += (spec.lift + Math.sin(since * 1.7) * 1.5) * e;
+          }
+        }
+        pose = {
+          angle: softClamp(REST.angle + change.angle, ...ANGLE_LIMITS),
+          lift: REST.lift + change.lift,
+          twist: REST.twist + change.twist,
+        };
+      },
+      // The moves playing (a held one until it's eased all the way out)
+      moves: () => [...jolts.map((j) => j.name), ...Object.keys(holds).filter((name) => holds[name].amount > 0)],
+      // In thin upright strips, each placed where it's projected, so the near end grows and the far end shrinks
       draw(c) {
         if (!image.width) return;
+        const strips = 60;
+        const w = image.width / strips;
         c.save();
-        c.translate(HELD[0], HELD[1] - pose.lift);
-        c.rotate(-pose.angle);
-        c.drawImage(image, -MUSTANG.pivot[0] * s, -MUSTANG.pivot[1] * s);
+        for (let i = 0; i < strips; i++) {
+          const u0 = i * w;
+          const u1 = Math.min(image.width, u0 + w + 0.75); // A little overlap, so no seams show
+          const [p00, p10, p01] = [project(u0, 0), project(u1, 0), project(u0, image.height)];
+          const a = (p10[0] - p00[0]) / (u1 - u0);
+          const b = (p10[1] - p00[1]) / (u1 - u0);
+          const cc = (p01[0] - p00[0]) / image.height;
+          const d = (p01[1] - p00[1]) / image.height;
+          c.setTransform(a, b, cc, d, p00[0] - a * u0, p00[1] - b * u0);
+          c.drawImage(image, u0, 0, u1 - u0, image.height, u0, 0, u1 - u0, image.height);
+        }
         c.restore();
       },
       controller() {
         const at = onStage(MUSTANG.controller);
         // In cm: y up, z forward (toward the headstock, as it's held level)
-        return { position: [0, (H - at[1]) / perCm, at[0] / perCm], onCanvas: at, pitch: pose.angle, yaw: 0 };
+        return { position: [0, (H - at[1]) / perCm, at[0] / perCm], onCanvas: at, pitch: pose.angle, yaw: pose.twist };
       },
     };
   }
@@ -188,7 +273,7 @@ export function createPerformer(holder, { onButton }) {
     return {
       play: (name) => puppet.play(name),
       update: (dt) => puppet.update(dt),
-      move: () => puppet.move,
+      moves: () => (puppet.move ? [puppet.move] : []),
       draw: (c) => c.drawImage(puppet.canvas, 0, 0),
       controller() {
         const { room, onCanvas, pitch, yaw } = puppet.controller();
@@ -277,7 +362,7 @@ export function createPerformer(holder, { onButton }) {
         const i = current();
         if (i > 3) steps = steps.slice(i - 3);
       },
-      move: () => steps[current()].move,
+      moves: () => (steps[current()].move ? [steps[current()].move] : []),
       draw(c) {
         const frame = frameOf(steps[current()]);
         if (atlas.complete && atlas.naturalWidth) c.drawImage(atlas, frame.x, frame.y, frame.w, frame.h, ...place(frame), frame.w, frame.h);
@@ -313,15 +398,16 @@ export function createPerformer(holder, { onButton }) {
     // toward the audience and back (y)
     const turn = [pitch, yaw];
     const degrees = 180 / Math.PI;
-    const gyro = lastTurn ? turn.map((a, i) => ((a - lastTurn[i]) / dt) * degrees) : [0, 0];
+    const gyro = lastTurn ? turn.map((a, i) => ((a - lastTurn[i]) / dt) * degrees + gaussian() * GYRO_NOISE) : [0, 0];
     lastTurn = turn;
-    controller.gyroX = clamp(gyro[0] * GYRO_SCALE + gaussian() * vibration * 4, -30, 30);
-    controller.gyroY = clamp(gyro[1] * GYRO_SCALE + gaussian() * vibration * 4, -30, 30);
+    // ...and sent smoothed, as the firmware does (lerped a 30th of the way to each new reading every 50 ms)
+    const follow = 1 - Math.pow(1 - 1 / GYRO_LERP, dt / JOLT_LOOP);
+    lerpedGyro = lerpedGyro.map((g, i) => g + (gyro[i] - g) * follow);
+    [controller.gyroX, controller.gyroY] = lerpedGyro;
     // The jolts, as the controller's firmware works them out (20250602_Luminin_Controller.ino): turning faster than
     // a threshold sets the jolt to how fast, which then fades by 2% each time round its loop (every 50 ms), so a jolt
     // lasts a good while after the motion's over (half gone in 1.7 s). Its value's sent rounded
-    const move = body.move();
-    const tied = (move && TIED[move]) || [];
+    const tied = body.moves().flatMap((move) => TIED[move] || []);
     const fade = Math.pow(JOLT_FADE, dt / JOLT_LOOP);
     const latch = (key, speed, over) => {
       jolts[key] = (jolts[key] || 0) * fade;
@@ -333,6 +419,130 @@ export function createPerformer(holder, { onButton }) {
     latch('forwardJolt', gyro[1], 400);
     latch('backJolt', -gyro[1], 400);
     readings = { ...controller, vibration };
+  }
+
+  // ------------------------------------------------------------ The Luminin's screens
+  // Each LED takes the one pixel of the sketch at its spot (as the Fadecandy server does), and shines through paper:
+  // a hot spot where it sits, its light spreading into its neighbours', and the paper's own grain and fibres over it
+  const panel = LAYOUT.screens;
+  const pw = Math.round(panel.width);
+  const ph = Math.round(panel.height);
+  const ledSize = pw / PANEL.across;
+  const make = (w, h) => {
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    return [c, c.getContext('2d')];
+  };
+  const [leds, ledContext] = make(PANEL.across * 2, PANEL.down);
+  const [lit, litContext] = make(pw, ph);
+  const [hot, hotContext] = make(pw, ph);
+  // Where the hot spots are: a soft white spot on each LED
+  const [spots, spotContext] = make(pw, ph);
+  spotContext.fillStyle = 'black';
+  spotContext.fillRect(0, 0, pw, ph);
+  for (let i = 0; i < PANEL.across; i++) {
+    for (let j = 0; j < PANEL.down; j++) {
+      const [x, y] = [(i + 0.5) * ledSize, (j + 0.5) * ledSize];
+      const glow = spotContext.createRadialGradient(x, y, 0, x, y, ledSize * 0.75);
+      glow.addColorStop(0, 'white');
+      glow.addColorStop(0.35, 'rgba(255, 255, 255, 0.55)');
+      glow.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      spotContext.fillStyle = glow;
+      spotContext.fillRect(x - ledSize, y - ledSize, ledSize * 2, ledSize * 2);
+    }
+  }
+  // The paper: warm white, with a cloudy unevenness, grain, and fibres
+  const [paper, paperContext] = make(pw, ph);
+  {
+    paperContext.fillStyle = 'rgb(238, 230, 214)';
+    paperContext.fillRect(0, 0, pw, ph);
+    const [cloud, cloudContext] = make(8, 16);
+    const cloudy = cloudContext.createImageData(8, 16);
+    for (let i = 0; i < cloudy.data.length; i += 4) {
+      const v = 200 + Math.random() * 55;
+      cloudy.data.set([v, v, v, 255], i);
+    }
+    cloudContext.putImageData(cloudy, 0, 0);
+    paperContext.globalCompositeOperation = 'multiply';
+    paperContext.imageSmoothingEnabled = true;
+    paperContext.filter = `blur(${ledSize * 0.8}px)`;
+    paperContext.drawImage(cloud, -ledSize, -ledSize, pw + ledSize * 2, ph + ledSize * 2);
+    paperContext.filter = 'none';
+    paperContext.globalCompositeOperation = 'source-over';
+    const grain = paperContext.getImageData(0, 0, pw, ph);
+    for (let i = 0; i < grain.data.length; i += 4) {
+      const g = (Math.random() - 0.5) * 18;
+      for (let k = 0; k < 3; k++) grain.data[i + k] += g;
+    }
+    paperContext.putImageData(grain, 0, 0);
+    for (let i = 0; i < (pw * ph) / 90; i++) {
+      const [x, y] = [Math.random() * pw, Math.random() * ph];
+      const a = Math.random() * Math.PI * 2;
+      const length = 3 + Math.random() * 12;
+      paperContext.strokeStyle = Math.random() < 0.5 ? 'rgba(255, 255, 255, 0.35)' : 'rgba(120, 100, 70, 0.12)';
+      paperContext.lineWidth = 0.4 + Math.random() * 0.6;
+      paperContext.beginPath();
+      paperContext.moveTo(x, y);
+      paperContext.quadraticCurveTo(x + Math.cos(a + 0.6) * length * 0.5, y + Math.sin(a + 0.6) * length * 0.5, x + Math.cos(a) * length, y + Math.sin(a) * length);
+      paperContext.stroke();
+    }
+  }
+  const UNLIT = 0.07; // How much the paper shows with its LEDs off (lit faintly by the room)
+  const SPREAD = 0.7; // How far each LED's light spreads through the paper, for each LED's width
+  const HOT = 0.6; // How bright the hot spots are
+
+  function screens(sketch) {
+    // The LEDs' colours
+    if (sketch) {
+      const { width, height } = sketch.image;
+      const pixels = sketch.image.getContext('2d').getImageData(0, 0, width, height).data;
+      const image = ledContext.createImageData(PANEL.across * 2, PANEL.down);
+      const [stepX, stepY] = [width / (PANEL.across * 2), height / PANEL.down];
+      for (let y = 0; y < PANEL.down; y++) {
+        for (let x = 0; x < PANEL.across * 2; x++) {
+          const from = 4 * (Math.floor((y + 0.5) * stepY) * width + Math.floor((x + 0.5) * stepX));
+          image.data.set([pixels[from], pixels[from + 1], pixels[from + 2], 255], 4 * (y * PANEL.across * 2 + x));
+        }
+      }
+      ledContext.putImageData(image, 0, 0);
+    } else ledContext.clearRect(0, 0, leds.width, leds.height);
+
+    for (let side = 0; side < 2; side++) {
+      const c = litContext;
+      c.globalCompositeOperation = 'source-over';
+      c.globalAlpha = 1;
+      c.filter = 'none';
+      c.fillStyle = 'black';
+      c.fillRect(0, 0, pw, ph);
+      c.globalAlpha = UNLIT;
+      c.drawImage(paper, 0, 0);
+      c.globalAlpha = 1;
+      // The light spreading through the paper
+      c.globalCompositeOperation = 'lighter';
+      c.imageSmoothingEnabled = true;
+      c.filter = `blur(${ledSize * SPREAD}px)`;
+      c.drawImage(leds, side * PANEL.across, 0, PANEL.across, PANEL.down, 0, 0, pw, ph);
+      // ...and each LED's hot spot
+      hotContext.globalCompositeOperation = 'source-over';
+      hotContext.imageSmoothingEnabled = false;
+      hotContext.drawImage(leds, side * PANEL.across, 0, PANEL.across, PANEL.down, 0, 0, pw, ph);
+      hotContext.globalCompositeOperation = 'multiply';
+      hotContext.drawImage(spots, 0, 0);
+      c.filter = `blur(${ledSize * 0.15}px)`;
+      c.globalAlpha = HOT;
+      c.drawImage(hot, 0, 0);
+      // The paper's texture over it all
+      c.filter = 'none';
+      c.globalAlpha = 1;
+      c.globalCompositeOperation = 'multiply';
+      c.drawImage(paper, 0, 0);
+      const x = panel.x + side * (panel.width + panel.gap);
+      context.drawImage(lit, x, panel.y, panel.width, panel.height);
+      context.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+      context.lineWidth = 1;
+      context.strokeRect(x - 0.5, panel.y - 0.5, panel.width + 1, panel.height + 1);
+    }
   }
 
   // ------------------------------------------------------------ Drawing
@@ -348,7 +558,7 @@ export function createPerformer(holder, { onButton }) {
     // A song's sketch as it is on the laptop running it ({image, samples}), with a dot on each spot its LEDs take
     // their colour from
     if (sketch) {
-      const { x, y, size } = SKETCH;
+      const { x, y, size } = LAYOUT.sketch;
       context.drawImage(sketch.image, x, y, size, size);
       const cell = size / sketch.samples;
       context.fillStyle = 'rgba(255, 255, 255, 0.8)';
@@ -360,6 +570,7 @@ export function createPerformer(holder, { onButton }) {
         }
       }
     }
+    screens(sketch);
 
     // The performer, feet on the stage
     maskContext.clearRect(0, 0, W, H);
@@ -544,8 +755,8 @@ export function createPerformer(holder, { onButton }) {
     ['forwardJolt', 0, 2000],
     ['backJolt', 0, 2000],
     ['totalAcc', 0, 3],
-    ['gyroX', -30, 30],
-    ['gyroY', -30, 30],
+    ['gyroX', -150, 150],
+    ['gyroY', -150, 150],
     ['vibration', 0, 1],
   ];
   const HISTORY = 240; // Readings kept (four seconds at 60 a second)
@@ -619,6 +830,33 @@ function curve([a, b, c, d], u) {
   return 0.5 * (2 * b + (c - a) * u + (2 * a - 5 * b + 4 * c - d) * u * u + (3 * b - a - 3 * c + d) * u * u * u);
 }
 const clamp = (x, low, high) => Math.min(high, Math.max(low, x));
+
+// Where everything goes on the stage, worked out from its size: a song's sketch at the top left (as on the laptop
+// running it), the guitar under it and as wide as it, and the Luminin's two screens filling the rest, on the right,
+// side by side with a little gap, as big as they'll go at their 1 x 2 shape
+function layoutFor(width, height) {
+  const margin = Math.round(height * 0.03);
+  const size = Math.round(Math.min(height * 0.56, width * 0.38));
+  const sketch = { x: margin, y: margin, size };
+  const below = sketch.y + size;
+  const guitar = { length: size, middle: [margin + size * (MUSTANG.pivot[0] / MUSTANG.width), below + (height - below) * 0.42] };
+  const left = sketch.x + size + margin * 3;
+  const room = { width: width - left - margin, height: height - margin * 2 };
+  const gap = 0.06; // Between the screens, for each pixel of their height
+  const tall = Math.min(room.height, room.width / (PANEL.across * 2 / PANEL.down + gap));
+  const wide = (tall * PANEL.across) / PANEL.down;
+  return {
+    sketch,
+    guitar,
+    screens: { x: left + (room.width - wide * 2 - tall * gap) / 2, y: margin + (room.height - tall) / 2, width: wide, height: tall, gap: tall * gap },
+  };
+}
+// x kept between low and high, easing into them over the last `soft` of the way instead of stopping dead
+function softClamp(x, low, high, soft = 0.25) {
+  if (x > high - soft) return high - soft * Math.exp(-(x - (high - soft)) / soft);
+  if (x < low + soft) return low + soft * Math.exp((x - (low + soft)) / soft);
+  return x;
+}
 function gaussian() {
   return (Math.random() + Math.random() + Math.random() - 1.5) * 1.4;
 }

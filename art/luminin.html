@@ -48,13 +48,16 @@
     <!-- The 2025 Processing sketch, ported, with the mouse standing in for the controller (see src/sketches/luminin_sim.js) -->
     <figure class="luminin-stage">
       <p class="sim-label">the luminin, simulated</p>
-      <canvas tabindex="0" aria-label="A Fender Mustang guitar in silhouette with the Luminin controller on its headstock, under the sketch it plays (Unfamiliar State), dotted where its LEDs take their colour from. The down and up arrows jolt the guitar down and up; clicking the controller moves to the next song."></canvas>
+      <canvas tabindex="0" aria-label="A Fender Mustang guitar in silhouette with the Luminin controller on its headstock, under the sketch it plays (Unfamiliar State), dotted where its LEDs take their colour from. The down and up arrows jolt the guitar down and up, and holding S or W tilts it down or up, and holding A or D swings it side to side; clicking the controller moves to the next song."></canvas>
       <div class="luminin-gestures">
         <button data-move="down">jolt down</button>
         <button data-move="up">jolt up</button>
+        <button data-move="tiltDown">tilt down (hold)</button>
+        <button data-move="tiltUp">tilt up (hold)</button>
+        <button data-move="sway">side to side (hold)</button>
       </div>
     </figure>
-    <p class="luminin-sim-readout">jolt the guitar down or up &middot; click the controller for the next song</p>
+    <p class="luminin-sim-readout">jolt, tilt or swing the guitar &middot; click the controller for the next song</p>
     <!-- Where the sketch itself draws; it's shown as the stage's background, so this stays hidden -->
     <figure class="luminin-sim" hidden></figure>
     <script type="module" src="/src/sketches/luminin_sim.js"></script>

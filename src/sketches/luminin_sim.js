@@ -431,7 +431,10 @@ new p5((p) => {
           l.x = p.random(UNFAMILIAR);
         }
         const vel = p.map(v.velocity.mag(), 3, 8, 50, 100);
-        const hue = rgbHue(255 - (zTilt + 0.25) * 500, 255 - (vel - zTilt * 50), (zTilt + 0.1) * 500);
+        // Not in the original: tilted up past where it's held, the hue's turned toward blue and purple (the original's
+        // own colour stops at cyan)
+        const toPurple = Math.max(0, zTilt - 0.3) * 120;
+        const hue = rgbHue(255 - (zTilt + 0.25) * 500, 255 - (vel - zTilt * 50), (zTilt + 0.1) * 500) + toPurple;
         const spread = 5 + 10 * joltFactor;
         pg.stroke(...hsb(hue + p.random(-spread, spread) - l.y / (16 - 10 * joltFactor), 255 - (downJolt / 1.5 - upJolt / 1.5), 255));
         pg.strokeWeight(2 + joltFactor * 20);
