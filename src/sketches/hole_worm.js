@@ -17,7 +17,7 @@ const length = 0.9; // How long its body is, in seconds of where its head's been
 const fat = 4; // How fat it is in the middle, in pixels
 const turns = 9; // How many times its line coils round its body
 const steps = 16; // How many points on its line for each turn
-const ripple = 0.3; // How much its coil swells and shrinks along it, slowly (0 = an even coil)
+const ripple = 0.1; // How much its coil swells and shrinks along it, slowly (0 = an even coil)
 // Its coil's noisy, like the spiral worm's in the wormhole (see the rose in src/wormhole/spiral-worm.js): each point
 // comes partly from the last one, by a different amount every time, held in close so it never spikes
 const ticks = 12; // How many times a second the noise changes
@@ -25,9 +25,7 @@ const roseRoughness = 0.8; // How much of the last point goes into the next is 1
 const roseNoise = 0.05; // How quickly the noise changes from one point to the next
 const roseReach = 2; // How far out it can go, compared to the body's width there
 // It fades toward the horizon like the crowd (see distanceFade in art_walk.js)
-const distanceFade = 0.2; // How quickly it fades the higher up the screen it goes (smaller = slower)
-const shrink = 1; // How much smaller it gets toward the horizon, like the crowd (0 = not at all, 1 = nothing at the top of the screen)
-const smallest = 0.15; // ...but never smaller than this, compared to its size at the bottom of the screen
+const distanceFade = 0.4; // How quickly it fades the higher up the screen it goes (smaller = slower)
 const segment = 8; // How many points of its line are drawn at one fade
 
 // Smooth noise between 0 and 1, from a number and a row (each row is different)
@@ -140,8 +138,7 @@ if (noteWasLeft() && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
     for (let i = 0; i <= total; i++) {
       const along = i / total; // 0 at the tail, 1 at the head
       const middle = headAt(t - (1 - along) * length);
-      const far = Math.max(smallest, 1 - shrink * (1 - Math.min(1, Math.max(0, middle.y / innerHeight)))); // Smaller higher up
-      const radius = far * Math.sin(along * Math.PI) * fat * (1 + ripple * Math.sin(i * 0.09 - t * 2));
+      const radius = Math.sin(along * Math.PI) * fat * (1 + ripple * Math.sin(i * 0.09 - t * 2));
       const angle = (i / (steps * 4)) * Math.PI * 2 + t * 1.5; // Turning slowly round itself
       // Each point partly from the last one, by a different amount every time
       const wobble = noise(i * roseNoise, row);
@@ -155,14 +152,13 @@ if (noteWasLeft() && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
         offX *= held;
         offY *= held;
       }
-      points.push({ x: middle.x + offX, y: middle.y + offY, far });
+      points.push({ x: middle.x + offX, y: middle.y + offY });
     }
     // Drawn a bit at a time, each bit fainter the higher up the screen it is, toward the horizon
     for (let i = 0; i < points.length - 1; i += segment) {
       const end = Math.min(points.length - 1, i + segment);
-      // As the crowd's: the smaller it's got, the fainter, so it shrinks and fades together
-      context.globalAlpha = Math.min(1, Math.pow(points[i].far, distanceFade));
-      context.lineWidth = 1.3 * Math.max(0.5, points[i].far); // Thinner further away, but never too faint to see
+      const near = Math.max(0.001, Math.min(1, points[i].y / innerHeight));
+      context.globalAlpha = Math.min(1, Math.pow(near, distanceFade));
       context.beginPath();
       context.moveTo(points[i].x, points[i].y);
       for (let j = i + 1; j <= end; j++) context.lineTo(points[j].x, points[j].y);

@@ -1352,7 +1352,9 @@ a.card:hover {
 .luminin-lede { font-size: 1.2em; }
 .luminin-flow { display: flex; flex-wrap: wrap; gap: 0.5em; align-items: center; justify-content: center; margin: 1em 0; opacity: 0.85; }
 .luminin-flow span { border: 1px solid currentColor; padding: 0.3em 0.7em; }
-.luminin-sim { min-height: 320px; display: flex; align-items: center; justify-content: center; text-align: center; }
+.luminin-sim { position: relative; max-width: 700px; margin: 24px auto 0; }
+.luminin-sim canvas { display: block; width: 100% !important; height: auto !important; aspect-ratio: 8 / 3; background-color: black; outline: none; cursor: crosshair; }
+.page .luminin-sim-readout { margin: 8px auto 24px; color: #7a7a7a; font-family: 'Inconsolata', monospace; font-size: 13px; text-align: center; }
 .luminin-ideas li { margin-bottom: 0.6em; }
 .performance { display: grid; grid-template-columns: 3fr 2fr; gap: 1.2em; align-items: center; margin: 1.5em 0; }
 .performance video { width: 100%; }
