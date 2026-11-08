@@ -1355,7 +1355,7 @@ a.card:hover {
 .luminin-sim { position: relative; max-width: 700px; margin: 24px auto 0; }
 .luminin-sim canvas { display: block; width: 100% !important; height: auto !important; aspect-ratio: 8 / 3; background-color: black; outline: none; cursor: crosshair; }
 .luminin-stage { position: relative; max-width: 700px; margin: 24px auto 0; }
-.luminin-stage canvas { display: block; width: 100%; height: auto; background-color: #121212; outline: none; cursor: grab; touch-action: none; }
+.luminin-stage canvas { display: block; width: 100%; height: auto; background-color: transparent; outline: none; cursor: grab; touch-action: none; }
 .luminin-stage canvas:active { cursor: grabbing; }
 .luminin-gestures { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 8px; }
 .luminin-gestures button { padding: 4px 10px; border: 1px solid #7a7a7a; background: none; color: white; font-family: 'Inconsolata', monospace; font-size: 13px; cursor: pointer; }

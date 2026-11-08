@@ -346,6 +346,119 @@ new p5((p) => {
     p.rect(0, 0, WIDTH, HEIGHT);
   }
 
+  // ------------------------------------------------------------------ Unfamiliar State, from the Luminin 1.0 (2021)
+  // The 1.0 folder's Unfamiliar_State.pde (with FlowField.pde and Vehicle.pde): twenty circles ride a flow field of
+  // noise, coloured by the tilt; jolts speed them up, thicken them, and bend the field, a jolt up turns the flow round
+  // (a jolt down turns it back), and a frame round the edge flares with the jolts. The original is drawn at the 1.0
+  // screens' 320 x 320; here it's 300 x 300, on its own layer, which the stage shows as it is on the laptop running
+  // it, with a dot on each spot the LEDs take their colour from (the 1.0's two 16 x 32 screens, side by side, make one
+  // 32 x 32 display). What the display itself shows isn't drawn yet
+  const UNFAMILIAR = 300; // The sketch's size
+  const SAMPLES = 32; // LEDs each way
+  const unfamiliar = {
+    resolution: 20,
+    zoff: 0,
+    field: [],
+    vehicles: [],
+    rotate: 0,
+    dirSwitch: 0,
+    joltFactor: 0,
+    setup() {
+      this.pg = p.createGraphics(UNFAMILIAR, UNFAMILIAR);
+      this.pg.pixelDensity(1);
+      this.cols = Math.floor(UNFAMILIAR / this.resolution);
+      this.rows = Math.floor(UNFAMILIAR / this.resolution);
+      p.noiseSeed(Math.floor(p.random(10000))); // As the field's init() does, for a new field each time
+      for (let i = 0; i < 20; i++) {
+        this.vehicles.push({
+          position: p.createVector(p.random(UNFAMILIAR), p.random(UNFAMILIAR)),
+          velocity: p.createVector(0, 0),
+          acceleration: p.createVector(0, 0),
+          r: p.random(5, 40),
+          maxspeed: p.random(3, 8),
+          maxforce: p.random(0.1, 0.5),
+        });
+      }
+    },
+    updateField() {
+      const { joltFactor, rotate, dirSwitch } = this;
+      let xoff = 0;
+      for (let i = 0; i < this.cols; i++) {
+        this.field[i] ||= [];
+        let yoff = 0;
+        for (let j = 0; j < this.rows; j++) {
+          const theta = p.map(p.noise(xoff, yoff, this.zoff), 0, 1, Math.PI / 2 - 0.3 + joltFactor, Math.PI / 2 + 0.3 + joltFactor) + rotate + Math.PI * dirSwitch;
+          this.field[i][j] = p5.Vector.fromAngle(theta);
+          yoff += 0.05 + joltFactor;
+        }
+        xoff += 0.05 + joltFactor;
+      }
+      this.zoff += 0.01 + joltFactor;
+    },
+    lookup(position) {
+      const column = Math.floor(p.constrain(position.x / this.resolution, 0, this.cols - 1));
+      const row = Math.floor(p.constrain(position.y / this.resolution, 0, this.rows - 1));
+      return this.field[column][row].copy();
+    },
+    update() {
+      const { zTilt, gyroY, upJolt, downJolt } = controller;
+      this.rotate = p.map(gyroY, -100, 100, -1, 1);
+      this.joltFactor = p.map(upJolt + downJolt, 0, 700, 0, 1);
+      const { joltFactor, rotate } = this;
+      const pg = this.pg;
+      p.background(0);
+      this.updateField();
+      pg.colorMode(p.RGB);
+      pg.rectMode(p.CENTER);
+      if (upJolt > 340) this.dirSwitch = 1;
+      if (downJolt > 340) this.dirSwitch = 0;
+      pg.noFill();
+      for (const v of this.vehicles) {
+        // Following the field: steering toward its flow at that spot
+        const desired = this.lookup(v.position).mult(v.maxspeed + joltFactor * 100);
+        v.acceleration.add(p5.Vector.sub(desired, v.velocity).limit(v.maxforce));
+        v.velocity.add(v.acceleration);
+        v.velocity.limit(v.maxspeed + (upJolt + downJolt / 30)); // As the original has it
+        v.position.add(v.velocity);
+        v.acceleration.mult(0);
+        // Wrapping round the edges
+        const l = v.position;
+        if (l.x < -v.r) l.x = UNFAMILIAR + v.r;
+        if (l.y < -v.r) l.y = UNFAMILIAR + v.r;
+        if (l.x > UNFAMILIAR + v.r) l.x = -v.r;
+        if (l.y > UNFAMILIAR + v.r) {
+          l.y = -v.r;
+          l.x = p.random(UNFAMILIAR);
+        }
+        const vel = p.map(v.velocity.mag(), 3, 8, 50, 100);
+        const hue = rgbHue(255 - (zTilt + 0.25) * 500, 255 - (vel - zTilt * 50), (zTilt + 0.1) * 500);
+        const spread = 5 + 10 * joltFactor;
+        pg.stroke(...hsb(hue + p.random(-spread, spread) - l.y / (16 - 10 * joltFactor), 255 - (downJolt / 1.5 - upJolt / 1.5), 255));
+        pg.strokeWeight(2 + joltFactor * 20);
+        pg.ellipse(l.x, l.y, v.r * 2, v.r * 2);
+      }
+      // The fade, and the frame round the edge
+      pg.fill(0, 15 - joltFactor * 20 - Math.abs(rotate * 10));
+      pg.strokeWeight(3 + upJolt / 3);
+      pg.stroke(...hsb(255 - gyroY * 2, 255 - upJolt, 255));
+      pg.rect(UNFAMILIAR / 2, UNFAMILIAR / 2, UNFAMILIAR, UNFAMILIAR);
+      pg.stroke(...hsb(downJolt, 255 - downJolt / 3, 255), 255 - downJolt / 4);
+      // With no jolt the original's line is as thin as it goes; a canvas ignores a width of 0, so it's held to 1
+      pg.strokeWeight(Math.max(1, downJolt / 2));
+      pg.rect(UNFAMILIAR / 2, UNFAMILIAR / 2, UNFAMILIAR, UNFAMILIAR);
+      pg.rectMode(p.CORNER);
+    },
+  };
+  // A colour's hue, out of 255, as Processing's hue() gives it (its numbers clamped to 0-255 first)
+  function rgbHue(r, g, b) {
+    [r, g, b] = [r, g, b].map((c) => Math.min(255, Math.max(0, c)));
+    const max = Math.max(r, g, b);
+    const d = max - Math.min(r, g, b);
+    if (!d) return 0;
+    const h = max === r ? (g - b) / d : max === g ? 2 + (b - r) / d : 4 + (r - g) / d;
+    return (((h / 6) % 1) + 1) % 1 * 255;
+  }
+
   // The songs, in the original's order (its switch in draw()), with the ones not ported yet left out
   const songs = [
     { name: 'intermission', draw: () => worm.update(200) },
@@ -353,8 +466,11 @@ new p5((p) => {
     { name: 'little drone + head in the cloud', draw: () => golden.update() },
     { name: 'just keep on living in the moment (1.0, as in the close-up)', draw: () => waves1.update() },
     { name: 'just keep on living in the moment (2025)', draw: () => waves.update() },
+    { name: 'unfamiliar state (1.0)', draw: () => unfamiliar.update() },
     { name: 'crush', draw: () => scanlines.update() },
   ];
+
+  const FIRST_SONG = 'unfamiliar state (1.0)'; // The one it starts on
 
   // Processing's HSB, out of 255 each, clamped as Processing clamps it, to RGB
   function hsb(h, s, v) {
@@ -388,6 +504,8 @@ new p5((p) => {
     golden.setup();
     waves.setup();
     waves1.setup();
+    unfamiliar.setup();
+    scene = songs.findIndex((song) => song.name === FIRST_SONG);
     nextSong(0);
 
     performer = createPerformer(document.querySelector('.luminin-stage'), { onButton: () => nextSong(1) });
@@ -412,6 +530,8 @@ new p5((p) => {
       const most = Math.max(r, g, b, 1);
       glow = `rgb(${(r / most) * 255} ${(g / most) * 255} ${(b / most) * 255})`; // As bright as it'll go
     }
-    performer.update(dt, controller, p.canvas, glow);
+    // For now the stage shows only Unfamiliar State's sketch, as it is on the laptop (the other songs show nothing)
+    const sketch = songs[scene].name === 'unfamiliar state (1.0)' ? { image: unfamiliar.pg.elt, samples: SAMPLES } : null;
+    performer.update(dt, controller, p.canvas, glow, sketch);
   };
 }, holder);

@@ -1,116 +1,95 @@
-// The guitar for the Luminin simulation (see luminin_sim.js): a guitar by itself in 3D, with the controller on its
-// headstock, in front of the screens, which fill the background. The viewer moves it, and what the controller would read
-// comes from how its headstock actually moves, as the real one's accelerometer and gyroscope would see it: how far it's
+// The performer for the Luminin simulation (see luminin_sim.js), playing a guitar with the controller on its headstock,
+// in front of the screens, which fill the background. It's one of three (the stage's data-performer):
+//
+//   guitar   (the default) just the guitar: Ofer's Fender Mustang silhouette with the Luminin on its headstock (made by
+//            tools/mustang/mustang.py, into public/sprites/mustang-luminin.png, with where its controller and middle
+//            are in luminin_mustang.json), swung as a whole about its middle
+//   sprites  Ofer's sprite sheets, played frame by frame (cut out by tools/performer-sprites/build.py,
+//            into public/sprites/luminin-performer.png, with each frame's place, feet and headstock in
+//            luminin_performer_frames.json)
+//   puppet   the 3D puppet (luminin_puppet.js), drawn as a flat black silhouette, moving smoothly through its poses;
+//            set aside for now, as it didn't look right
+//
+// For now there are only the jolts down and up (the guitar does both; the sprites and the puppet only the jolt down). What the controller would
+// read comes from how the headstock moves, as the real one's accelerometer and gyroscope would see it: how far it's
 // tipped (zTilt), sudden jerks down and up (downJolt, upJolt), swings toward the audience and back (forwardJolt,
-// backJolt), how hard it's moving (totalAcc), how fast it's turning (gyroX, gyroY), and the little bit of noise that the
-// guitar's own vibration puts into all of them, more while it's strummed. A screen beside it graphs those numbers as
-// they come in. (A version with a performer holding it is kept in archive/luminin-performer.)
+// backJolt), how hard it's moving (totalAcc), how fast it's turning (gyroX, gyroY), and the little bit of noise the
+// guitar's own hum puts into all of them. A screen beside it graphs those numbers as they come in. (Earlier performers
+// are kept in archive/luminin-performer.)
 //
-// To play it: drag on the stage to move the guitar (up and down tips the neck, side to side swings it toward the
-// audience and back), and flick to jolt it. Or the arrow keys: down and up jolt, left and right swing; space strums;
-// enter, or clicking the controller, presses its button for the next song. The buttons under it do the same.
-//
-// The guitar's a clean black silhouette; the only light on it is the controller's, which leaves a fading trail.
+// To play it, the buttons under it, or the down and up arrows. Clicking the controller presses its button for the next song.
+
+import SHEET from './luminin_performer_frames.json';
+import MUSTANG from './luminin_mustang.json';
 
 const W = 800;
-const H = 500;
+const H = 540;
 const GRAVITY = 981; // cm/s², to turn accelerations into g
+const FEET = [260, 480]; // Where the performer stands on the stage
+const STANDING = 330; // ...and how tall, in pixels
 
-// The camera, looking at the performer a little from the side and above
-const TURN = -0.2; // How far the guitar's turned from facing the camera (radians)
-const CAMERA = { yaw: -0.25, pitch: 0.12, distance: 300, focal: 1250, look: [28, 112, 0], x: W * 0.46, y: H * 0.52 };
+// The jolts each move is tied to: a move's motion only counts toward its own (the catch at the bottom of a jolt down
+// would otherwise read as a jolt up, and the dip before a jolt up as a jolt down)
+const TIED = { down: ['downJolt'], up: ['upJolt'] };
 
-// The guitar: where it's slung (its body's middle), and how it moves
-const SLUNG = [-8, 100, 14];
-const REST = { pitch: 0.35, yaw: 0 }; // The neck's usual angle up from level, and swing toward the audience (radians)
-const LIMITS = { pitch: [-0.7, 1.3], yaw: [-0.9, 0.9] };
-const DRAG = { pitch: 0.011, yaw: 0.009 }; // Radians for each pixel dragged, up and down and side to side
-const SPRING = 90; // How stiffly it follows where it's moved to
-const DAMPING = 0.55; // ...and how quickly it settles (1 = no bounce)
-const NECK = 85; // How far the controller is from the guitar's middle, in cm
-// The gestures, as a push lasting a moment (how strong, in cm/s² or radians/s², and for how long, in seconds)
-const PUSH_TIME = 0.08;
-const GESTURES = {
-  down: { h: -3200, pitch: -14 },
-  up: { h: 3200, pitch: 14 },
-  forward: { yaw: 70 },
-  back: { yaw: -70 },
-};
-// Its vibration: always a little, much more just after a strum, dying away
-const HUM = 0.04; // In g
-const STRUM = 0.9;
-const STRUM_FADE = 2.5; // How quickly a strum dies away (per second)
+const HUM = 0.04; // The guitar's vibration, in g
+const NECK = 85; // How far the controller is from the guitar's middle, in cm (for how fast it's swinging)
 
 // How the motion becomes the controller's numbers (roughly in the ranges the original sketches expect)
-const JOLT_FROM = 0.4; // How many g it takes to count as a jolt
-const JOLT_GAIN = 700; // ...and how much each g past that adds
-const JOLT_HOLD = 0.85; // How much of a jolt is left each frame
+const JOLT_FADE = 0.98; // How much of a jolt is left each time round the controller's loop
+const JOLT_LOOP = 0.05; // ...which comes round every 50 ms
 const GYRO_SCALE = 0.1; // For each degree a second
 
-const STAGE = '#121212'; // Behind everything, until the screens draw
-const SILHOUETTE = '#000'; // The guitar, black against the screens
+const SHOW_STAGE = false; // The stage (the screens behind the performer, and the room's haze and beams), off for now
+// (the canvas is see-through)
+const SHOW_GRAPH = false; // The graph of the controller's readings, off for now
+const SHOW_LIGHT = false; // The controller's light blooming and leaving a trail, off for now
+const SKETCH = { x: 20, y: 10, size: 300 }; // Where a song's sketch is shown, as on the laptop
 
 export function createPerformer(holder, { onButton }) {
   const canvas = holder.querySelector('canvas');
   canvas.width = W;
   canvas.height = H;
-  const stageContext = canvas.getContext('2d');
-  let context = stageContext; // Where shapes are drawn: the stage, or the figure's mask while the performer's drawn
-  // The performer and guitar are drawn first as a black mask, then laid on the stage in the chosen style (see figure())
+  const context = canvas.getContext('2d');
+  // The performer is drawn first on its own, then laid on the stage in the chosen style (see figure())
   const mask = document.createElement('canvas');
   mask.width = W;
   mask.height = H;
   const maskContext = mask.getContext('2d', { willReadFrequently: true });
 
-  const guitar = {
-    pitch: REST.pitch, pitchV: 0, pitchTarget: REST.pitch,
-    yaw: REST.yaw, yawV: 0, yawTarget: REST.yaw,
-    h: 0, hV: 0, // How far it's moved up or down from where it's slung
-  };
-  let pushes = [];
-  let vibration = 0;
+  const vibration = HUM;
   let time = 0;
   let last = null; // The controller's last position and velocity
   let smoothAcc = [0, 0, 0];
+  let lastTurn = null;
+  const jolts = {}; // The jolts as the controller keeps them, before they're rounded to send
   let controllerOnScreen = [0, 0];
   let readings = {};
 
-  // ------------------------------------------------------------ Moving it
-  const gesture = (name) => {
-    if (name === 'strum') {
-      vibration = STRUM;
-    } else if (name === 'button') onButton();
-    else pushes.push({ ...GESTURES[name], until: time + PUSH_TIME });
-  };
+  // The body: each can set off a move, move on in time, draw itself, and say where the controller is
+  let body = null;
+  const which = holder.dataset.performer || 'guitar';
+  if (which === 'puppet') import('./luminin_puppet.js').then(({ createPuppet }) => (body = puppetBody(createPuppet)));
+  else if (which === 'sprites') body = spriteBody(() => time);
+  else body = guitarBody(() => time);
 
-  let dragging = null;
+  function play(name) {
+    if (body) body.play(name);
+  }
   canvas.addEventListener('pointerdown', (event) => {
     const [x, y] = toCanvas(event);
-    if (Math.hypot(x - controllerOnScreen[0], y - controllerOnScreen[1]) < 18) {
-      gesture('button');
-      return;
-    }
-    dragging = { x, y };
-    canvas.setPointerCapture(event.pointerId);
+    if (Math.hypot(x - controllerOnScreen[0], y - controllerOnScreen[1]) < 22) onButton();
   });
-  canvas.addEventListener('pointermove', (event) => {
-    if (!dragging) return;
-    const [x, y] = toCanvas(event);
-    guitar.pitchTarget = clamp(guitar.pitchTarget - (y - dragging.y) * DRAG.pitch, ...LIMITS.pitch);
-    guitar.yawTarget = clamp(guitar.yawTarget + (x - dragging.x) * DRAG.yaw, ...LIMITS.yaw);
-    dragging = { x, y };
-  });
-  const stop = () => (dragging = null);
-  canvas.addEventListener('pointerup', stop);
-  canvas.addEventListener('pointercancel', stop);
-  const KEYS = { ArrowDown: 'down', ArrowUp: 'up', ArrowRight: 'forward', ArrowLeft: 'back', ' ': 'strum', Enter: 'button' };
+  const KEYS = { ArrowDown: 'down', ArrowUp: 'up' };
   canvas.addEventListener('keydown', (event) => {
-    if (!KEYS[event.key]) return;
+    const name = KEYS[event.key];
+    if (!name) return;
     event.preventDefault();
-    gesture(KEYS[event.key]);
+    if (!event.repeat) play(name);
   });
-  for (const button of holder.querySelectorAll('[data-gesture]')) {
-    button.addEventListener('click', () => gesture(button.dataset.gesture));
+  for (const button of holder.querySelectorAll('[data-move]')) {
+    const name = button.dataset.move;
+    button.addEventListener('click', () => play(name));
   }
 
   function toCanvas(event) {
@@ -118,25 +97,209 @@ export function createPerformer(holder, { onButton }) {
     return [((event.clientX - box.left) / box.width) * W, ((event.clientY - box.top) / box.height) * H];
   }
 
-  // ------------------------------------------------------------ The physics, and what the controller reads
-  function move(dt) {
-    let force = { h: 0, pitch: 0, yaw: 0 };
-    pushes = pushes.filter((push) => push.until > time);
-    for (const push of pushes) for (const key in force) force[key] += push[key] || 0;
-    const damping = 2 * Math.sqrt(SPRING) * DAMPING;
-    const spring = (value, velocity, target, push) => velocity + (SPRING * (target - value) - damping * velocity + push) * dt;
-    guitar.pitchV = spring(guitar.pitch, guitar.pitchV, guitar.pitchTarget, force.pitch);
-    guitar.yawV = spring(guitar.yaw, guitar.yawV, guitar.yawTarget, force.yaw);
-    guitar.hV = spring(guitar.h, guitar.hV, 0, force.h);
-    guitar.pitch += guitar.pitchV * dt;
-    guitar.yaw += guitar.yawV * dt;
-    guitar.h += guitar.hV * dt;
-    vibration = HUM + (vibration - HUM) * Math.exp(-STRUM_FADE * dt);
+  // ------------------------------------------------------------ Just the guitar
+  function guitarBody(now) {
+    const LENGTH = 300; // How long the guitar is on the stage, in pixels
+    const HELD = [SKETCH.x + 68, 405]; // Where its middle is on the stage: the guitar centred under the sketch
+    const s = LENGTH / MUSTANG.width;
+    const perCm = MUSTANG.perCm * s;
+    // Poses: how far its neck is tipped up (radians) and how far it's lifted (px), and when they're reached (s)
+    const REST = { angle: 0.25, lift: 0 };
+    const MOVES = {
+      // Wound up, the neck lifting, then brought down hard, past level, and back up to where it was held
+      down: [
+        { t: 0.14, angle: 0.55, lift: 14 },
+        { t: 0.32, angle: -0.45, lift: -20 },
+        { t: 0.44, angle: -0.32, lift: -14 },
+        { t: 0.78, angle: 0.1, lift: -4 },
+        { t: 1.15, ...REST },
+      ],
+      // Dipped, the neck dropping, then thrust up hard, well past where it was held, and settling back
+      up: [
+        { t: 0.14, angle: 0, lift: -10 },
+        { t: 0.32, angle: 1.0, lift: 18 },
+        { t: 0.44, angle: 0.88, lift: 14 },
+        { t: 0.78, angle: 0.4, lift: 4 },
+        { t: 1.15, ...REST },
+      ],
+    };
+    // Drawn once at its size on the stage, so it isn't shrunk from the full image every frame
+    const image = document.createElement('canvas');
+    const source = new Image();
+    source.onload = () => {
+      image.width = Math.round(MUSTANG.width * s);
+      image.height = Math.round(MUSTANG.height * s);
+      const c = image.getContext('2d');
+      c.imageSmoothingQuality = 'high';
+      c.drawImage(source, 0, 0, image.width, image.height);
+    };
+    source.src = `${import.meta.env.BASE_URL}sprites/mustang-luminin.png`;
+
+    let pose = { ...REST };
+    let move = null;
+    // A point in the image, on the stage, as the guitar's held
+    const onStage = ([x, y]) => {
+      const dx = (x - MUSTANG.pivot[0]) * s;
+      const dy = (y - MUSTANG.pivot[1]) * s;
+      const [c, n] = [Math.cos(-pose.angle), Math.sin(-pose.angle)];
+      return [HELD[0] + dx * c - dy * n, HELD[1] - pose.lift + dx * n + dy * c];
+    };
+    return {
+      // Starts from wherever it is, so one can cut into another
+      play(name) {
+        if (!MOVES[name]) return;
+        move = { name, start: now(), keys: [{ t: 0, ...pose }, ...MOVES[name]] };
+      },
+      update() {
+        if (!move) return;
+        const t = now() - move.start;
+        const keys = move.keys;
+        if (t >= keys[keys.length - 1].t) {
+          move = null;
+          pose = { ...REST };
+          return;
+        }
+        let i = 0;
+        while (i < keys.length - 2 && keys[i + 1].t <= t) i++;
+        const k = [i - 1, i, i + 1, i + 2].map((j) => keys[clamp(j, 0, keys.length - 1)]);
+        const u = clamp((t - k[1].t) / (k[2].t - k[1].t), 0, 1);
+        pose = { angle: curve(k.map((p) => p.angle), u), lift: curve(k.map((p) => p.lift), u) };
+      },
+      move: () => move && move.name,
+      draw(c) {
+        if (!image.width) return;
+        c.save();
+        c.translate(HELD[0], HELD[1] - pose.lift);
+        c.rotate(-pose.angle);
+        c.drawImage(image, -MUSTANG.pivot[0] * s, -MUSTANG.pivot[1] * s);
+        c.restore();
+      },
+      controller() {
+        const at = onStage(MUSTANG.controller);
+        // In cm: y up, z forward (toward the headstock, as it's held level)
+        return { position: [0, (H - at[1]) / perCm, at[0] / perCm], onCanvas: at, pitch: pose.angle, yaw: 0 };
+      },
+    };
   }
 
+  // ------------------------------------------------------------ The 3D puppet
+  function puppetBody(createPuppet) {
+    const puppet = createPuppet({ width: W, height: H, feet: FEET, standing: STANDING });
+    return {
+      play: (name) => puppet.play(name),
+      update: (dt) => puppet.update(dt),
+      move: () => puppet.move,
+      draw: (c) => c.drawImage(puppet.canvas, 0, 0),
+      controller() {
+        const { room, onCanvas, pitch, yaw } = puppet.controller();
+        return { position: room, onCanvas, pitch, yaw };
+      },
+    };
+  }
+
+  // ------------------------------------------------------------ The sprite sheets
+  function spriteBody(now) {
+    const CM = 178 / SHEET.standing; // cm per pixel, the performer standing 178 cm tall
+    // The moves: which of the sheet's frames play, in order, and how long each is shown (s)
+    const IDLE = { name: 'down', index: 7 }; // Low in the lunge the jolt down ends in, playing
+    const range = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
+    const MOVES = { down: { frames: range(0, 7), each: 0.14 } };
+    const atlas = new Image();
+    atlas.src = `${import.meta.env.BASE_URL}sprites/luminin-performer.png`;
+
+    // What's shown: a list of frames, each with the move that put it there, when it starts and how long it lasts
+    let steps = [{ ...IDLE, move: null, t: 0, d: Infinity }];
+    const frameOf = (step) => SHEET.moves[step.name][step.index];
+    const current = () => {
+      let i = 0;
+      while (i < steps.length - 1 && steps[i + 1].t <= now()) i++;
+      return i;
+    };
+    // Drops what hasn't been shown yet, keeping a few frames back for the readings to run smoothly on from
+    function cut() {
+      const i = current();
+      steps = steps.slice(Math.max(0, i - 2), i + 1);
+      const shown = steps[steps.length - 1];
+      shown.d = Math.max(0, now() - shown.t);
+    }
+    function queue(move, indices, each) {
+      const end = steps[steps.length - 1];
+      let t = Math.max(now(), end.t + end.d);
+      for (const index of indices) {
+        steps.push({ move, name: move, index, t, d: each });
+        t += each;
+      }
+    }
+    function rest() {
+      const end = steps[steps.length - 1];
+      steps.push({ ...IDLE, move: null, t: end.t + end.d, d: Infinity });
+    }
+
+    const place = (frame) => [FEET[0] - frame.anchor[0], FEET[1] - frame.anchor[1]];
+    const tipOnStage = (frame) => {
+      const [x, y] = place(frame);
+      return [x + frame.tip[0], y + frame.tip[1]];
+    };
+    // The neck's angle, up from pointing forward (to the right)
+    const angleOf = (frame) => Math.atan2(-frame.neck[1], frame.neck[0]);
+
+    // The frames only say where the headstock is now and then; the controller itself moves smoothly between them, on
+    // a curve through each frame's headstock, reached halfway through the time that frame's shown
+    function headstockAt(t) {
+      const knots = steps.map((s) => ({ t: s.t + Math.min(s.d, 0.2) / 2, frame: frameOf(s) }));
+      let i = 0;
+      while (i < knots.length - 1 && knots[i + 1].t <= t) i++;
+      const k = [i - 1, i, i + 1, i + 2].map((j) => knots[clamp(j, 0, knots.length - 1)]);
+      if (k[2] === k[1] || t <= k[1].t) return { position: tipOnStage(k[1].frame), angle: angleOf(k[1].frame) };
+      const u = clamp((t - k[1].t) / (k[2].t - k[1].t), 0, 1);
+      const tips = k.map((knot) => tipOnStage(knot.frame));
+      // Angles unwrapped, so a swing over the head goes the short way round
+      const angles = [angleOf(k[0].frame)];
+      for (let j = 1; j < 4; j++) {
+        let a = angleOf(k[j].frame);
+        while (a - angles[j - 1] > Math.PI) a -= Math.PI * 2;
+        while (a - angles[j - 1] < -Math.PI) a += Math.PI * 2;
+        angles.push(a);
+      }
+      return { position: [0, 1].map((d) => curve(tips.map((p) => p[d]), u)), angle: curve(angles, u) };
+    }
+
+    return {
+      // Each starts at once, cutting into whatever's playing
+      play(name) {
+        if (!MOVES[name]) return;
+        cut();
+        queue(name, MOVES[name].frames, MOVES[name].each);
+        rest();
+      },
+      update() {
+        // Frames long past aren't needed any more
+        const i = current();
+        if (i > 3) steps = steps.slice(i - 3);
+      },
+      move: () => steps[current()].move,
+      draw(c) {
+        const frame = frameOf(steps[current()]);
+        if (atlas.complete && atlas.naturalWidth) c.drawImage(atlas, frame.x, frame.y, frame.w, frame.h, ...place(frame), frame.w, frame.h);
+      },
+      controller() {
+        const { position: onStage, angle } = headstockAt(now());
+        // In cm, from the feet: y up, z forward (the way the performer faces, toward the audience); swinging forward
+        // and back counted round the guitar's middle
+        const forward = (onStage[0] - FEET[0]) * CM;
+        return {
+          position: [0, (FEET[1] - onStage[1]) * CM, forward],
+          onCanvas: tipOnStage(frameOf(steps[current()])),
+          pitch: angle,
+          yaw: forward / NECK,
+        };
+      },
+    };
+  }
+
+  // ------------------------------------------------------------ The controller's readings
   function read(dt, controller) {
-    const { u } = frame();
-    const position = add(slung(), scale(u, NECK));
+    const { position, pitch, yaw } = body.controller();
     if (!last) last = { position, velocity: [0, 0, 0] };
     const velocity = scale(sub(position, last.position), 1 / dt);
     const acceleration = scale(sub(velocity, last.velocity), 1 / dt);
@@ -144,129 +307,71 @@ export function createPerformer(holder, { onButton }) {
     smoothAcc = smoothAcc.map((a, i) => a + (acceleration[i] - a) * 0.5);
     // In g, with the vibration's noise in it
     const g = smoothAcc.map((a) => a / GRAVITY + gaussian() * vibration);
-    const jolt = (amount, now) => Math.min(2000, Math.max(Math.max(0, amount - JOLT_FROM) * JOLT_GAIN, now * JOLT_HOLD));
-    controller.downJolt = jolt(-g[1], controller.downJolt || 0);
-    controller.upJolt = jolt(g[1], controller.upJolt || 0);
-    // Toward the audience is toward the camera, +z
-    controller.forwardJolt = jolt(g[2], controller.forwardJolt || 0);
-    controller.backJolt = jolt(-g[2], controller.backJolt || 0);
     controller.totalAcc += (Math.min(3, Math.hypot(...g)) - controller.totalAcc) * 0.3;
-    controller.zTilt = Math.sin(guitar.pitch) + gaussian() * vibration * 0.3;
+    controller.zTilt = Math.sin(pitch) + gaussian() * vibration * 0.3;
+    // Turning, in degrees a second, as the gyroscope reads it: tipping the neck up and down (x), and swinging it
+    // toward the audience and back (y)
+    const turn = [pitch, yaw];
     const degrees = 180 / Math.PI;
-    controller.gyroX = clamp(guitar.pitchV * degrees * GYRO_SCALE + gaussian() * vibration * 4, -30, 30);
-    controller.gyroY = clamp(guitar.yawV * degrees * GYRO_SCALE + gaussian() * vibration * 4, -30, 30);
-    for (const key of ['downJolt', 'upJolt', 'forwardJolt', 'backJolt']) if (controller[key] < 1) controller[key] = 0;
+    const gyro = lastTurn ? turn.map((a, i) => ((a - lastTurn[i]) / dt) * degrees) : [0, 0];
+    lastTurn = turn;
+    controller.gyroX = clamp(gyro[0] * GYRO_SCALE + gaussian() * vibration * 4, -30, 30);
+    controller.gyroY = clamp(gyro[1] * GYRO_SCALE + gaussian() * vibration * 4, -30, 30);
+    // The jolts, as the controller's firmware works them out (20250602_Luminin_Controller.ino): turning faster than
+    // a threshold sets the jolt to how fast, which then fades by 2% each time round its loop (every 50 ms), so a jolt
+    // lasts a good while after the motion's over (half gone in 1.7 s). Its value's sent rounded
+    const move = body.move();
+    const tied = (move && TIED[move]) || [];
+    const fade = Math.pow(JOLT_FADE, dt / JOLT_LOOP);
+    const latch = (key, speed, over) => {
+      jolts[key] = (jolts[key] || 0) * fade;
+      if (tied.includes(key) && speed > over) jolts[key] = speed;
+      controller[key] = Math.round(jolts[key]);
+    };
+    latch('downJolt', -gyro[0], 350);
+    latch('upJolt', gyro[0], 350);
+    latch('forwardJolt', gyro[1], 400);
+    latch('backJolt', -gyro[1], 400);
     readings = { ...controller, vibration };
   }
 
-  // ------------------------------------------------------------ 3D
-  const slung = () => add(SLUNG, [0, guitar.h, 0]);
-  // The guitar's own directions: u along the neck, v across it (toward its top edge), n out of its front
-  function frame() {
-    const shake = vibration * 0.012;
-    const p = guitar.pitch + gaussian() * shake;
-    const w = guitar.yaw + gaussian() * shake;
-    const u = [Math.cos(p) * Math.cos(w), Math.sin(p), Math.cos(p) * Math.sin(w)];
-    const n = [-Math.sin(w), 0, Math.cos(w)];
-    return { u, n, v: cross(n, u) };
-  }
-  const onGuitar = (a, b, c = 0) => {
-    const { u, v, n } = frame();
-    return add(add(add(slung(), scale(u, a)), scale(v, b)), scale(n, c));
-  };
-
-  function project([x, y, z]) {
-    // The performer turns side-on to face the right, as in the clips, with the guitar's neck pointing right and away
-    [x, z] = [x * Math.cos(TURN) + z * Math.sin(TURN), -x * Math.sin(TURN) + z * Math.cos(TURN)];
-    const { yaw, pitch, distance, focal, look } = CAMERA;
-    x -= look[0];
-    y -= look[1];
-    z -= look[2];
-    const x1 = x * Math.cos(yaw) - z * Math.sin(yaw);
-    const z1 = x * Math.sin(yaw) + z * Math.cos(yaw);
-    const y2 = y * Math.cos(pitch) - z1 * Math.sin(pitch);
-    const z2 = y * Math.sin(pitch) + z1 * Math.cos(pitch);
-    const s = focal / (distance - z2);
-    return [CAMERA.x + x1 * s, CAMERA.y - y2 * s, s];
-  }
-
-  // ------------------------------------------------------------ Drawing shapes
-  // A path through some points (on the canvas), filled and/or stroked
-  function pen(points, { width = 1.5, close = false, fill = null, ink = null } = {}) {
-    context.beginPath();
-    context.moveTo(...points[0]);
-    for (const point of points.slice(1)) context.lineTo(...point);
-    if (close) context.closePath();
-    if (fill) {
-      context.fillStyle = fill;
-      context.fill();
-    }
-    if (ink) {
-      context.lineWidth = width;
-      context.strokeStyle = ink;
-      context.lineJoin = context.lineCap = 'round';
-      context.stroke();
-    }
-  }
-  // A rounded, tapering limb from a to b (in 3D), thick ra at a and rb at b, as one closed outline on the canvas
-  function capsule(a, b, ra, rb, options) {
-    const [ax, ay, as] = project(a);
-    const [bx, by, bs] = project(b);
-    const r1 = ra * as;
-    const r2 = rb * bs;
-    const angle = Math.atan2(by - ay, bx - ax);
-    const points = [];
-    for (let i = 0; i <= 12; i++) {
-      const t = angle + Math.PI / 2 + (i / 12) * Math.PI; // Round the back of a
-      points.push([ax + Math.cos(t) * r1, ay + Math.sin(t) * r1]);
-    }
-    for (let i = 0; i <= 12; i++) {
-      const t = angle - Math.PI / 2 + (i / 12) * Math.PI; // ...and the front of b
-      points.push([bx + Math.cos(t) * r2, by + Math.sin(t) * r2]);
-    }
-    pen(points, { close: true, ...options });
-  }
-  const pen3 = (points, options) => pen(points.map(project), options);
-
   // ------------------------------------------------------------ Drawing
-  function draw(screenImage, glowColour) {
-    context.fillStyle = STAGE;
-    context.fillRect(0, 0, W, H);
-
-    // The screens fill the whole background, showing what the sketch is drawing (scaled to cover, cropping its sides)
-    if (screenImage) {
+  function draw(screenImage, glowColour, sketch) {
+    context.clearRect(0, 0, W, H);
+    // The sketch's frame, scaled to cover the stage (cropping its sides)
+    if (screenImage && SHOW_STAGE) {
       const fit = Math.max(W / screenImage.width, H / screenImage.height);
       const width = screenImage.width * fit;
       const height = screenImage.height * fit;
       context.drawImage(screenImage, (W - width) / 2, (H - height) / 2, width, height);
     }
+    // A song's sketch as it is on the laptop running it ({image, samples}), with a dot on each spot its LEDs take
+    // their colour from
+    if (sketch) {
+      const { x, y, size } = SKETCH;
+      context.drawImage(sketch.image, x, y, size, size);
+      const cell = size / sketch.samples;
+      context.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      for (let i = 0; i < sketch.samples; i++) {
+        for (let j = 0; j < sketch.samples; j++) {
+          context.beginPath();
+          context.arc(x + (i + 0.5) * cell, y + (j + 0.5) * cell, 1, 0, Math.PI * 2);
+          context.fill();
+        }
+      }
+    }
 
-    context = maskContext;
-    context.clearRect(0, 0, W, H);
-    // The guitar by itself, a black silhouette against the screens: an offset body, its neck, and a headstock with
-    // six tuners along its top edge, the controller on its tip
-    const fill = { fill: SILHOUETTE };
-    pen3(smooth(OFFSET_BODY).map(([a, b]) => onGuitar(a, b)), { ...fill, close: true });
-    pen3([onGuitar(12, -2.7, 0.5), onGuitar(63, -2.2, 0.5), onGuitar(63, 2.2, 0.5), onGuitar(12, 2.7, 0.5)], { ...fill, close: true });
-    pen3(smooth(HEADSTOCK).map(([a, b]) => onGuitar(a, b, 0.5)), { ...fill, close: true });
-    for (let i = 0; i < 6; i++) {
-      const at = 66 + i * 2.4;
-      capsule(onGuitar(at, 3.2 + i * 0.25, 0.5), onGuitar(at, 5.6 + i * 0.25, 0.5), 0.7, 0.9, fill);
-    }
-    const box = [];
-    for (const a of [78, 86]) for (const b of [-4, 4]) for (const c of [0.5, 4.5]) box.push(onGuitar(a, b, c));
-    for (const face of [[0, 1, 3, 2], [4, 5, 7, 6], [0, 1, 5, 4], [2, 3, 7, 6], [0, 2, 6, 4], [1, 3, 7, 5]]) {
-      pen3(face.map((i) => box[i]), { ...fill, close: true });
-    }
-    const light = project(onGuitar(82, 0, 4.6));
+    // The performer, feet on the stage
+    maskContext.clearRect(0, 0, W, H);
+    body.draw(maskContext);
+    const light = body.controller().onCanvas;
     controllerOnScreen = light;
 
-    context = stageContext;
-    haze(glowColour);
-    trail(glowColour, light);
+    if (SHOW_STAGE) haze(glowColour);
+    if (SHOW_LIGHT) trail(glowColour, light);
     figure(holder.dataset.style || 'solid', glowColour);
-    bloom(glowColour, light);
-    graph();
+    if (SHOW_LIGHT) bloom(glowColour, light);
+    if (SHOW_GRAPH) graph();
   }
 
   // The controller's light leaves a fading trail as it moves, like a brush on the screens
@@ -275,46 +380,44 @@ export function createPerformer(holder, { onButton }) {
   function trail(colour, light) {
     trailPoints.push(light.slice(0, 2));
     if (trailPoints.length > TRAIL) trailPoints.shift();
-    const c = stageContext;
-    c.save();
-    c.globalCompositeOperation = 'screen';
-    c.lineCap = 'round';
+    context.save();
+    context.globalCompositeOperation = 'screen';
+    context.lineCap = 'round';
     for (let i = 1; i < trailPoints.length; i++) {
       const age = i / trailPoints.length; // 1 = newest
-      c.strokeStyle = withAlpha(colour, age * 0.7);
-      c.lineWidth = 2 + age * 7;
-      c.beginPath();
-      c.moveTo(...trailPoints[i - 1]);
-      c.lineTo(...trailPoints[i]);
-      c.stroke();
+      context.strokeStyle = withAlpha(colour, age * 0.7);
+      context.lineWidth = 2 + age * 7;
+      context.beginPath();
+      context.moveTo(...trailPoints[i - 1]);
+      context.lineTo(...trailPoints[i]);
+      context.stroke();
     }
-    c.restore();
+    context.restore();
   }
 
   // The controller's light, blooming hot white through the haze, brighter the harder it's moving
   function bloom(colour, light) {
-    const c = stageContext;
-    c.save();
-    c.globalCompositeOperation = 'screen';
+    context.save();
+    context.globalCompositeOperation = 'screen';
     const size = 18 + Math.min(3, readings.totalAcc || 0) * 8;
-    const glow = c.createRadialGradient(light[0], light[1], 0, light[0], light[1], size * 2.5);
+    const glow = context.createRadialGradient(light[0], light[1], 0, light[0], light[1], size * 2.5);
     glow.addColorStop(0, 'rgba(255, 255, 255, 1)');
     glow.addColorStop(0.12, 'rgba(255, 255, 255, 0.9)');
     glow.addColorStop(0.35, withAlpha(colour, 0.5));
     glow.addColorStop(1, withAlpha(colour, 0));
-    c.fillStyle = glow;
-    c.fillRect(light[0] - size * 2.5, light[1] - size * 2.5, size * 5, size * 5);
-    c.restore();
+    context.fillStyle = glow;
+    context.fillRect(light[0] - size * 2.5, light[1] - size * 2.5, size * 5, size * 5);
+    context.restore();
   }
 
-  // The figure's mask laid on the stage in a style (holder's data-style; trying them out):
+  // The performer laid on the stage in a style (holder's data-style; trying them out):
   // solid, soft, neon, led, halftone, cutout, brush, hatch
   const scratch = document.createElement('canvas');
   scratch.width = W;
   scratch.height = H;
   const scratchContext = scratch.getContext('2d');
   function figure(style, colour) {
-    const c = stageContext;
+    const c = context;
     c.save();
     if (style === 'soft') {
       // As through stage haze: blurred edges
@@ -331,12 +434,7 @@ export function createPerformer(holder, { onButton }) {
       scratchContext.fillStyle = 'white';
       scratchContext.fillRect(0, 0, W, H);
       scratchContext.restore();
-      c.fillStyle = 'rgba(0, 0, 0, 0.55)';
-      c.globalCompositeOperation = 'source-over';
       c.drawImage(mask, 0, 0); // A dark body behind the tube
-      c.globalAlpha = 0.6;
-      c.globalCompositeOperation = 'source-over';
-      c.globalAlpha = 1;
       c.shadowColor = colour;
       c.shadowBlur = 16;
       c.drawImage(scratch, 0, 0);
@@ -374,26 +472,14 @@ export function createPerformer(holder, { onButton }) {
       c.filter = 'none';
       c.globalAlpha = 1;
       c.drawImage(mask, 0, 0);
-      c.drawImage(mask, 0.6, 0.6);
     } else if (style === 'brush') {
-      // Ink brushed on: ragged, dry-brush edges and a few spatters
+      // Ink brushed on: ragged, dry-brush edges
       for (let i = 0; i < 6; i++) {
         c.globalAlpha = 0.35;
         c.drawImage(mask, Math.sin(time * 3 + i * 2.1) * 2.5, Math.cos(time * 2 + i * 1.3) * 2.5);
       }
       c.globalAlpha = 1;
       c.drawImage(mask, 0, 0);
-      c.fillStyle = 'black';
-      const pixels = maskContext.getImageData(0, 0, W, H).data;
-      for (let i = 0; i < 260; i++) {
-        const x = (Math.sin(i * 12.9898) * 43758.5453 % 1 + 1) % 1 * W;
-        const y = (Math.sin(i * 78.233) * 12543.5453 % 1 + 1) % 1 * H;
-        const near = pixels[4 * (Math.floor(y) * W + Math.floor(x)) + 3];
-        if (!near) continue;
-        c.beginPath();
-        c.arc(x + ((i % 7) - 3) * 3, y + ((i % 5) - 2) * 3, 0.6 + (i % 4) * 0.5, 0, Math.PI * 2);
-        c.fill();
-      }
     } else if (style === 'hatch') {
       // Pen hatching, crossed, inside a drawn outline
       scratchContext.clearRect(0, 0, W, H);
@@ -410,16 +496,6 @@ export function createPerformer(holder, { onButton }) {
       scratchContext.stroke();
       scratchContext.globalCompositeOperation = 'destination-in';
       scratchContext.drawImage(mask, 0, 0);
-      // ...plus the outline: the mask spread a little, minus the mask
-      scratchContext.globalCompositeOperation = 'source-over';
-      const ring = document.createElement('canvas');
-      ring.width = W;
-      ring.height = H;
-      const r = ring.getContext('2d');
-      for (let k = 0; k < 8; k++) r.drawImage(mask, Math.cos((k / 8) * Math.PI * 2) * 1.6, Math.sin((k / 8) * Math.PI * 2) * 1.6);
-      r.globalCompositeOperation = 'destination-out';
-      r.drawImage(mask, 0, 0);
-      scratchContext.drawImage(ring, 0, 0);
       scratchContext.restore();
       c.drawImage(scratch, 0, 0);
     } else {
@@ -433,11 +509,11 @@ export function createPerformer(holder, { onButton }) {
   function haze(colour) {
     context.save();
     context.globalCompositeOperation = 'screen';
-    const back = project([-30, 170, -60]);
-    const bloom = context.createRadialGradient(back[0], back[1], 0, back[0], back[1], H * 0.7);
-    bloom.addColorStop(0, withAlpha(colour, 0.55));
-    bloom.addColorStop(1, withAlpha(colour, 0));
-    context.fillStyle = bloom;
+    const back = [FEET[0] + 20, FEET[1] - SHEET.standing * 0.8];
+    const glow = context.createRadialGradient(back[0], back[1], 0, back[0], back[1], H * 0.7);
+    glow.addColorStop(0, withAlpha(colour, 0.55));
+    glow.addColorStop(1, withAlpha(colour, 0));
+    context.fillStyle = glow;
     context.fillRect(0, 0, W, H);
     // Beams from lights above, sweeping slowly
     context.filter = 'blur(10px)';
@@ -511,44 +587,23 @@ export function createPerformer(holder, { onButton }) {
       });
       context.stroke();
     });
-    pen([[x, y], [x + width, y], [x + width, y + height], [x, y + height]], { close: true, width: 1, ink: 'rgba(255, 255, 255, 0.5)' });
+    context.lineWidth = 1;
+    context.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+    context.strokeRect(x, y, width, height);
   }
 
   return {
-    // Moves the guitar on by dt seconds, fills in the controller's readings, and draws the stage with the screen showing
-    // screenImage (a canvas)
-    update(dt, controller, screenImage, glowColour) {
+    // Moves the performer on by dt seconds, fills in the controller's readings, and draws the stage with the screen
+    // showing screenImage (a canvas)
+    update(dt, controller, screenImage, glowColour, sketch) {
       dt = Math.min(dt, 1 / 30);
       time += dt;
-      move(dt);
+      if (!body) return; // The puppet's still loading
+      body.update(dt);
       read(dt, controller);
-      draw(screenImage, glowColour);
+      draw(screenImage, glowColour, sketch);
     },
   };
-}
-
-// ------------------------------------------------------------ The guitar's shape
-// In the guitar's own terms: along the neck (toward the headstock) and across it (toward its top edge), in cm, measured
-// from the middle of the body. An offset body, like Ofer's: the waist set off-centre, the lower horn reaching further
-const OFFSET_BODY = [
-  [12, 3], [15, 7], [18, 11], [17, 14], [12, 14.5], [5, 12.5], [-2, 11.8], [-10, 14], [-18, 16], [-25, 14.5],
-  [-29.5, 8], [-30.5, 0], [-29.5, -8], [-25, -14.5], [-17, -16.8], [-9, -15], [-3, -12.2], [3, -12.8], [10, -15],
-  [16, -15], [19, -12], [16, -7.5], [12.5, -3.5],
-];
-const HEADSTOCK = [[62, -2.3], [70, -2.8], [79, -3.1], [81, -1], [80.5, 3.6], [76, 4.8], [69, 4.4], [65, 3.2], [62, 2.3]];
-// A closed outline smoothed through its points (Catmull-Rom)
-function smooth(points, steps = 5) {
-  const out = [];
-  for (let i = 0; i < points.length; i++) {
-    const [p0, p1, p2, p3] = [-1, 0, 1, 2].map((k) => points[(i + k + points.length) % points.length]);
-    for (let j = 0; j < steps; j++) {
-      const t = j / steps;
-      const t2 = t * t;
-      const t3 = t2 * t;
-      out.push([0, 1].map((d) => 0.5 * (2 * p1[d] + (-p0[d] + p2[d]) * t + (2 * p0[d] - 5 * p1[d] + 4 * p2[d] - p3[d]) * t2 + (-p0[d] + 3 * p1[d] - 3 * p2[d] + p3[d]) * t3)));
-    }
-  }
-  return out;
 }
 
 // ------------------------------------------------------------ Little helpers
@@ -557,10 +612,12 @@ function withAlpha(colour, alpha) {
   const [r = 255, g = 255, b = 255] = (colour.match(/[\d.]+/g) || []).map(Number);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
-const add = (a, b) => a.map((x, i) => x + b[i]);
 const sub = (a, b) => a.map((x, i) => x - b[i]);
 const scale = (a, s) => a.map((x) => x * s);
-const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+// A smooth curve (Catmull-Rom) through four values, at u between the middle two
+function curve([a, b, c, d], u) {
+  return 0.5 * (2 * b + (c - a) * u + (2 * a - 5 * b + 4 * c - d) * u * u + (3 * b - a - 3 * c + d) * u * u * u);
+}
 const clamp = (x, low, high) => Math.min(high, Math.max(low, x));
 function gaussian() {
   return (Math.random() + Math.random() + Math.random() - 1.5) * 1.4;
