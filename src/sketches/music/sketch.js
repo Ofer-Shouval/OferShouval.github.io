@@ -18,7 +18,7 @@ p5.disableFriendlyErrors = import.meta.env.PROD;
 
 const PAGES = [
   ['/music/live.html', 'live'],
-  ['/music/recordings.html', 'recordings'],
+  ['/music/unfamiliar-state.html', 'recordings'],
   ['/music/videos.html', 'music videos'],
   ['/music/info.html', 'info'],
 ];
@@ -32,18 +32,15 @@ let hintFadeIn = 1.5; // How much brighter it gets each frame, fading in (out of
 let hintMost = 210; // How bright it gets (255 = solid; 210 is the same as the gates' names)
 let hintShown = 10; // How many seconds it stays, unless a gate's clicked first
 let hintGone = false; // Has it started fading away?
-// Once the boat's through a gate, the screen fades to black, and the band's name comes up with the gate's,
-// before going to its page
+// Once the boat's through a gate, the screen fades to black before going to its page (no names on the way)
 const BAND_FONT = 'Pixeled 2';
 let bandName = 'o. wake';
 let gateDarkTime = 1; // How many seconds fading to black takes
-let gateNamesTime = 1; // ...then how many the names take to fade in
-let gateHold = 1.2; // ...and how many seconds they stay before the page changes
-// The page opens the same way in reverse, on black: the band's name fades in and stays, then fades out as
+// The page opens on black: the band's name fades in and stays, then fades out as
 // the water fades in and the boat sails on
-let introIn = 0.8; // How many seconds the name takes to fade in
-let introHold = 1.2; // ...how many it stays
-let introOut = 1.5; // ...and how many it takes to fade out, while the water fades in
+let introIn = 0.5; // How many seconds the name takes to fade in
+let introHold = 0.6; // ...how many it stays
+let introOut = 0.8; //...and how many it takes to fade out, while the water fades in
 let introStart = 0; // When the page started, in milliseconds
 const HINT_FONT = 'Source Code Pro'; // Thin, like the notes on the site's other pages
 let hintHeight = 0.5; // How far down the screen it is (0 = the top, 1 = the bottom)
@@ -85,9 +82,16 @@ let wakeLength = 0.9; // How long the wake is, compared to the height of the scr
 let arriveFrom = 0.3; // How far below the bottom of the screen the boat starts, sailing on, compared to the screen's height
 let boatHome = 0.7; // How far down the screen the camera keeps the boat, which leaves the water behind it in view
 
+// The sketch fills the window below the navbar
+function navbarBottom() {
+  let navbar = document.querySelector('.navbar');
+  return navbar ? Math.ceil(navbar.getBoundingClientRect().bottom) : 0;
+}
+
 function setup() {
-  let canvas = createCanvas(windowWidth, windowHeight);
-  canvas.position(0, 0);
+  let top = navbarBottom();
+  let canvas = createCanvas(windowWidth, windowHeight - top);
+  canvas.position(0, top);
   canvas.style('z-index', '-1');
   cursor(CROSS);
   document.fonts.load(`16px "${NAME_FONT}"`); // Nothing else on the page uses the gates' font, so ask for it
@@ -225,14 +229,13 @@ function showHint(x, y) {
   pop();
 }
 
-// After going through a gate: the screen fades to black, then the band's name, in outline, and the gate's
-// name under it fade in, and then it's that gate's page
+// After going through a gate: the screen fades to black, and then it's that gate's page
 function showArrival() {
   let gate = gates.find((gate) => gate.doneAt);
   if (!gate) return;
   let t = (millis() - gate.doneAt) / 1000;
-  showNames(ease(constrain(t / gateDarkTime, 0, 1)), ease(constrain((t - gateDarkTime) / gateNamesTime, 0, 1)), gate.label);
-  if (t > gateDarkTime + gateNamesTime + gateHold && !gate.left) {
+  showNames(ease(constrain(t / gateDarkTime, 0, 1)), 0);
+  if (t > gateDarkTime && !gate.left) {
     gate.left = true;
     window.location.href = gate.url;
   }
@@ -438,7 +441,9 @@ function mousePressed() {
 }
 
 function windowResized() {
-  resizeCanvas(windowWidth, windowHeight);
+  let top = navbarBottom();
+  resizeCanvas(windowWidth, windowHeight - top);
+  select('canvas').position(0, top);
   fitToWindow();
   // Keep the boat where it was on the screen, and move everything on the water along with it
   let shift = createVector(width / 2 - boat.home.x, height * boatHome - boat.home.y);
