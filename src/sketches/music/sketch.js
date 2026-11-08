@@ -42,6 +42,7 @@ let introIn = 0.5; // How many seconds the name takes to fade in
 let introHold = 0.6; // ...how many it stays
 let introOut = 0.8; //...and how many it takes to fade out, while the water fades in
 let introStart = 0; // When the page started, in milliseconds
+let introNamed = true; // Is the band's name shown? Only the first time the page opens in a visit; coming back, it just fades up from black
 const HINT_FONT = 'Source Code Pro'; // Thin, like the notes on the site's other pages
 let hintHeight = 0.5; // How far down the screen it is (0 = the top, 1 = the bottom)
 let overGate = false; // Is the mouse over a gate or its name?
@@ -100,6 +101,13 @@ function setup() {
 
   boat = new Boat(width / 2, height * boatHome);
   introStart = millis();
+  try {
+    if (sessionStorage.getItem('musicIntroShown')) {
+      introNamed = false;
+      introIn = introHold = 0;
+    }
+    sessionStorage.setItem('musicIntroShown', '1');
+  } catch {}
   boat.sailOn(height * arriveFrom, introIn + introHold);
   wake = new Wake();
   water = new Water();
@@ -246,7 +254,7 @@ function showIntro() {
   let t = (millis() - introStart) / 1000;
   if (t > introIn + introHold + introOut) return;
   let out = ease(constrain((t - introIn - introHold) / introOut, 0, 1));
-  showNames(1 - out, t < introIn ? ease(t / introIn) : 1 - out);
+  showNames(1 - out, !introNamed ? 0 : t < introIn ? ease(t / introIn) : 1 - out);
 }
 
 // Is the page still opening, before the black's begun to lift?
