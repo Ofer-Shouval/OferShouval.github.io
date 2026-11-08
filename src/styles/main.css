@@ -706,6 +706,13 @@ ul {
   pointer-events: none;
 }
 
+/* The Luminin's is a caption above its stage, clear of the sketch in its corner */
+.page .luminin-stage .sim-label {
+  position: static;
+  max-width: none;
+  margin: 0 0 8px;
+}
+
 /* The harp's is at the bottom, clear of its ceiling box (and above its controls) */
 .page .ghost-harp-sim .sim-label {
   top: auto;
@@ -1355,7 +1362,7 @@ a.card:hover {
 .luminin-sim { position: relative; max-width: 700px; margin: 24px auto 0; }
 .luminin-sim canvas { display: block; width: 100% !important; height: auto !important; aspect-ratio: 8 / 3; background-color: black; outline: none; cursor: crosshair; }
 .luminin-stage { position: relative; max-width: 700px; margin: 24px auto 0; }
-.luminin-stage canvas { display: block; width: 100%; height: auto; background-color: transparent; outline: none; cursor: grab; touch-action: none; }
+.luminin-stage canvas { display: block; width: 100%; height: auto; background-color: rgba(11, 11, 13, 0.6); outline: none; cursor: grab; touch-action: none; }
 .luminin-stage canvas:active { cursor: grabbing; }
 .luminin-gestures { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 8px; }
 .luminin-gestures button { padding: 4px 10px; border: 1px solid #7a7a7a; background: none; color: white; font-family: 'Inconsolata', monospace; font-size: 13px; cursor: pointer; }

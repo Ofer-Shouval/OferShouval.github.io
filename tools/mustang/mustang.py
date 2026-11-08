@@ -3,6 +3,8 @@
 # SciPy, from this folder:
 #   python mustang.py ../../public/sprites/mustang-luminin.png ../../src/sketches/luminin_mustang.json [--dark]
 #   (the JSON says where things are in it, for the simulation; --dark: the LEDs unlit, all black)
+# The simulation uses the dark one (public/sprites/mustang-luminin-dark.png) and lights the LEDs itself:
+#   python mustang.py ../../public/sprites/mustang-luminin-dark.png ../../src/sketches/luminin_mustang.json --dark
 import sys
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
@@ -47,6 +49,8 @@ unit = per_cm * SCALE * SS
 def at(u, v):
     p = np.array([cx, cy]) + along * u * unit + across * v * unit
     return (float(p[0]), float(p[1]))
+# Where an LED is on the board (cm from its middle): 8 along it and 4 across, on a 5.7 mm pitch
+led = lambda i, j: ((i - 3.5) * 0.57, (j - 1.5) * 0.48)
 w, h = CONTROLLER['size']
 draw.polygon([at(-w / 2, -h / 2), at(w / 2, -h / 2), at(w / 2, h / 2), at(-w / 2, h / 2)], fill=255)
 mask = body.resize((W, H), Image.LANCZOS)
@@ -60,7 +64,7 @@ if lit:
     r = 0.16 * unit
     for i in range(8):
         for j in range(4):
-            x, y = at((i - 3.5) * 0.57, (j - 1.5) * 0.48)
+            x, y = at(*led(i, j))
             d.ellipse([x - r, y - r, x + r, y + r], fill=255)
     leds = leds.resize((W, H), Image.LANCZOS)
     glow = leds.filter(ImageFilter.GaussianBlur(2.5 * SCALE / 3))
@@ -70,7 +74,7 @@ rgba.save(out, optimize=True)
 print(out, rgba.size)
 
 # For the simulation: where the controller is in the image, where the guitar's held (its middle, on the neck's line),
-# where its bridge is, and how many pixels make a cm
+# where its bridge is, how many pixels make a cm, and where the LEDs are
 if len(sys.argv) > 2 and sys.argv[2].endswith('.json'):
     import json
     PIVOT = (440, 448)
@@ -82,5 +86,8 @@ if len(sys.argv) > 2 and sys.argv[2].endswith('.json'):
         'pivot': [float((PIVOT[0] - x0) * SCALE), float((PIVOT[1] - y0) * SCALE)],
         'bridge': [float((BRIDGE[0] - x0) * SCALE), float((BRIDGE[1] - y0) * SCALE)],
         'perCm': round(float(per_cm * SCALE), 2),
+        # The LEDs, in the firmware's order (indexCalc: y * 8 + x, x along the board, y across it), and their size
+        'leds': [[round(c / SS, 1) for c in at(*led(x, y))] for y in range(4) for x in range(8)],
+        'ledRadius': round(float(0.16 * per_cm * SCALE), 2),
     }, open(sys.argv[2], 'w'))
     print(sys.argv[2])

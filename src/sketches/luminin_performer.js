@@ -52,6 +52,8 @@ const SHOW_LIGHT = false; // The controller's light blooming and leaving a trail
 // The Luminin's screens: two panels of 16 x 32 LEDs, side by side (making the 32 x 32 the sketch is sampled at), each
 // behind a sheet of paper
 const PANEL = { across: 16, down: 32 };
+const SKETCH_SIZE = 0.7; // The sketch's size, for each pixel of the space left of the screens
+const GUITAR_SIZE = 1.35; // ...and the guitar's length
 const LAYOUT = layoutFor(W, H);
 
 export function createPerformer(holder, { onButton }) {
@@ -111,6 +113,11 @@ export function createPerformer(holder, { onButton }) {
     } else button.addEventListener('click', () => play(name));
   }
 
+  // Where the pointer is over the stage (null when it's off it), for the labels
+  let hover = null;
+  canvas.addEventListener('pointermove', (event) => (hover = toCanvas(event)));
+  canvas.addEventListener('pointerleave', () => (hover = null));
+
   function toCanvas(event) {
     const box = canvas.getBoundingClientRect();
     return [((event.clientX - box.left) / box.width) * W, ((event.clientY - box.top) / box.height) * H];
@@ -158,6 +165,9 @@ export function createPerformer(holder, { onButton }) {
     // The twist in 3D: the guitar's a flat board turned about an upright line through its bridge, seen in perspective
     // from the audience
     const EYE = 200 * perCm; // How far away it's seen from (px)
+    // The controller's glow: how bright its LEDs look at their dimmest (0-1), how far their light reaches (for each
+    // pixel of the guitar's length), and how strong it is at the middle
+    const GLOW = { floor: 0.6, reach: 0.3, strength: 0.75 };
     // Drawn once at its size on the stage, so it isn't shrunk from the full image every frame
     const image = document.createElement('canvas');
     const source = new Image();
@@ -168,7 +178,7 @@ export function createPerformer(holder, { onButton }) {
       c.imageSmoothingQuality = 'high';
       c.drawImage(source, 0, 0, image.width, image.height);
     };
-    source.src = `${import.meta.env.BASE_URL}sprites/mustang-luminin.png`;
+    source.src = `${import.meta.env.BASE_URL}sprites/mustang-luminin-dark.png`; // Its LEDs unlit, to light them here
 
     let pose = { ...REST };
     let jolts = []; // Those playing: their name and when they began
@@ -240,6 +250,43 @@ export function createPerformer(holder, { onButton }) {
       },
       // The moves playing (a held one until it's eased all the way out)
       moves: () => [...jolts.map((j) => j.name), ...Object.keys(holds).filter((name) => holds[name].amount > 0)],
+      // The controller's own LEDs, lit as its firmware lights them, and the glow they cast
+      lights(c) {
+        if (!image.width) return;
+        const colours = controllerLeds(time, jolts.downJolt || 0, readings.zTilt || 0);
+        const centre = onStage(MUSTANG.controller);
+        const near = (onStage([MUSTANG.controller[0] + 10, MUSTANG.controller[1]])[0] - centre[0]) / (10 * s) || 1;
+        const radius = MUSTANG.ledRadius * s * Math.max(0.4, Math.abs(near));
+        // As they look: an LED's colour stays vivid even when it's driven dimly (as the firmware drives them at rest),
+        // getting brighter with its drive
+        const looks = colours.map((rgb) => {
+          const level = Math.max(...rgb) / 255;
+          const full = rgb.map((v) => (level ? v / level : 0));
+          return full.map((v) => Math.round(v * (GLOW.floor + (1 - GLOW.floor) * level)));
+        });
+        const level = looks.reduce((sum, rgb) => sum + Math.max(...rgb), 0) / looks.length / 255;
+        c.save();
+        c.globalCompositeOperation = 'lighter';
+        // The glow they cast: as coloured as the LEDs together, reaching further and brighter the brighter they are
+        const mean = [0, 1, 2].map((k) => Math.round(looks.reduce((sum, rgb) => sum + rgb[k], 0) / looks.length));
+        const reach = LENGTH * GLOW.reach * (0.7 + 0.6 * level);
+        const glow = c.createRadialGradient(...centre, 0, ...centre, reach);
+        glow.addColorStop(0, `rgba(${mean.join(', ')}, ${GLOW.strength})`);
+        glow.addColorStop(0.25, `rgba(${mean.join(', ')}, ${GLOW.strength * 0.45})`);
+        glow.addColorStop(1, `rgba(${mean.join(', ')}, 0)`);
+        c.fillStyle = glow;
+        c.fillRect(centre[0] - reach, centre[1] - reach, reach * 2, reach * 2);
+        // The LEDs, each with a little bloom
+        c.shadowBlur = radius * 4;
+        MUSTANG.leds.forEach((at, i) => {
+          const [x, y] = onStage(at);
+          c.fillStyle = c.shadowColor = `rgb(${looks[i].join(', ')})`;
+          c.beginPath();
+          c.arc(x, y, radius, 0, Math.PI * 2);
+          c.fill();
+        });
+        c.restore();
+      },
       // In thin upright strips, each placed where it's projected, so the near end grows and the far end shrinks
       draw(c) {
         if (!image.width) return;
@@ -537,12 +584,98 @@ export function createPerformer(holder, { onButton }) {
       c.globalAlpha = 1;
       c.globalCompositeOperation = 'multiply';
       c.drawImage(paper, 0, 0);
-      const x = panel.x + side * (panel.width + panel.gap);
+      const x = panel.xs[side];
       context.drawImage(lit, x, panel.y, panel.width, panel.height);
-      context.strokeStyle = 'rgba(255, 255, 255, 0.12)';
-      context.lineWidth = 1;
-      context.strokeRect(x - 0.5, panel.y - 0.5, panel.width + 1, panel.height + 1);
+      context.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+      context.lineWidth = 1.5;
+      context.strokeRect(x - 0.75, panel.y - 0.75, panel.width + 1.5, panel.height + 1.5);
     }
+  }
+
+  // ------------------------------------------------------------ Labels, on hover
+  // While the pointer's over the stage, the data's way through the rig is drawn on it (as the page's system diagram has
+  // it): from the controller, over the air to the receiver and on to the Pi running the sketch, and from the sketch to
+  // the screens. Whatever's under the pointer is named
+  const NAMES = {
+    controller: ['the controller', 'an accelerometer and gyroscope on the headstock (an MPU on an ESP32),', 'read 20 times a second; its own 8 x 4 LEDs light up with the tilt and jolts'],
+    guitar: ['the guitar', "Ofer's Fender Mustang, played with the controller on its headstock"],
+    sketch: ['the sketch', 'Processing, on the Raspberry Pi; the dots are the 32 x 32 pixels the screens take'],
+    left: ['the left screen', '16 x 32 LEDs behind paper, showing the left half of the sketch'],
+    right: ['the right screen', '16 x 32 LEDs behind paper, showing the right half of the sketch'],
+  };
+  function under([x, y], sketch) {
+    if (Math.hypot(x - controllerOnScreen[0], y - controllerOnScreen[1]) < 16) return 'controller';
+    if (x >= 0 && y >= 0 && x < W && y < H && maskContext.getImageData(Math.floor(x), Math.floor(y), 1, 1).data[3] > 60) return 'guitar';
+    const { x: sx, y: sy, size } = LAYOUT.sketch;
+    if (sketch && x >= sx && x <= sx + size && y >= sy && y <= sy + size) return 'sketch';
+    const { xs, y: py, width, height } = LAYOUT.screens;
+    for (const [i, name] of [[0, 'left'], [1, 'right']]) if (x >= xs[i] && x <= xs[i] + width && y >= py && y <= py + height) return name;
+    return null;
+  }
+  const FONT = '11px Inconsolata, monospace';
+  // A few lines of text in a dark box, the first brighter, kept on the stage
+  function note(lines, x, y, { above = false } = {}) {
+    context.save();
+    context.font = FONT;
+    const width = Math.max(...lines.map((line) => context.measureText(line).width)) + 14;
+    const height = lines.length * 14 + 8;
+    x = clamp(x, 4, W - width - 4);
+    y = clamp(above ? y - height : y, 4, H - height - 4);
+    context.fillStyle = 'rgba(8, 8, 10, 0.85)';
+    context.fillRect(x, y, width, height);
+    context.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+    context.lineWidth = 1;
+    context.strokeRect(x + 0.5, y + 0.5, width - 1, height - 1);
+    context.textBaseline = 'top';
+    lines.forEach((line, i) => {
+      context.fillStyle = i ? 'rgba(255, 255, 255, 0.7)' : 'white';
+      context.fillText(line, x + 7, y + 5 + i * 14);
+    });
+    context.restore();
+  }
+  // A dashed line flowing from a to b, bowed to one side, with an arrowhead at b; where its middle is
+  function flow(a, b, bow) {
+    const mid = [(a[0] + b[0]) / 2 - (b[1] - a[1]) * bow, (a[1] + b[1]) / 2 + (b[0] - a[0]) * bow];
+    context.save();
+    context.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+    context.lineWidth = 1.2;
+    context.setLineDash([5, 5]);
+    context.lineDashOffset = -time * 30;
+    context.beginPath();
+    context.moveTo(...a);
+    context.quadraticCurveTo(...mid, ...b);
+    context.stroke();
+    const angle = Math.atan2(b[1] - mid[1], b[0] - mid[0]);
+    context.setLineDash([]);
+    context.fillStyle = 'rgba(255, 255, 255, 0.85)';
+    context.beginPath();
+    context.moveTo(...b);
+    context.lineTo(b[0] - Math.cos(angle - 0.4) * 8, b[1] - Math.sin(angle - 0.4) * 8);
+    context.lineTo(b[0] - Math.cos(angle + 0.4) * 8, b[1] - Math.sin(angle + 0.4) * 8);
+    context.fill();
+    context.restore();
+    return [(a[0] + 2 * mid[0] + b[0]) / 4, (a[1] + 2 * mid[1] + b[1]) / 4];
+  }
+  function labels(sketch) {
+    const { x: sx, y: sy, size } = LAYOUT.sketch;
+    const { xs, y: py, height } = LAYOUT.screens;
+    const r = readings;
+    const n = (v) => (Math.round(v * 100) / 100).toString();
+    if (sketch) {
+      // Controller to the sketch
+      const at = flow(controllerOnScreen, [sx + size / 2, sy + size + 4], -0.25);
+      note([
+        'controller > ESP-NOW (over the air) > Wemos D1 Mini > serial JSON > Raspberry Pi',
+        `zTilt ${n(r.zTilt)}  totalAcc ${n(r.totalAcc)}  gyroX ${Math.round(r.gyroX)}  gyroY ${Math.round(r.gyroY)}`,
+        `upJolt ${r.upJolt}  downJolt ${r.downJolt}  forwardJolt ${r.forwardJolt}  backJolt ${r.backJolt}`,
+      ], at[0] - 20, at[1] - 10, { above: true });
+      // The sketch to the screens
+      const to = [xs[0] - 4, py + height * 0.22];
+      const at2 = flow([sx + size + 4, sy + size * 0.5], to, -0.15);
+      note(['sketch > Fadecandy server > USB > two Fadecandy boards > 512 LEDs each', 'each LED takes the one pixel at its dot'], at2[0] - 40, at2[1] - 46);
+    }
+    const name = under(hover, sketch);
+    if (name) note(NAMES[name], hover[0] + 14, hover[1] + 14);
   }
 
   // ------------------------------------------------------------ Drawing
@@ -580,9 +713,14 @@ export function createPerformer(holder, { onButton }) {
 
     if (SHOW_STAGE) haze(glowColour);
     if (SHOW_LIGHT) trail(glowColour, light);
-    figure(holder.dataset.style || 'solid', glowColour);
+    const style = holder.dataset.style || 'solid';
+    figure(style, glowColour);
+    // The solid one gets a very thin white line round its edge, so its black stays clear against the dark stage
+    if (style === 'solid') figure('outline', glowColour);
+    if (body.lights) body.lights(context);
     if (SHOW_LIGHT) bloom(glowColour, light);
     if (SHOW_GRAPH) graph();
+    if (hover) labels(sketch);
   }
 
   // The controller's light leaves a fading trail as it moves, like a brush on the screens
@@ -622,15 +760,32 @@ export function createPerformer(holder, { onButton }) {
   }
 
   // The performer laid on the stage in a style (holder's data-style; trying them out):
-  // solid, soft, neon, led, halftone, cutout, brush, hatch
+  // solid (the default, black with a thin white edge), outline, soft, neon, led, halftone, cutout, brush, hatch
+  const OUTLINE = 0.5; // How thick the outline is (px)
   const scratch = document.createElement('canvas');
   scratch.width = W;
   scratch.height = H;
   const scratchContext = scratch.getContext('2d');
+
   function figure(style, colour) {
     const c = context;
     c.save();
-    if (style === 'soft') {
+    if (style === 'outline') {
+      // A thin white line round its edge, the inside left dark: the shape spread a little, less the shape itself
+      scratchContext.save();
+      scratchContext.clearRect(0, 0, W, H);
+      for (let a = 0; a < 12; a++) {
+        const turn = (a / 12) * Math.PI * 2;
+        scratchContext.drawImage(mask, Math.cos(turn) * OUTLINE, Math.sin(turn) * OUTLINE);
+      }
+      scratchContext.globalCompositeOperation = 'destination-out';
+      scratchContext.drawImage(mask, 0, 0);
+      scratchContext.globalCompositeOperation = 'source-in';
+      scratchContext.fillStyle = 'white';
+      scratchContext.fillRect(0, 0, W, H);
+      scratchContext.restore();
+      c.drawImage(scratch, 0, 0);
+    } else if (style === 'soft') {
       // As through stage haze: blurred edges
       c.filter = 'blur(5px)';
       c.drawImage(mask, 0, 0);
@@ -808,6 +963,7 @@ export function createPerformer(holder, { onButton }) {
     // showing screenImage (a canvas)
     update(dt, controller, screenImage, glowColour, sketch) {
       dt = Math.min(dt, 1 / 30);
+      if (!(dt > 0)) return; // Two frames at once: nothing's moved, and the readings would divide by nothing
       time += dt;
       if (!body) return; // The puppet's still loading
       body.update(dt);
@@ -831,26 +987,68 @@ function curve([a, b, c, d], u) {
 }
 const clamp = (x, low, high) => Math.min(high, Math.max(low, x));
 
-// Where everything goes on the stage, worked out from its size: a song's sketch at the top left (as on the laptop
-// running it), the guitar under it and as wide as it, and the Luminin's two screens filling the rest, on the right,
-// side by side with a little gap, as big as they'll go at their 1 x 2 shape
+// Where everything goes on the stage, worked out from its size, on an even grid (one spacing between everything and
+// round the edge): the Luminin's two screens on the right, full height, as big as that makes them at their 1 x 2
+// shape; on the left, a song's sketch at the top (as on the laptop running it), small and centred in the space, its
+// top level with theirs; and the guitar under it, from the left edge and longer than the space is wide, so it reaches
+// over the screens
 function layoutFor(width, height) {
-  const margin = Math.round(height * 0.03);
-  const size = Math.round(Math.min(height * 0.56, width * 0.38));
-  const sketch = { x: margin, y: margin, size };
-  const below = sketch.y + size;
-  const guitar = { length: size, middle: [margin + size * (MUSTANG.pivot[0] / MUSTANG.width), below + (height - below) * 0.42] };
-  const left = sketch.x + size + margin * 3;
-  const room = { width: width - left - margin, height: height - margin * 2 };
-  const gap = 0.06; // Between the screens, for each pixel of their height
-  const tall = Math.min(room.height, room.width / (PANEL.across * 2 / PANEL.down + gap));
+  const space = Math.round(height * 0.04);
+  const tall = height - space * 2;
   const wide = (tall * PANEL.across) / PANEL.down;
-  return {
-    sketch,
-    guitar,
-    screens: { x: left + (room.width - wide * 2 - tall * gap) / 2, y: margin + (room.height - tall) / 2, width: wide, height: tall, gap: tall * gap },
+  const left = Math.max(0, width - space * 4 - wide * 2);
+  const size = Math.round(left * SKETCH_SIZE);
+  const sketch = { x: space + (left - size) / 2, y: space, size };
+  const below = { top: sketch.y + size + space, bottom: height - space };
+  const length = left * GUITAR_SIZE;
+  const guitar = {
+    length,
+    // Its middle, so it starts at the left edge and sits a little low in the space (its neck rises from its middle)
+    middle: [space + length * (MUSTANG.pivot[0] / MUSTANG.width), below.top + (below.bottom - below.top) * 0.6],
   };
+  return { sketch, guitar, screens: { xs: [space * 2 + left, space * 3 + left + wide], y: space, width: wide, height: tall } };
 }
+// The controller's 8 x 4 LEDs, coloured as its firmware colours them (20250602_Luminin_Controller.ino), at `time` (s):
+// each one's hue from the tilt, stepping along the grid, and, while it's jolted down, rippling across its columns;
+// all as bright as 20 plus half the jolt (which, kept in a byte, rolls over past 255). Each comes back as the colour
+// it looks: the firmware's drive, through the matrix's brightness of 100, brightened as an LED looks to the eye
+function controllerLeds(time, downJolt, zTilt) {
+  const millis = time * 1000;
+  const value = Math.trunc(20 + downJolt / 2) & 255;
+  const colours = [];
+  for (let y = 0; y < 4; y++) {
+    for (let x = 0; x < 8; x++) {
+      const baseGradient = Math.trunc(Math.cos(x * x + millis * 0.005) * 50);
+      const hue = 20 * (1 + baseGradient * (downJolt / 100)) + (x + y) * 500 + 1.6 * ((zTilt + 1) / 2) * 65536;
+      const drive = colorHSV(((Math.trunc(hue) % 65536) + 65536) % 65536, 255, value).map((v) => (v * 101) >> 8);
+      colours.push(drive.map((v) => Math.round(255 * Math.pow(v / 255, 1 / 2.4))));
+    }
+  }
+  return colours;
+}
+// Adafruit_NeoPixel's ColorHSV: hue 0-65535, saturation and value 0-255, to red, green and blue
+function colorHSV(hue, sat, val) {
+  let r;
+  let g;
+  let b;
+  hue = Math.floor((hue * 1530 + 32768) / 65536);
+  if (hue < 510) {
+    b = 0;
+    if (hue < 255) [r, g] = [255, hue];
+    else [r, g] = [510 - hue, 255];
+  } else if (hue < 1020) {
+    r = 0;
+    if (hue < 765) [g, b] = [255, hue - 510];
+    else [g, b] = [1020 - hue, 255];
+  } else if (hue < 1530) {
+    g = 0;
+    if (hue < 1275) [r, b] = [hue - 1020, 255];
+    else [r, b] = [255, 1530 - hue];
+  } else [r, g, b] = [255, 0, 0];
+  const [v1, s1, s2] = [1 + val, 1 + sat, 255 - sat];
+  return [r, g, b].map((c) => ((((c * s1) >> 8) + s2) * v1) >> 8);
+}
+
 // x kept between low and high, easing into them over the last `soft` of the way instead of stopping dead
 function softClamp(x, low, high, soft = 0.25) {
   if (x > high - soft) return high - soft * Math.exp(-(x - (high - soft)) / soft);

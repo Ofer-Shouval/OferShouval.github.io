@@ -18,6 +18,23 @@
 
     <!-- 1. Open on it being played -->
     <h1>the luminin</h1>
+    <!-- The Luminin, simulated: the guitar with the controller, the sketch it plays, and the screens (see src/sketches/luminin_sim.js and luminin_performer.js) -->
+    <figure class="luminin-stage">
+      <p class="sim-label">the luminin, simulated</p>
+      <canvas tabindex="0" aria-label="A Fender Mustang guitar in silhouette with the Luminin controller on its headstock, under the sketch it plays (Unfamiliar State), dotted where its LEDs take their colour from. The down and up arrows jolt the guitar down and up, and holding S or W tilts it down or up, and holding A or D swings it side to side; clicking the controller moves to the next song."></canvas>
+      <div class="luminin-gestures">
+        <button data-move="down">jolt down</button>
+        <button data-move="up">jolt up</button>
+        <button data-move="tiltDown">tilt down (hold)</button>
+        <button data-move="tiltUp">tilt up (hold)</button>
+        <button data-move="sway">side to side (hold)</button>
+      </div>
+    </figure>
+    <p class="luminin-sim-readout">jolt, tilt or swing the guitar &middot; click the controller for the next song</p>
+    <!-- Where the sketch itself draws; the stage shows what it needs of it, so this stays hidden -->
+    <figure class="luminin-sim" hidden></figure>
+    <script type="module" src="/src/sketches/luminin_sim.js"></script>
+
     <video data-src="/media/lumininCloseupStabilized.mp4" autoplay muted loop playsinline></video>
     <p class="luminin-lede">
       An instrument that turns a performer's motion into light.
@@ -43,24 +60,6 @@
       The Pi runs a Processing sketch which uses data to create a series of animations and displays them across two hand built 26x52” LED screens.
     </p>
     <video data-src="/media/lumininGif_demonstration.mp4" poster="/media/lumininGif_demonstration_poster.jpg" autoplay muted loop playsinline></video>
-
-    <h3>try it</h3>
-    <!-- The 2025 Processing sketch, ported, with the mouse standing in for the controller (see src/sketches/luminin_sim.js) -->
-    <figure class="luminin-stage">
-      <p class="sim-label">the luminin, simulated</p>
-      <canvas tabindex="0" aria-label="A Fender Mustang guitar in silhouette with the Luminin controller on its headstock, under the sketch it plays (Unfamiliar State), dotted where its LEDs take their colour from. The down and up arrows jolt the guitar down and up, and holding S or W tilts it down or up, and holding A or D swings it side to side; clicking the controller moves to the next song."></canvas>
-      <div class="luminin-gestures">
-        <button data-move="down">jolt down</button>
-        <button data-move="up">jolt up</button>
-        <button data-move="tiltDown">tilt down (hold)</button>
-        <button data-move="tiltUp">tilt up (hold)</button>
-        <button data-move="sway">side to side (hold)</button>
-      </div>
-    </figure>
-    <p class="luminin-sim-readout">jolt, tilt or swing the guitar &middot; click the controller for the next song</p>
-    <!-- Where the sketch itself draws; it's shown as the stage's background, so this stays hidden -->
-    <figure class="luminin-sim" hidden></figure>
-    <script type="module" src="/src/sketches/luminin_sim.js"></script>
 
     <!-- 3. The idea -->
     <h2>the idea</h2>
