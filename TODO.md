@@ -1,53 +1,51 @@
 # Site rebuild — to do
 
-Placeholders on the site show as dashed "TODO" boxes in `npm run dev`.
+Updated 8 November 2026 (save point 65). Placeholders on the site show as dashed "TODO" boxes in `npm run dev`.
 
-## Gather
+## Content to gather and write
 
 ### Music
-- [ ] List of releases: names, type (single, EP, album), years, streaming links
-- [ ] Cover art for each release
-- [ ] For each release: a short story, credits, related videos and live photos
-- [ ] Short intro to O. Wake for the top of the Music page
-- [ ] Shows list: dates, venues, cities
-- [ ] Live photos and a featured live video
-- [ ] Bandcamp and Spotify links
+- [ ] **Unfamiliar State page**: a few lines for "about", and any more credits (players, producer, mixing and mastering, artwork)
+- [ ] **Images page**: photos of the band, shows and artwork (it has three empty boxes for now)
+- [ ] **Contact page**: check it's what you want (it has your email and the band's Instagram)
+- [ ] Bandcamp and Spotify links, if the album should link out to them as well as play on the site
+- [x] Unfamiliar State: songs, cover, credits, gapless player
+- [x] Videos: all 9 YouTube videos from the channel
 
-### Luminin since 2021
-- [ ] Overview of where it is today
-- [ ] Milestones with years: new versions, shows, residencies, press
-- [ ] Photos or video for each milestone
+### Luminin page
+- [ ] A sentence on the Baby's All Right show (under the video)
+- [ ] The year of the Odysseus video
+- [ ] Show clips: four slots waiting for clips (song title, venue, date)
+- [ ] Photos: four slots waiting for photos
+- [ ] Close-ups: check the song titles and write a line on each song's mood; the full title of the song whose file says "hdme"
 
-### Visuals for O. Wake (p5 + After Effects)
-- [ ] The pieces, with which song or release each was for
-- [ ] A thumbnail for its card on the Projects page
-- [ ] Intro text and the years it covers
-
-### Wormhole
-- [ ] Years and origins for the sketches in it ("began as a demo for…"), if they're to be credited anywhere
-- [ ] Links to source code, if sharing it
-
-### Teaching (left out of the site for now)
-- [ ] Teaching statement
-- [ ] Each course: school, years, two-line description, syllabus link if public
-- [ ] 4–8 student projects: images, name, course, year, role
-- [ ] Permission from each student
-
-### Existing content
+### Art
+- [ ] Art list page (`art/all.html`): one card still needs a thumbnail and a one-line description
+- [ ] Visuals for O. Wake (`art/band-visuals.html`): intro, the pieces, and which song each was for (its card on the list page is the one missing a thumbnail)
 - [ ] Years for Sun Deity, the visualizers and the animation work (their cards have none)
-- [x] Ghost Harp: the Pratt line is gone (it never went up there, because of COVID)
-- [ ] Bio: update for the last 5 years (teaching, music, Luminin)
+
+### Bio
+- [ ] Update the text for the last 5 years (it still reads as written in 2021)
+- [ ] Give the page its own look (the TV static idea)
 - [ ] Resume PDF: replace with a current one
 
-## Build (once the assets arrive)
-- [ ] Convert and compress media: video to MP4 plus a poster frame, photos to sized JPGs
-- [ ] Fill in the pages and add release and student cards
-- [ ] Add a favicon and link-preview tags, so shared links show an image and description
+### Teaching (left out of the site for now)
+- [ ] Teaching statement, courses, student projects and their permission
+
+## Things to decide or finish building
+- [ ] **Your own sounds**: the front page and music page sounds in `public/sounds/landing` and `public/sounds/music` aren't playing on any page yet
+- [ ] **Old live page** (`music/live.html`): nothing links to it now. Delete it, or keep it for later?
+- [ ] **Old recordings page**: it forwards to Unfamiliar State. Show the list again once there's a second release
+- [ ] **Album player on iPhones**: test it, including whether it keeps playing with the screen locked
+- [ ] **Art landing page**: you said it would need "a little work"
+- [ ] Clear out the leftover files in `public/media`: `lumininBabys1.mp4` (empty) and the two `.sb-…` files (one is about 30 MB)
+- [ ] Favicon and link-preview tags, so shared links show an image and a description
 
 ## Before launch
-- [x] Commit the pending changes: the projects rename, p5 2.x and the Sketchbook
+- [ ] Test everything on a phone, especially the navbar and the sketches, which have no mouse there
 - [ ] Push `2026_Updates` to GitHub as a backup
-- [ ] Test on a phone, especially the navbar and the sketches, which have no mouse there
-- [ ] Remove the leftover templates from the build, or keep them unlinked (the sketch page template is archived)
+- [ ] Remove the leftover templates from the build, or keep them unlinked
 - [ ] Add the GitHub Actions deploy workflow
 - [ ] Merge to `master` and set Pages → Source to "GitHub Actions" at the same time
+- [x] Commit the pending changes: the projects rename, p5 2.x and the Sketchbook
+- [x] Ghost Harp: the Pratt line is gone

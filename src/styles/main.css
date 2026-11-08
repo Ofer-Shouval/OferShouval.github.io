@@ -1661,3 +1661,67 @@ a.card:hover {
 .album-page .back-link {
   max-width: none;
 }
+
+
+/* Videos (see src/scripts/youtube_cards.js): thumbnails in a grid, each turning into YouTube's player when clicked */
+
+.video-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 32px 24px;
+}
+
+.page .video-card {
+  margin: 0;
+}
+
+.video-thumb,
+.video-frame {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 0;
+  margin: 0;
+}
+
+.video-thumb {
+  position: relative;
+  padding: 0;
+  background-color: black;
+  background-size: cover;
+  background-position: center;
+  cursor: pointer;
+}
+
+/* A play triangle in a thin circle, brighter on hover */
+.video-thumb::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 56px;
+  height: 56px;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M5 3l8 5-8 5z' fill='white'/%3E%3C/svg%3E") center / 22px no-repeat;
+  transition: background-color 0.2s, transform 0.2s;
+}
+
+.video-thumb:hover::after,
+.video-thumb:focus-visible::after {
+  background-color: rgba(0, 0, 0, 0.7);
+  transform: scale(1.08);
+}
+
+.video-card figcaption {
+  padding: 12px 0 0;
+}
+
+.video-card h3 {
+  margin-bottom: 4px;
+}
+
+.page .video-more {
+  text-align: center;
+  margin-top: 48px;
+}

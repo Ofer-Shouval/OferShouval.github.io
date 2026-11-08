@@ -17,10 +17,10 @@ import { depth } from './perspective.js';
 p5.disableFriendlyErrors = import.meta.env.PROD;
 
 const PAGES = [
-  ['/music/live.html', 'live'],
+  ['/music/images.html', 'images'],
   ['/music/unfamiliar-state.html', 'recordings'],
-  ['/music/videos.html', 'music videos'],
-  ['/music/info.html', 'info'],
+  ['/music/videos.html', 'videos'],
+  ['/music/contact.html', 'contact'],
 ];
 
 let boat;
