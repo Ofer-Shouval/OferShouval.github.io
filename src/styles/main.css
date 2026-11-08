@@ -428,17 +428,19 @@ ul {
   height: 100%;
   object-fit: cover;
   opacity: 0.4;
+  /* The page's background is in greyscale (leaving the colour to the Luminin itself), and dark */
+  filter: grayscale(1) brightness(0.45);
 }
 
 
-/* Pages whose sections settle into place: scrolling stays free, but stopping near a section's heading glides it the
-   rest of the way, to just under the navbar */
-html:has(.snap-sections) {
-  scroll-snap-type: y proximity;
-  scroll-padding-top: 64px;
-}
-.snap-sections > h2 {
-  scroll-snap-align: start;
+/* The teaser on the left of the text column, words to its right; stacked on a narrow screen */
+.luminin-intro { display: flex; align-items: center; gap: 24px; max-width: 700px; margin: 24px auto; }
+.luminin-intro .container.luminin-teaser { flex: 0 0 50%; width: 50%; margin: 0; }
+.page .luminin-intro p { margin: 0; }
+.page .luminin-intro p + p { margin-top: 16px; }
+@media (max-width: 640px) {
+  .luminin-intro { flex-direction: column; align-items: stretch; }
+  .luminin-intro .container.luminin-teaser { width: 100%; }
 }
 
 /* The teaser is square: as tall as the page's other videos, centred (over .container's 16:9) */
@@ -451,6 +453,7 @@ html:has(.snap-sections) {
 
 /* Over it, while the simulation plays, the light of its screens, diffused over the whole page (luminin_background.js) */
 .luminin-glow {
+  filter: brightness(0.45); /* As dark as the video under it */
   position: fixed;
   inset: 0;
   z-index: -1;
@@ -1389,32 +1392,57 @@ a.card:hover {
 }
 
 /* Luminin page */
-.luminin-lede { font-size: 1.2em; }
-.luminin-flow { display: flex; flex-wrap: wrap; gap: 0.5em; align-items: center; justify-content: center; margin: 1em 0; opacity: 0.85; }
-.luminin-flow span { border: 1px solid currentColor; padding: 0.3em 0.7em; }
+.page .luminin-lede { font-size: 1.2em; text-align: left; }
+/* The title and section headings on the text column's left edge, over what they head */
+.luminin-page > h1, .luminin-page > h2 { max-width: 700px; text-align: left; }
+.luminin-page > h1 { margin: 0 auto 24px; }
+.luminin-page > h2 { margin: 64px auto 24px; }
+/* Sub-headings in the text column, close above what they head; captions close under their videos */
+.luminin-page > h3 { max-width: 700px; margin: 48px auto 8px; }
+/* Sub-headings in the headings' typeface */
+.luminin-page h3 { font-family: 'Major Mono Display', monospace; font-weight: normal; }
+.luminin-page > .container + p, .luminin-page > video + p { margin-top: 8px; }
 .luminin-sim { position: relative; max-width: 700px; margin: 24px auto 0; }
 .luminin-sim canvas { display: block; width: 100% !important; height: auto !important; aspect-ratio: 8 / 3; background-color: black; outline: none; cursor: crosshair; }
 .luminin-stage { position: relative; max-width: 700px; margin: 24px auto 0; }
-.luminin-stage canvas { display: block; width: 100%; height: auto; background-color: rgba(11, 11, 13, 0.6); outline: none; cursor: grab; touch-action: none; }
+/* The stage, its descriptions and its buttons fit the window's height together: the stage shrinks (keeping its shape,
+   centred) when the window's too short for it */
+.luminin-stage canvas { display: block; width: auto; max-width: 100%; max-height: calc(100svh - 200px); margin: 0 auto; height: auto; background-color: rgba(11, 11, 13, 0.6); outline: none; cursor: grab; touch-action: none; }
 .luminin-stage canvas:active { cursor: grabbing; }
-.luminin-gestures { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 10px 0 24px; }
-.luminin-gestures button { user-select: none; -webkit-user-select: none; padding: 4px 10px; border: 1px solid #7a7a7a; background: none; color: white; font-family: 'Inconsolata', monospace; font-size: 13px; cursor: pointer; }
+.luminin-gestures { display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; margin: 10px 0 24px; }
+.luminin-gestures button { user-select: none; -webkit-user-select: none; padding: 4px 7px; white-space: nowrap; border: 1px solid #7a7a7a; background: none; color: white; font-family: 'Inconsolata', monospace; font-size: 13px; cursor: pointer; }
 .luminin-gestures button:hover { background-color: rgba(100, 100, 100, 0.6); }
 /* Held down, by the pointer or its key */
 .luminin-gestures button:active, .luminin-gestures button.pressed { background-color: rgba(255, 255, 255, 0.85); color: black; }
 /* The key that plays it */
-.luminin-gestures kbd { display: inline-block; min-width: 1.4em; margin-left: 4px; padding: 0 3px; border: 1px solid rgba(255, 255, 255, 0.5); border-radius: 3px; font-family: inherit; font-size: 11px; line-height: 1.4; text-align: center; }
-.page .luminin-sim-readout { margin: 0 0 8px; min-height: 5.6em; color: #7a7a7a; font-family: 'Inconsolata', monospace; font-size: 13px; line-height: 1.4; text-align: left; }
-/* While a part of the simulation's pointed at, it says what it is and what's flowing (luminin_performer.js) */
-.page .luminin-sim-readout strong { color: white; font-weight: normal; }
-.page .luminin-sim-readout span { color: rgba(255, 255, 255, 0.75); }
+.luminin-gestures kbd { display: inline-block; min-width: 1.4em; margin-left: 3px; padding: 0 3px; border: 1px solid rgba(255, 255, 255, 0.5); border-radius: 3px; font-family: inherit; font-size: 11px; line-height: 1.4; text-align: center; }
+/* On touch there are no keys: their badges go */
+@media (hover: none) {
+  .luminin-gestures kbd { display: none; }
+}
+/* How it works: a paragraph per part, the text wrapping round a small line drawing of it */
+.how-parts p { overflow: hidden; } /* Each paragraph holds its own drawing */
+.part-drawing { width: 160px; max-width: 42%; height: auto; margin: 2px 0 10px; }
+.part-drawing.right { float: right; margin-left: 20px; }
+.part-drawing.left { float: left; margin-right: 20px; }
+.part-drawing .lines { fill: none; stroke: rgba(255, 255, 255, 0.85); stroke-width: 1.2; stroke-linejoin: round; stroke-linecap: round; }
+.part-drawing .waves { stroke: rgba(255, 255, 255, 0.5); }
+.part-drawing .dots { fill: rgba(255, 255, 255, 0.6); }
+
+/* The concept's three points, in the same column and type as the page's paragraphs */
+.page .luminin-ideas { max-width: 700px; margin: 24px auto; padding-left: 0; list-style: none; color: rgba(255, 255, 255, 0.8); font-family: 'Source Code Pro', monospace; font-weight: 100; font-size: 14px; line-height: 1.6; }
 .luminin-ideas li { margin-bottom: 0.6em; }
-.performance { display: grid; grid-template-columns: 3fr 2fr; gap: 1.2em; align-items: center; margin: 1.5em 0; }
-.performance video { width: 100%; }
-.performance h3 { margin-top: 0; }
-@media (max-width: 700px) { .performance { grid-template-columns: 1fr; } }
+.luminin-ideas strong { color: white; font-weight: inherit; }
+/* Close-ups: a gallery in the text column, three to a row (two on a narrow screen), each clip the same shape with its
+   song's name under it */
+.closeups { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; max-width: 700px; margin: 24px auto 48px; }
+@media (max-width: 640px) { .closeups { grid-template-columns: repeat(2, 1fr); } }
+.closeups .luminin-pair { display: contents; } /* Its two tiles sit in the gallery like the rest */
+.closeup { margin: 0; }
+.page .closeup video, .closeup canvas { display: block; width: 100%; aspect-ratio: 4 / 3; margin: 0; background-color: black; }
+.page .closeup video { object-fit: cover; }
+.closeup canvas { object-fit: contain; }
+.closeup figcaption { margin-top: 6px; color: white; font-family: 'Major Mono Display', monospace; font-size: 13px; }
 /* A close-up with its simulation beside it, and the words below */
-.performance.paired { grid-template-columns: 1fr; }
-.luminin-pair { display: grid; grid-template-columns: 4fr 3fr; gap: 1.2em; align-items: center; }
 .riper-sim { position: relative; margin: 0; }
 .riper-sim canvas { display: block; width: 100%; height: auto; background-color: black; }

@@ -9,28 +9,17 @@
 <body bgcolor="#171717">
   <!-- @include navbar.html -->
 
+  <!-- As the animation page was before the renovation: the 2017 reel (from the 2019 site) and the grip loop (from the 2021 site) -->
   <main class="page">
-    <h1>film/animation</h1>
+    <h1>animation</h1>
+    <p>my origins as a visual artist</p>
 
-    <div class="card-grid">
-      <a class="card" href="/art/animation.html">
-        <img src="/media/gripgif_10_poster.jpg" alt="Hand-drawn animation still" loading="lazy">
-        <div class="card-body">
-          <div class="card-meta">animation</div>
-          <h3>Animation</h3>
-          <p>Where it started as a visual artist.</p>
-        </div>
-      </a>
-
-      <a class="card" href="/art/band-visuals.html">
-        <div class="card-image placeholder">TODO: thumbnail</div>
-        <div class="card-body">
-          <div class="card-meta">p5.js + after effects · YEARS</div>
-          <h3>Visuals for O. Wake</h3>
-          <p>TODO: one-line description.</p>
-        </div>
-      </a>
+    <!-- The reel is 4:3, so its frame is too (over .container's 16:9) -->
+    <div class="container" style="padding-top: min(75%, 525px)">
+      <iframe class="responsive-iframe" src="https://player.vimeo.com/video/204968685" title="My Reel (2017)" frameborder="0" allow="fullscreen; picture-in-picture" allowfullscreen loading="lazy"></iframe>
     </div>
+
+    <video data-src="/media/gripgif_10.mp4" poster="/media/gripgif_10_poster.jpg" autoplay muted loop playsinline></video>
   </main>
 </body>
 

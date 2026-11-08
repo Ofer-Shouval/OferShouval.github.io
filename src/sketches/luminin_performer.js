@@ -19,7 +19,8 @@
 // are kept in archive/luminin-performer.)
 //
 // To play it, the buttons under it, or the keys: the down and up arrows jolt it, and S and W tilt it down and up for
-// as long as they're held, and A or D swings it side to side. Clicking the controller presses its button for the next song.
+// as long as they're held, and A or D swings it side to side. Clicking the controller presses its button for the next pattern
+// (as do the next pattern button, and N).
 
 import SHEET from './luminin_performer_frames.json';
 import MUSTANG from './luminin_mustang.json';
@@ -115,6 +116,16 @@ export function createPerformer(holder, { onButton }) {
     buttonFor(name)?.classList.remove('pressed');
     letGo(name);
   });
+  // The next pattern: the button, or N (as clicking the controller does)
+  holder.querySelector('[data-action="next"]')?.addEventListener('click', () => onButton());
+  addEventListener('keydown', (event) => {
+    if (event.key.toLowerCase() !== 'n' || event.repeat || !ours(event)) return;
+    event.preventDefault();
+    const button = holder.querySelector('[data-action="next"]');
+    button?.classList.add('pressed');
+    setTimeout(() => button?.classList.remove('pressed'), 150);
+    onButton();
+  });
   for (const button of holder.querySelectorAll('[data-move]')) {
     const name = button.dataset.move;
     if (HELD_MOVES.has(name)) {
@@ -129,7 +140,9 @@ export function createPerformer(holder, { onButton }) {
   // Where the pointer is over the stage (null when it's off it), for the labels
   let hover = null;
   canvas.addEventListener('pointermove', (event) => (hover = toCanvas(event)));
-  canvas.addEventListener('pointerleave', () => (hover = null));
+  // A tap points at a part too, and stays pointing until the next one (a touch leaves as soon as it lifts)
+  canvas.addEventListener('pointerdown', (event) => (hover = toCanvas(event)));
+  canvas.addEventListener('pointerleave', (event) => event.pointerType === 'mouse' && (hover = null));
 
   function toCanvas(event) {
     const box = canvas.getBoundingClientRect();
@@ -699,6 +712,7 @@ export function createPerformer(holder, { onButton }) {
   }
   // Each part's name, just above it, staying put
   function names(sketch) {
+    if (canvas.clientWidth < 500) return; // Too small on the page to read; the lines over the stage say what's what
     const c = context;
     c.save();
     c.font = '10px Inconsolata, monospace';
@@ -720,14 +734,43 @@ export function createPerformer(holder, { onButton }) {
     c.restore();
   }
 
-  // The words go in the lines over the stage, which say how to play it when nothing's pointed at
-  const info = holder.querySelector('.luminin-sim-readout');
-  const playing = info && info.innerHTML;
-  let said = null;
+  // The words go in the gap between the sketch and the guitar; when nothing's pointed at, they say how to play it
+  const touch = matchMedia('(hover: none)');
+  const plain = (text) => text.replace(/&rarr;/g, '→').replace(/&middot;/g, '·').replace(/&uarr;/g, '↑').replace(/&darr;/g, '↓').replace(/&gt;/g, '>');
   function say(lines) {
-    if (!info) return;
-    const html = lines ? lines.map((line, i) => (i ? `<span>${line}</span>` : `<strong>${line}</strong>`)).join('<br>') : playing;
-    if (html !== said) info.innerHTML = said = html;
+    const { x, y, w, h } = LAYOUT.notes;
+    const c = context;
+    const size = 13;
+    const height = size * 1.35;
+    c.save();
+    c.font = `${size}px Inconsolata, monospace`;
+    const hint = touch.matches ? 'tap a part · tap the controller for the next pattern' : 'point at a part · click the controller for the next pattern';
+    // Each paragraph wrapped to the gap's width
+    const rows = [];
+    (lines || [hint]).forEach((text, i) => {
+      const colour = !lines ? 'rgba(255, 255, 255, 0.55)' : i ? 'rgba(255, 255, 255, 0.75)' : 'white';
+      let line = '';
+      for (const word of plain(text).split(' ')) {
+        const longer = line ? `${line} ${word}` : word;
+        if (c.measureText(longer).width > w && line) {
+          rows.push({ text: line, colour });
+          line = word;
+        } else line = longer;
+      }
+      if (line) rows.push({ text: line, colour, gap: i === 0 && lines ? height * 0.4 : 0 });
+    });
+    // ...as many as fit, centred across and down the gap
+    let total = 0;
+    const shown = rows.filter((row) => (total + height <= h ? ((total += height + (row.gap || 0)), true) : false));
+    let top = y + (h - total) / 2;
+    c.textAlign = 'center';
+    c.textBaseline = 'top';
+    for (const row of shown) {
+      c.fillStyle = row.colour;
+      c.fillText(row.text, x + w / 2, top);
+      top += height + (row.gap || 0);
+    }
+    c.restore();
   }
   function labels(sketch) {
     const name = hover && under(hover, sketch);
@@ -1081,8 +1124,8 @@ const clamp = (x, low, high) => Math.min(high, Math.max(low, x));
 // Where everything goes on the stage, worked out from its size, on an even grid (one spacing between everything and
 // round the edge): the Luminin's two screens on the right, full height, as big as that makes them at their 1 x 2
 // shape; on the left, a song's sketch at the top (as on the laptop running it), small, its top level with theirs,
-// against the screens' side, with room to its left for the Raspberry Pi; and the guitar under it, filling the lower
-// left
+// against the screens' side, with room to its left for the Raspberry Pi; under it, the words saying what's pointed at;
+// and the guitar under them, low in the lower left
 function layoutFor(width, height) {
   const space = Math.round(height * 0.04);
   const tall = height - space * 2;
@@ -1095,9 +1138,12 @@ function layoutFor(width, height) {
   const guitar = {
     length,
     // Its middle, so it starts at the left edge and sits a little low in the space (its neck rises from its middle)
-    middle: [space + length * (MUSTANG.pivot[0] / MUSTANG.width), below.top + (below.bottom - below.top) * 0.6],
+    middle: [space + length * (MUSTANG.pivot[0] / MUSTANG.width), below.top + (below.bottom - below.top) * 0.82],
   };
-  return { sketch, guitar, screens: { xs: [space * 2 + left, space * 3 + left + wide], y: space, width: wide, height: tall } };
+  // The words saying what's pointed at, in the gap between the sketch and the guitar (clear of the controller's name)
+  const top = sketch.y + size + space * 0.6;
+  const notes = { x: space, y: top, w: left, h: guitar.middle[1] - length * 0.18 - 30 - top };
+  return { sketch, guitar, notes, screens: { xs: [space * 2 + left, space * 3 + left + wide], y: space, width: wide, height: tall } };
 }
 // The controller's 8 x 4 LEDs, coloured as its firmware colours them (20250602_Luminin_Controller.ino), at `time` (s):
 // each one's hue from the tilt, stepping along the grid, and, while it's jolted down, rippling across its columns;

@@ -413,9 +413,10 @@ function setupHoles() {
   });
 }
 
-// Scatter the holes for the size of the screen, keeping their signs apart and on the screen. It looks
-// random, but it's the same scattering each time. For each hole, it tries a number of places and keeps
+// Scatter the holes for the size of the screen, keeping their signs apart and on the screen. It's a new
+// scattering each visit, kept the same while the page is open (see holeSeed). For each hole, it tries a number of places and keeps
 // the one with the most room around it.
+const holeSeed = Math.floor(Math.random() * 1e6);
 function standHoles() {
   let bands = width < 600 ? holeBandNarrow : holeBand;
   let widest = Math.max(width * 0.3, 190); // Past this, the names wrap (see .art-hole-name)
@@ -442,8 +443,8 @@ function standHoles() {
       bestRoom = Infinity;
     }
     for (let attempt = 0; bestRoom < Infinity && attempt < holeTries; attempt++) {
-      let x = width / 2 + (hash(i * 1000 + attempt + 0.1) - 0.5) * (Math.min(width, holeScatterWidth) - wide);
-      let y = height * lerp(band[0], band[1], hash(i * 1000 + attempt + 0.2));
+      let x = width / 2 + (hash(holeSeed + i * 1000 + attempt + 0.1) - 0.5) * (Math.min(width, holeScatterWidth) - wide);
+      let y = height * lerp(band[0], band[1], hash(holeSeed + i * 1000 + attempt + 0.2));
       let roomHere = Math.min(Infinity, ...spots.map((spot) => Math.max(Math.abs(x - spot.x) / ((wide + spot.wide) / 2), Math.abs(y - spot.y) / ((tall + spot.tall) / 2))));
       if (roomHere > bestRoom) {
         best = { x, y, wide, tall };
@@ -785,9 +786,9 @@ function draw() {
 }
 
 // Dusk: the ground's a light grey, a little darker and bluer further back, with the black lines on it. Only the ground's dark, so the
-// mouse, its inside and its footprints stay as bright as ever. The holes are turned to match (see duskHole()), and
+// mouse and its inside stay as bright as ever. The holes are turned to match (see duskHole()), and
 // the corners are a little darker still.
-let duskOn = true;
+let duskOn = false; // Off: the ground's plain white
 const duskNear = [255, 255, 255]; // The ground nearest the camera, at the bottom of the screen: white
 const duskFar = [214, 219, 230]; // ...and furthest away, at the top: a little darker and bluer
 let duskGradient = null; // The ground's colours, made once for the height of the screen
@@ -880,7 +881,7 @@ function showDusk(ctx) {
   ctx.drawImage(duskCorners, 0, 0, width, height);
 }
 
-// The colours of the Luminin, for the mouse's inside and its footprints: the stabilized close-up of it plays, hidden
+// The colours of the Luminin, for the mouse's inside: the stabilized close-up of it plays, hidden
 let lumininVideo = null;
 const lumininClip = '/media/lumininCloseupStabilized.mp4';
 
@@ -892,210 +893,6 @@ function startLumininVideo() {
   video.playsInline = true;
   video.play().catch(() => {});
   return video;
-}
-
-const lumininReady = () => lumininVideo && lumininVideo.readyState >= 2 && lumininVideo.videoWidth;
-
-// Footprints: each time a foot comes down, a print in a colour from the Luminin, left on the ground where it was, that
-// fades away. They're kept where they are in the world, so they stay put on the ground as the view moves.
-let footprints = [];
-let lastFootfall = null; // Which footfall of its walk it was on last frame
-let colourPicker = null; // A tiny canvas for picking colours out of the video
-const footprintLife = 6; // How many seconds a print lasts, fading all the while
-const footprintsPerStride = 2; // How many prints each stride of its walk leaves (a stride's mouseSteps pictures)
-const footprintSize = 7; // How big a print is, in the mouse's own measure
-const footprintApart = 5; // How far apart its left and right prints are, side to side, in the mouse's own measure
-const footprintMost = 80; // The most there can be at once
-const footprintSaturate = 1.8; // How much the picked colours are pushed up
-
-// The hue of an rgb() colour, in degrees
-let pickedColour = [255, 0, 0];
-function hueOf([r, g, b]) {
-  const most = Math.max(r, g, b);
-  const least = Math.min(r, g, b);
-  if (most === least) return Math.random() * 360;
-  let hue = most === r ? ((g - b) / (most - least)) % 6 : most === g ? (b - r) / (most - least) + 2 : (r - g) / (most - least) + 4;
-  return (hue * 60 + 360) % 360;
-}
-
-// The colour a print is now: its own hue, turning round at the same pace as the mouse's inside
-function printColour(print, seconds) {
-  if (print.hue === undefined) return print.colour;
-  return `hsl(${(print.hue + seconds * mouseInsideHueTurn) % 360}, 95%, 55%)`;
-}
-
-function pickLumininColour() {
-  if (!lumininReady()) return `hsl(${Math.random() * 360}, 90%, 55%)`;
-  colourPicker ??= document.createElement('canvas');
-  colourPicker.width = colourPicker.height = 1;
-  const context = colourPicker.getContext('2d', { willReadFrequently: true });
-  const video = lumininVideo;
-  // A bright spot: a few tries, keeping the brightest
-  let best = null;
-  let bestLight = -1;
-  for (let i = 0; i < 6; i++) {
-    context.filter = `saturate(${footprintSaturate})`;
-    context.drawImage(video, Math.random() * video.videoWidth, Math.random() * video.videoHeight, 4, 4, 0, 0, 1, 1);
-    const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
-    const light = Math.max(r, g, b);
-    if (light > bestLight) {
-      bestLight = light;
-      best = `rgb(${r},${g},${b})`;
-      pickedColour = [r, g, b];
-    }
-  }
-  return best;
-}
-
-const footprintJitter = 0.5; // How uneven they are: how far off each lands, and how much they vary, as a share of their size
-const streakWidth = 2.6; // How thick the little streaks between prints are, in the mouse's own measure
-const streakApart = 4.5; // How far apart the streaks side by side are, in the mouse's own measure
-const streakReach = 0.7; // How much of the way from one print to the next a streak goes (the gap's split either side)
-
-function leaveFootprints(seconds) {
-  if (!mouse.walking) {
-    lastFootfall = null;
-    return;
-  }
-  const footfall = Math.floor((mouse.walked * footprintsPerStride) / mouseSteps);
-  if (lastFootfall !== null && footfall !== lastFootfall) {
-    const wobble = () => (Math.random() - 0.5) * 2 * footprintJitter;
-    footprints.push({
-      x: mouse.x,
-      depth: mouse.depth,
-      side: footfall % 2 ? 1 : -1,
-      facing: mouse.facing,
-      colour: pickLumininColour(),
-      hue: hueOf(pickedColour), // Where its colour starts, which then keeps turning, like the mouse's inside
-      at: seconds,
-      // Uneven: each a bit off where it should be, a different size, turned, pressed harder or softer, some toes missing
-      offX: wobble() * footprintSize,
-      offY: wobble() * footprintSize * 0.6,
-      size: 1 + wobble(),
-      turn: wobble() * 0.8,
-      strength: 0.7 + Math.random() * 0.3,
-      toes: [-1, 0, 1].filter(() => Math.random() > 0.15),
-      bend: (footfall % 2 ? 1 : -1) * (0.5 + Math.random() * 0.8), // Its streak curves out to one side, then the other, by different amounts
-      // Splotchy: its pad's an uneven blob, and paint's splashed round it in drops
-      lumps: Array.from({ length: 9 }, () => 0.6 + Math.random() * 0.8),
-      drops: Array.from({ length: 2 + Math.floor(Math.random() * 6) }, () => ({ angle: Math.random() * Math.PI * 2, out: 0.8 + Math.random() * 1.6, size: 0.05 + Math.random() * 0.2 })),
-      // Two or three streaks side by side to the next one, each a little different, like toes dragged through it
-      lines: Array.from({ length: 2 + (Math.random() < 0.35 ? 1 : 0) }, (_, n, all) => ({ apart: n - (2 + 0) / 2 + 0.5, bend: 0.8 + Math.random() * 0.4, reach: 0.8 + Math.random() * 0.3, width: 0.6 + Math.random() * 0.5 })),
-      blots: Array.from({ length: Math.floor(Math.random() * 4) }, () => ({ at: 0.1 + Math.random() * 0.8, size: 0.6 + Math.random() * 1.6 })), // Blots along its streak
-      joined: lastFootfall !== null, // (A streak only joins it to the one before while it's walking on)
-    });
-    if (footprints.length > footprintMost) footprints.shift();
-  }
-  lastFootfall = footfall;
-}
-
-// Where a print is on the screen
-function printAt(print, bottom) {
-  const size = sizeOf(print.depth) * mouseScale;
-  const big = sizeOf(print.depth);
-  return {
-    x: screenX(print.x, big) + print.facing * (print.offX ?? 0) * size,
-    y: groundAt(big, bottom) + (print.side * footprintApart * 0.35 + (print.offY ?? 0) * 0.4) * size,
-    size,
-  };
-}
-
-function showFootprints(ctx, seconds) {
-  footprints = footprints.filter((print) => seconds - print.at < footprintLife);
-  const bottom = bottomSize();
-  const fade = (print) => (print.strength ?? 0.85) * (1 - (seconds - print.at) / footprintLife) ** 2;
-  // The little streaks first, from each print toward the next, like a foot dragged between steps
-  ctx.lineCap = 'round';
-  for (let i = 1; i < footprints.length; i++) {
-    const to = footprints[i];
-    const from = footprints[i - 1];
-    if (!to.joined) continue;
-    const a = printAt(from, bottom);
-    const b = printAt(to, bottom);
-    const gap = Math.hypot(b.x - a.x, b.y - a.y);
-    if (gap < 1 || gap > 200) continue;
-    const nx = -(b.y - a.y) / gap;
-    const ny = (b.x - a.x) / gap;
-    const lines = to.lines ?? [{ apart: 0, bend: 1, reach: 1, width: 1 }];
-    const spread = streakApart * (a.size + b.size) / 2;
-    ctx.setTransform(density, 0, 0, density, 0, 0);
-    ctx.globalAlpha = Math.min(fade(from), fade(to)) * 0.8;
-    ctx.strokeStyle = printColour(to, seconds);
-    let point = null;
-    lines.forEach((line, n) => {
-      const offset = (n - (lines.length - 1) / 2) * spread;
-      const reach = streakReach * line.reach;
-      const start = (1 - reach) / 2;
-      const end = 1 - start;
-      const bend = (to.bend ?? 0) * gap * 0.15 * line.bend;
-      const along = (t) => ({
-        x: a.x + (b.x - a.x) * t + nx * (bend * Math.sin(t * Math.PI) + offset),
-        y: a.y + (b.y - a.y) * t + ny * (bend * Math.sin(t * Math.PI) + offset),
-      });
-      if (n === 0) point = (t) => along(start + (end - start) * t);
-      // Tapering: thicker in the middle
-      const pieces = 6;
-      for (let k = 0; k < pieces; k++) {
-        const t0 = start + ((end - start) * k) / pieces;
-        const t1 = start + ((end - start) * (k + 1)) / pieces;
-        const p0 = along(t0);
-        const p1 = along(t1);
-        ctx.lineWidth = Math.max(0.4, streakWidth * line.width * (a.size + b.size) / 2 * Math.sin(((t0 + t1) / 2 - start) / (end - start) * Math.PI));
-        ctx.beginPath();
-        ctx.moveTo(p0.x, p0.y);
-        ctx.lineTo(p1.x, p1.y);
-        ctx.stroke();
-      }
-    });
-    // Blots where the paint pooled along it
-    ctx.fillStyle = printColour(to, seconds);
-    for (const blot of to.blots ?? []) {
-      const p = point(blot.at);
-      const r = streakWidth * blot.size * (a.size + b.size) / 2;
-      ctx.beginPath();
-      ctx.ellipse(p.x, p.y, r, r * 0.6, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-  for (const print of footprints) {
-    const { x, y, size } = printAt(print, bottom);
-    const s = size * (print.size ?? 1);
-    ctx.globalAlpha = fade(print);
-    ctx.fillStyle = printColour(print, seconds);
-    // Lying on the ground, squashed down, facing the way it was going, turned a little
-    ctx.setTransform(print.facing * s * density, 0, 0, s * density, x * density, y * density);
-    ctx.rotate(print.turn ?? 0);
-    ctx.beginPath();
-    // The pad: an uneven blob
-    const lumps = print.lumps ?? [1];
-    for (let n = 0; n <= 36; n++) {
-      const angle = (n / 36) * Math.PI * 2;
-      const where = (n / 36) * lumps.length;
-      const i0 = Math.floor(where) % lumps.length;
-      const i1 = (i0 + 1) % lumps.length;
-      const f = where - Math.floor(where);
-      const lump = lumps[i0] + (lumps[i1] - lumps[i0]) * (f * f * (3 - 2 * f));
-      const px = Math.cos(angle) * footprintSize * 0.6 * lump;
-      const py = Math.sin(angle) * footprintSize * 0.28 * lump;
-      if (n === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
-    }
-    ctx.closePath();
-    // Drops splashed round it
-    for (const drop of print.drops ?? []) {
-      const dx = Math.cos(drop.angle) * footprintSize * drop.out;
-      const dy = Math.sin(drop.angle) * footprintSize * drop.out * 0.45;
-      const dr = footprintSize * drop.size;
-      ctx.moveTo(dx + dr, dy);
-      ctx.ellipse(dx, dy, dr, dr * 0.6, 0, 0, Math.PI * 2);
-    }
-    for (const toe of print.toes ?? [-1, 0, 1]) {
-      ctx.moveTo(footprintSize * 1.03, toe * footprintSize * 0.22);
-      ctx.ellipse(footprintSize * 0.85, toe * footprintSize * 0.22, footprintSize * 0.18, footprintSize * 0.1, 0, 0, Math.PI * 2); // Toes, ahead
-    }
-    ctx.fill();
-  }
-  ctx.globalAlpha = 1;
 }
 
 // Inside the mouse, where it's white, a psychedelic pattern from the Luminin: the hidden close-up video (see lumininVideo),
@@ -1161,11 +958,6 @@ function showMouse(ctx, seconds) {
   let cellX = (Math.floor(step) % mouseSteps) * cellWidth;
   let cellY = (mouse.view * mouseActions + action) * cellHeight;
   lumininVideo ??= startLumininVideo();
-  leaveFootprints(seconds);
-  ctx.save();
-  showFootprints(ctx, seconds);
-  ctx.restore();
-  ctx.setTransform(mouse.facing * size * density, 0, 0, size * density, screenX(mouse.x, bigger) * density, groundAt(bigger, bottomSize()) * density);
   ctx.drawImage(mouseSheet, cellX, cellY, cellWidth, cellHeight, -mouseFeetX, -mouseFeetY, mouseWidth, mouseHeight);
   showMouseInside(ctx, seconds, cellX, cellY, cellWidth, cellHeight);
 }

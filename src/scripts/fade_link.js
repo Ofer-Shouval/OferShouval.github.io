@@ -6,7 +6,8 @@
 let fadeTime = 4.5; // How many seconds the video takes to fade in
 let holdTime = 1.5; // How many seconds to stay like that
 let leaveTime = 1.5; // How many seconds the crowd takes to fade away, and the video to dim
-let dimmedTo = 0.4; // How bright the video ends up (the same as .luminin-background in main.css)
+let dimmedTo = 0.4; // How strong the video ends up, and how it's dimmed: the same as .luminin-background in main.css
+let dimmedLook = 'grayscale(1) brightness(0.45)';
 
 let link = document.getElementById('fade-link');
 let background = document.getElementById('fade-background');
@@ -40,8 +41,9 @@ link.addEventListener('click', (event) => {
     let canvas = document.querySelector('canvas');
     canvas.style.transition = `opacity ${leaveTime}s`;
     canvas.style.opacity = 0;
-    video.style.transition = `opacity ${leaveTime}s`;
+    video.style.transition = `opacity ${leaveTime}s, filter ${leaveTime}s`;
     video.style.opacity = dimmedTo;
+    video.style.filter = dimmedLook;
   }, (fadeTime + holdTime) * 1000);
   setTimeout(go, (fadeTime + holdTime + leaveTime) * 1000);
 });

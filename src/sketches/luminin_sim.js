@@ -463,17 +463,112 @@ new p5((p) => {
   }
 
   // The songs, in the original's order (its switch in draw()), with the ones not ported yet left out
+  // ------------------------------------------------------------------ Riper Than Ripe, from the Luminin 1.0 (2021)
+  // The 1.0 folder's RiperThanRipe.pde, at the 1.0 screens' 320 x 320: four stripes of colour fall at their own speeds
+  // (shifted by the gyro, widened by the acceleration) onto a layer that's never cleared, so they paint over each
+  // other; a jolt down floods it with one colour and puts four big letters of RIPERTHANRIPE in its quarters, cycling,
+  // their colours turned by the tilt. (The original draws its layer flipped twice over, which leaves it as it is.)
+  const RIPER = 320;
+  const riper = {
+    phrase: 'RIPERTHANRIPE',
+    speed: 0.5,
+    intervals: [0, 0, 0, 0],
+    counters: [0, 0, 0, 0],
+    setup() {
+      this.pg = p.createGraphics(RIPER, RIPER);
+      this.pg.pixelDensity(1);
+      this.pg.background(0);
+    },
+    update() {
+      const { zTilt, totalAcc, gyroX, downJolt } = controller;
+      const pg = this.pg;
+      const millis = p.millis();
+      const tiltColor = p.map(zTilt, -0.8, 0.8, 0, 360);
+      const n = this.phrase.length;
+      const [c1, c2, c3, c4] = this.counters;
+      const letters = [c1, (c2 + 1) % n, (c3 + 2) % n, (c4 + 3) % n];
+      p.background(0);
+      pg.noStroke();
+      pg.rectMode(p.CORNER);
+      const shift = gyroX * 2;
+      const wide = RIPER / 4 + totalAcc / 4;
+      for (const [x, hueRate, fall] of [[0, 0.05, 0.7], [RIPER / 4, 0.1, 0.45], [RIPER / 2, 0.2, 0.55], [RIPER - RIPER / 4, 0.3, 0.8]]) {
+        pg.fill(...hsb((hueRate * millis) % 255, 255, 255));
+        pg.rect(x + shift, ((fall * millis) % (RIPER + 300)) - 50, wide, 100);
+      }
+      if (downJolt > 50) {
+        pg.textSize(180);
+        pg.fill(...hsb(250 - tiltColor / 2 + p.random(-20, 20), 255, 255));
+        pg.rect(0, 0, RIPER, RIPER);
+        pg.fill(...hsb(150 - tiltColor / 2 + p.random(-20, 20), 255, 255));
+        pg.textAlign(p.CENTER, p.BOTTOM);
+        pg.text(this.phrase[letters[0]], RIPER / 4, RIPER / 2 + 20);
+        pg.text(this.phrase[letters[1]], (3 * RIPER) / 4, RIPER / 2 + 20);
+        pg.textAlign(p.CENTER, p.TOP);
+        pg.text(this.phrase[letters[2]], RIPER / 4, RIPER / 2 - 20);
+        pg.text(this.phrase[letters[3]], (3 * RIPER) / 4, RIPER / 2 - 20);
+      }
+      // The letters move on, each at its own uneven pace (as in the original, the third and fourth follow the second's)
+      for (let i = 0; i < 4; i++) this.intervals[i] += this.speed + p.random(this.speed / 2);
+      this.counters = [0, 1, 1, 1].map((from) => Math.floor(this.intervals[from]));
+      for (let i = 0; i < 4; i++) {
+        if (this.counters[i] >= n) {
+          this.counters[i] = 0;
+          this.intervals[i] = 0;
+        }
+      }
+      p.image(pg, 0, 0);
+    },
+  };
+
+  // ------------------------------------------------------------------ Odysseus, from the Luminin 1.0 (2021)
+  // The 1.0 folder's Odysseus.pde, at its 160 x 160: an 80 x 80 cloud of noise, scaled up, each pixel's hue from the
+  // tilt and the noise (Processing's HSB holding hues to 0-255 is what turns most of it pink), drifting and stretching
+  // with the acceleration, jolts down scattering its colours
+  const ODYSSEUS = 160;
+  const odysseus = {
+    setup() {
+      this.clouds = p.createImage(80, 80);
+      this.pg = p.createGraphics(ODYSSEUS, ODYSSEUS);
+      this.pg.pixelDensity(1);
+    },
+    update() {
+      const { zTilt, totalAcc, downJolt } = controller;
+      const img = this.clouds;
+      const z = p.millis() * 0.0001 + totalAcc / 2;
+      const dx = p.millis() * 0.0001;
+      const scale = 0.02 * (1 + totalAcc / 3);
+      img.loadPixels();
+      for (let x = 0; x < img.width; x++) {
+        for (let y = 0; y < img.height; y++) {
+          const n = p.noise(x * scale, dx + y * scale, z) - 0.2;
+          const [r, g, b] = hsb(p.map(zTilt, -1, 1, 0, -80) + 240 + 100 * n - p.random(downJolt), 255, 255);
+          const at = 4 * (x + img.width * y);
+          img.pixels[at] = r;
+          img.pixels[at + 1] = g;
+          img.pixels[at + 2] = b;
+          img.pixels[at + 3] = 255;
+        }
+      }
+      img.updatePixels();
+      this.pg.image(img, 0, 0, ODYSSEUS, ODYSSEUS);
+      p.background(0);
+      p.image(this.pg, 0, 0);
+    },
+  };
+
+  // The songs in the rotation, each with the square sketch it plays (what the stage shows, and its screens sample,
+  // 32 x 32): the 1.0's. The 2025 set's ports above (the worm, the cloud, the golden circles, the intense waves, the
+  // scanlines) are out of the rotation for now
+  const sampled = (layer) => () => ({ image: layer().elt, samples: SAMPLES });
   const songs = [
-    { name: 'intermission', draw: () => worm.update(200) },
-    { name: 'odysseus', draw: () => cloud.update() },
-    { name: 'little drone + head in the cloud', draw: () => golden.update() },
-    { name: 'just keep on living in the moment (1.0, as in the close-up)', draw: () => waves1.update() },
-    { name: 'just keep on living in the moment (2025)', draw: () => waves.update() },
-    { name: 'unfamiliar state (1.0)', draw: () => unfamiliar.update() },
-    { name: 'crush', draw: () => scanlines.update() },
+    { name: 'unfamiliar state', draw: () => unfamiliar.update(), sketch: sampled(() => unfamiliar.pg) },
+    { name: 'just keep on living in the moment', draw: () => waves1.update(), sketch: sampled(() => waves1.pg) },
+    { name: 'riper than ripe', draw: () => riper.update(), sketch: sampled(() => riper.pg) },
+    { name: 'odysseus', draw: () => odysseus.update(), sketch: sampled(() => odysseus.pg) },
   ];
 
-  const FIRST_SONG = 'unfamiliar state (1.0)'; // The one it starts on
+  const FIRST_SONG = 'unfamiliar state'; // The one it starts on
 
   // Processing's HSB, out of 255 each, clamped as Processing clamps it, to RGB
   function hsb(h, s, v) {
@@ -490,7 +585,7 @@ new p5((p) => {
 
   function nextSong(step = 1) {
     scene = (scene + step + songs.length) % songs.length;
-    label.textContent = `the luminin, simulated: ${songs[scene].name}`;
+    label.textContent = `pattern: ${songs[scene].name}`;
   }
 
   p.setup = () => {
@@ -508,6 +603,8 @@ new p5((p) => {
     waves.setup();
     waves1.setup();
     unfamiliar.setup();
+    riper.setup();
+    odysseus.setup();
     scene = songs.findIndex((song) => song.name === FIRST_SONG);
     nextSong(0);
 
@@ -533,8 +630,8 @@ new p5((p) => {
       const most = Math.max(r, g, b, 1);
       glow = `rgb(${(r / most) * 255} ${(g / most) * 255} ${(b / most) * 255})`; // As bright as it'll go
     }
-    // For now the stage shows only Unfamiliar State's sketch, as it is on the laptop (the other songs show nothing)
-    const sketch = songs[scene].name === 'unfamiliar state (1.0)' ? { image: unfamiliar.pg.elt, samples: SAMPLES } : null;
+    // The stage shows the song's sketch as it is on the laptop running it, and its screens sample it
+    const sketch = songs[scene].sketch ? songs[scene].sketch() : null;
     performer.update(dt, controller, p.canvas, glow, sketch);
   };
 }, holder);

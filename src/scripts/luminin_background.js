@@ -15,8 +15,7 @@ if (saved) {
 // Asking for less motion leaves it still
 if (!matchMedia('(prefers-reduced-motion: reduce)').matches) video.play();
 
-// While the simulation's playing, the page is lit by its screens, in their opposite colours (each hue turned half way
-// round, so green lights it magenta and blue orange): what they show, much more diffuse, washed over the whole page
+// While the simulation's playing, the page is lit by its screens, in greyscale (their light and dark, not their colour): what they show, much more diffuse, washed over the whole page
 // (over the video). When it stops (scrolled off, or no song with screens), the video shows again
 const glow = document.createElement('canvas');
 glow.className = 'luminin-glow';
@@ -31,7 +30,7 @@ addEventListener('luminin:leds', ({ detail: leds }) => {
   glow.width = 64;
   glow.height = Math.max(8, Math.round((64 * innerHeight) / innerWidth));
   const size = Math.max(glow.width, glow.height);
-  glowContext.filter = 'blur(4px) hue-rotate(180deg)';
+  glowContext.filter = 'blur(4px) grayscale(1)';
   glowContext.drawImage(leds, (glow.width - size) / 2, (glow.height - size) / 2, size, size);
   glow.classList.add('lit');
   clearTimeout(quiet);
