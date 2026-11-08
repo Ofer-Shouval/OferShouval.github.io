@@ -1,45 +1,40 @@
 // The Luminin, simulated: the 2025 album-release Processing sketch
 // (~/Documents/Projects/Luminin/sketch_20250602_Album_Release_Sketches), ported to p5 scene by scene, as close to the
-// original as it'll go. On stage the controller on the guitar's headstock sends its motion over serial; here the mouse
-// stands in for it (see readController), and a click is its button, moving on to the next song, as do the arrow keys.
+// original as it'll go. On stage the controller on the guitar's headstock sends its motion over serial; here a little
+// performer plays a guitar with it on (see luminin_performer.js), moved by the viewer, and its button, or a click on the
+// screen's output, moves on to the next song. What it draws is shown as the stage's background (the canvas it draws on
+// stays hidden).
 //
 // Like the original it draws at 800 x 300, with one shared offscreen layer (pg) that scenes leave their trails on.
 // It only runs while it's on the screen.
 //
-// Left out for now: the strobe() the original lays over some songs, which flashes about twelve times a second and has to
-// be held to three a second here (photosensitive epilepsy) before it goes in; and the songs not ported yet.
+// The original's strobe(), laid over some songs, flashes about twelve times a second; here it's held to three a second
+// (photosensitive epilepsy), so far only on the songs ported since (see strobe). The songs not ported yet are left out.
 
 import p5 from 'p5';
+import { createPerformer } from './luminin_performer.js';
 
 p5.disableFriendlyErrors = import.meta.env.PROD;
 
 const WIDTH = 800;
 const HEIGHT = 300;
 
-// The controller's readings, as the original names them (see serialEvent in the original), with roughly their ranges
-const controller = {
-  zTilt: 0, // How far the headstock tips, about -1 to 1: here, the mouse's height, top = 1
-  totalAcc: 0, // How hard it's moving, 0 to about 3: here, the mouse's speed
-  gyroX: 0, // How fast it's turning, about -30 to 30: here, how fast the mouse moves up and down
-  gyroY: 0, // ...and side to side
-  downJolt: 0, // A sudden jerk downward, 0 to about 2000: here, a quick flick of the mouse down, dying away
-};
-// How the mouse is turned into those
-const SPEED_TO_ACC = 0.06; // totalAcc for each pixel a frame the mouse moves
-const SPEED_TO_GYRO = 0.6; // gyro for each pixel a frame
-const JOLT_FROM = 12; // How many pixels a frame down the mouse has to move to count as a jolt
-const JOLT_GAIN = 90; // downJolt for each pixel a frame past that
-const SMOOTHING = 0.15; // How quickly the readings follow the mouse (1 = at once)
-const JOLT_DECAY = 0.9; // How much of a jolt is left each frame
+// The controller's readings, as the original names them (see serialEvent in the original), filled in by the performer
+const controller = { zTilt: 0, totalAcc: 0, gyroX: 0, gyroY: 0, upJolt: 0, downJolt: 0, forwardJolt: 0, backJolt: 0 };
 
 const holder = document.querySelector('.luminin-sim');
-const label = holder.querySelector('.sim-label');
+const label = document.querySelector('.luminin-stage .sim-label');
 
 new p5((p) => {
   let pg;
   let scene = 0;
-  let mouse = { x: WIDTH / 2, y: HEIGHT / 2 };
-  let lastMouse = { ...mouse };
+  let performer;
+  let lastFrame = performance.now();
+  // The screen's colour, roughly, for the light on the controller and the floor
+  const average = document.createElement('canvas');
+  average.width = average.height = 1;
+  const averageContext = average.getContext('2d', { willReadFrequently: true });
+  let glow = 'white';
 
   // ------------------------------------------------------------------ Intermission: the worm (Worm.pde)
   const worm = {
@@ -172,11 +167,192 @@ new p5((p) => {
     },
   };
 
+  // ------------------------------------------------------------------ Just Keep On Living In The Moment, as on the Luminin 1.0 (2021)
+  // The version in the close-up on this page: the 1.0 folder's Imagination_Ltd.pde, the same waves as the 2025 one but
+  // drawn at the 1.0 screens' 320 x 320, never cleared (so its trails pile up), with all 33 columns on the screen and its
+  // fill as strong as the jolts up and down added together. It's then shown as the two 16 x 32 LED screens show it: each
+  // LED takes the one pixel at its spot (as the Fadecandy server does), and the diffusers in front blur them together,
+  // which is what turns its rectangles into soft blobs of colour.
+  const SIZE_1 = 320;
+  const LED = { across: 16, down: 32, blur: 7, gap: 18 }; // Per screen; the blur is the diffusers', in pixels
+  const waves1 = {
+    spacing: 10,
+    theta: 0,
+    period: 12,
+    yValues: [],
+    yValues2: [],
+    xValues: [],
+    setup() {
+      this.pg = p.createGraphics(SIZE_1, SIZE_1);
+      this.pg.pixelDensity(1);
+      this.pg.background(0);
+      const count = Math.floor((SIZE_1 + 16) / this.spacing);
+      this.dx = (Math.PI * 2) / this.period;
+      this.yValues = new Array(count).fill(0);
+      this.yValues2 = new Array(count).fill(0);
+      this.xValues = new Array(count).fill(0);
+      this.leds = document.createElement('canvas');
+      this.leds.width = LED.across * 2;
+      this.leds.height = LED.down;
+      this.ledContext = this.leds.getContext('2d');
+    },
+    update() {
+      const { gyroY, downJolt, upJolt, zTilt } = controller;
+      const pg1 = this.pg;
+      const radius = 15 + gyroY;
+      const amplitude = 50 + downJolt / 10;
+      this.theta += 0.1 + p.map(gyroY, -50, 50, -0.4, 0.4);
+      let x = this.theta;
+      const angle = (Math.PI * 2) / this.yValues.length;
+      for (let i = 0; i < this.yValues.length; i++) {
+        this.yValues[i] = radius * Math.sin(angle * i) + Math.sin(x) * amplitude;
+        this.yValues2[i] = radius * Math.cos(angle * i) - Math.sin(x) * amplitude;
+        this.xValues[i] = i * this.spacing;
+        x += this.dx;
+      }
+      const joltFactor = upJolt + downJolt;
+      const w = SIZE_1;
+      pg1.rectMode(p.CENTER);
+      pg1.strokeWeight(1);
+      for (let i = 0; i < this.yValues.length; i++) {
+        const xv = this.xValues[i];
+        pg1.fill(...hsb(xv / 10 + 255 * Math.abs(zTilt), 255 - (joltFactor / 10) * p.random(1), 255), Math.min(255, joltFactor));
+        pg1.stroke(...hsb(40 + xv / 6, 255 * p.random(1), 255)); // Top wave
+        pg1.rect(w - xv - 5, p.random(1) * ((upJolt + downJolt) / 5), 20 + w / this.xValues.length, this.yValues2[i] * 5);
+        pg1.stroke(...hsb(230 - xv / 6, 255 * p.random(1), 255)); // Bottom wave
+        pg1.rect(w - xv - 5, w - p.random(1) * ((upJolt + downJolt) / 5), 20 + w / this.xValues.length, this.yValues[i] * 5);
+        pg1.stroke(...hsb(xv / 2 + 255 * Math.abs(zTilt), 255 - (joltFactor / 2) * p.random(1), 255)); // Middle wave
+        pg1.rect(w - (xv - 5), w / 2 + p.random(1) * (upJolt + downJolt / 5), Math.abs(gyroY) + w / this.xValues.length, this.yValues[i] * 4);
+      }
+      pg1.fill(0, 10);
+      pg1.noStroke();
+      pg1.rect(w / 2, w / 2, w, w);
+      this.show();
+    },
+    // The two screens, side by side in the middle of the frame
+    show() {
+      const pg1 = this.pg;
+      pg1.loadPixels();
+      const cell = SIZE_1 / (LED.across * 2);
+      const image = this.ledContext.createImageData(LED.across * 2, LED.down);
+      for (let y = 0; y < LED.down; y++) {
+        for (let x = 0; x < LED.across * 2; x++) {
+          const from = 4 * (Math.floor(y * cell + cell / 2) * SIZE_1 + Math.floor(x * cell + cell / 2));
+          const to = 4 * (y * LED.across * 2 + x);
+          for (let k = 0; k < 3; k++) image.data[to + k] = pg1.pixels[from + k];
+          image.data[to + 3] = 255;
+        }
+      }
+      this.ledContext.putImageData(image, 0, 0);
+      p.background(0);
+      const height = HEIGHT - 16;
+      const width = height / 2;
+      const left = WIDTH / 2 - width - LED.gap / 2;
+      const context = p.drawingContext;
+      context.save();
+      context.imageSmoothingEnabled = true;
+      context.filter = `blur(${LED.blur}px)`;
+      for (let screen = 0; screen < 2; screen++) {
+        const x = left + screen * (width + LED.gap);
+        context.save();
+        context.beginPath();
+        context.rect(x, 8, width, height); // The blur stays inside each screen's frame
+        context.clip();
+        context.drawImage(this.leds, screen * LED.across, 0, LED.across, LED.down, x, 8, width, height);
+        context.restore();
+      }
+      context.restore();
+    },
+  };
+
+  // ------------------------------------------------------------------ Just Keep On Living In The Moment: intense waves (Intense_Waves.pde)
+  // Three rows of rectangles heaving in waves (top, bottom and middle). As in the original, only the first ten or so
+  // columns land on the screen (each is 80 pixels further along, from the right), and its period is set once, so the
+  // upJolt it's later given does nothing
+  const waves = {
+    spacing: 10,
+    theta: 0,
+    amplitude: 15,
+    period: 12,
+    radius: 0,
+    yValues: [],
+    yValues2: [],
+    xValues: [],
+    setup() {
+      const count = Math.floor((WIDTH + 16) / this.spacing);
+      this.dx = (Math.PI * 2) / this.period;
+      this.yValues = new Array(count).fill(0);
+      this.yValues2 = new Array(count).fill(0);
+      this.xValues = new Array(count).fill(0);
+    },
+    update() {
+      const { gyroY, downJolt, upJolt } = controller;
+      this.radius = 15 + gyroY;
+      this.amplitude = 50 + downJolt / 10;
+      p.background(0);
+      this.calcWave();
+      pg.background(0);
+      pg.rectMode(p.CENTER);
+      this.renderWave();
+      pg.fill(0, 10);
+      pg.noStroke();
+      pg.rectMode(p.CORNER);
+      pg.rect(0, 0, WIDTH, HEIGHT);
+      p.image(pg, 0, 0);
+      strobe();
+    },
+    calcWave() {
+      this.theta += 0.1 + p.map(controller.gyroY, -50, 50, -0.4, 0.4);
+      let x = this.theta;
+      const angle = (Math.PI * 2) / this.yValues.length;
+      for (let i = 0; i < this.yValues.length; i++) {
+        this.yValues[i] = this.radius * Math.sin(angle * i) + Math.sin(x) * this.amplitude;
+        this.yValues2[i] = this.radius * Math.cos(angle * i) - Math.sin(x) * this.amplitude;
+        this.xValues[i] = Math.floor((i * WIDTH) / this.spacing);
+        x += this.dx;
+      }
+    },
+    renderWave() {
+      const { zTilt, gyroY, downJolt, upJolt } = controller;
+      const joltFactor = Math.floor((upJolt + downJolt) / 2);
+      const across = 50 + WIDTH / this.xValues.length;
+      for (let i = 0; i < this.yValues.length; i++) {
+        const x = this.xValues[i];
+        pg.fill(...hsb(x / 10 + 255 * Math.abs(zTilt), 255 - (joltFactor / 10) * p.random(1), 255), Math.min(255, upJolt));
+        pg.strokeWeight(Math.max(0.1, p.map(downJolt, 0, 1000, 1, 10)));
+        // Top wave
+        pg.stroke(...hsb(40 + x / 6, 255 * p.random(1), 255));
+        pg.rect(WIDTH - x - 5, p.random(1) * ((upJolt + downJolt) / 5), across, this.yValues2[i] * 5);
+        // Bottom wave
+        pg.stroke(...hsb(230 - x / 6, 255 * p.random(1), 255));
+        pg.rect(WIDTH - x - 5, HEIGHT - p.random(1) * ((upJolt + downJolt) / 5), across, this.yValues[i] * 5);
+        // Middle wave
+        pg.stroke(...hsb(x / 2 + 255 * Math.abs(zTilt), 255 - (joltFactor / 2) * p.random(1), 255));
+        pg.rect(WIDTH - (x - 5), HEIGHT / 2 + p.random(1) * (upJolt + downJolt / 5), Math.abs(gyroY) + WIDTH / this.xValues.length, this.yValues[i] * 4);
+      }
+    },
+  };
+
+  // The original's strobe(): a wash over everything, alternately black and white, as strong as the latest down jolt
+  // (none below 500). The original swaps every few frames, about twelve times a second; this is held to three flashes
+  // a second (photosensitive epilepsy), each white for a third of its cycle
+  const STROBE_RATE = 3;
+  function strobe() {
+    const amount = p.map(controller.downJolt, 500, 2000, 0, 150, true);
+    if (amount <= 0) return;
+    const white = ((p.millis() / 1000) * STROBE_RATE) % 1 > 2 / 3;
+    p.noStroke();
+    p.fill(white ? 255 : 0, amount);
+    p.rect(0, 0, WIDTH, HEIGHT);
+  }
+
   // The songs, in the original's order (its switch in draw()), with the ones not ported yet left out
   const songs = [
     { name: 'intermission', draw: () => worm.update(200) },
     { name: 'odysseus', draw: () => cloud.update() },
     { name: 'little drone + head in the cloud', draw: () => golden.update() },
+    { name: 'just keep on living in the moment (1.0, as in the close-up)', draw: () => waves1.update() },
+    { name: 'just keep on living in the moment (2025)', draw: () => waves.update() },
     { name: 'crush', draw: () => scanlines.update() },
   ];
 
@@ -193,22 +369,6 @@ new p5((p) => {
     return [[v, c, a], [b, v, a], [a, v, c], [a, b, v], [c, a, v], [v, a, b]][i];
   }
 
-  // The mouse, read as if it were the controller
-  function readController() {
-    const vx = mouse.x - lastMouse.x;
-    const vy = mouse.y - lastMouse.y;
-    lastMouse = { ...mouse };
-    const speed = Math.hypot(vx, vy);
-    const follow = (now, target) => now + (target - now) * SMOOTHING;
-    controller.zTilt = follow(controller.zTilt, p.map(mouse.y, 0, HEIGHT, 1, -1, true));
-    controller.totalAcc = follow(controller.totalAcc, Math.min(3, speed * SPEED_TO_ACC));
-    controller.gyroX = follow(controller.gyroX, p.constrain(vy * SPEED_TO_GYRO, -30, 30));
-    controller.gyroY = follow(controller.gyroY, p.constrain(vx * SPEED_TO_GYRO, -30, 30));
-    const jolt = Math.max(0, vy - JOLT_FROM) * JOLT_GAIN;
-    controller.downJolt = Math.min(2000, Math.max(jolt, controller.downJolt * JOLT_DECAY));
-    if (controller.downJolt < 1) controller.downJolt = 0;
-  }
-
   function nextSong(step = 1) {
     scene = (scene + step + songs.length) % songs.length;
     label.textContent = `the luminin, simulated: ${songs[scene].name}`;
@@ -219,39 +379,39 @@ new p5((p) => {
     const canvas = p.createCanvas(WIDTH, HEIGHT);
     canvas.parent(holder);
     canvas.elt.tabIndex = 0;
-    canvas.elt.setAttribute('aria-label', 'The Luminin, simulated: move the mouse over it to play it like the controller; click, or press the arrow keys, for the next song.');
+    canvas.elt.setAttribute('aria-label', 'What the Luminin sketch draws on the screens; click for the next song.');
     pg = p.createGraphics(WIDTH, HEIGHT);
     pg.pixelDensity(1);
     p.noiseDetail(5, 0.4); // As the original's cloud sets it, for every scene
     worm.setup();
     cloud.setup();
     golden.setup();
+    waves.setup();
+    waves1.setup();
     nextSong(0);
 
-    // Where the mouse is, in the sketch's own 800 x 300, however big the canvas is shown
-    const move = (event) => {
-      const box = canvas.elt.getBoundingClientRect();
-      mouse = { x: ((event.clientX - box.left) / box.width) * WIDTH, y: ((event.clientY - box.top) / box.height) * HEIGHT };
-    };
-    canvas.elt.addEventListener('pointermove', move);
-    canvas.elt.addEventListener('pointerdown', (event) => {
-      move(event);
-      lastMouse = { ...mouse };
-    });
+    performer = createPerformer(document.querySelector('.luminin-stage'), { onButton: () => nextSong(1) });
     canvas.elt.addEventListener('click', () => nextSong(1));
-    canvas.elt.addEventListener('keydown', (event) => {
-      if (event.key === 'ArrowUp' || event.key === 'ArrowRight') nextSong(1);
-      else if (event.key === 'ArrowDown' || event.key === 'ArrowLeft') nextSong(-1);
-      else return;
-      event.preventDefault();
-    });
 
     p.noLoop();
-    new IntersectionObserver(([entry]) => (entry.isIntersecting ? p.loop() : p.noLoop())).observe(canvas.elt);
+    const watch = new IntersectionObserver((entries) => {
+      const seen = entries.some((entry) => entry.isIntersecting);
+      seen ? (lastFrame = performance.now(), p.loop()) : p.noLoop();
+    });
+    watch.observe(document.querySelector('.luminin-stage'));
   };
 
   p.draw = () => {
-    readController();
+    const now = performance.now();
+    const dt = (now - lastFrame) / 1000;
+    lastFrame = now;
     songs[scene].draw();
+    if (p.frameCount % 6 === 0) {
+      averageContext.drawImage(p.canvas, 0, 0, 1, 1);
+      const [r, g, b] = averageContext.getImageData(0, 0, 1, 1).data;
+      const most = Math.max(r, g, b, 1);
+      glow = `rgb(${(r / most) * 255} ${(g / most) * 255} ${(b / most) * 255})`; // As bright as it'll go
+    }
+    performer.update(dt, controller, p.canvas, glow);
   };
 }, holder);

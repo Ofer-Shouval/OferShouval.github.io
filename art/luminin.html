@@ -46,10 +46,21 @@
 
     <h3>try it</h3>
     <!-- The 2025 Processing sketch, ported, with the mouse standing in for the controller (see src/sketches/luminin_sim.js) -->
-    <figure class="luminin-sim">
+    <figure class="luminin-stage">
       <p class="sim-label">the luminin, simulated</p>
+      <canvas tabindex="0" aria-label="A hand-drawn performer holding a guitar with the Luminin controller on its headstock, in front of the screen, with a graph of the controller's readings. Drag to move the guitar; the arrow keys jolt and swing it, space strums, enter presses the controller's button."></canvas>
+      <div class="luminin-gestures">
+        <button data-gesture="down">jolt down</button>
+        <button data-gesture="up">jolt up</button>
+        <button data-gesture="back">swing back</button>
+        <button data-gesture="forward">swing forward</button>
+        <button data-gesture="strum">strum</button>
+        <button data-gesture="button">next song</button>
+      </div>
     </figure>
-    <p class="luminin-sim-readout">move over it to play &middot; flick down to jolt &middot; click for the next song</p>
+    <p class="luminin-sim-readout">drag the guitar to tip and swing it &middot; flick it to jolt &middot; click the controller for the next song</p>
+    <!-- Where the sketch itself draws; it's shown as the stage's background, so this stays hidden -->
+    <figure class="luminin-sim" hidden></figure>
     <script type="module" src="/src/sketches/luminin_sim.js"></script>
 
     <!-- 3. The idea -->
@@ -106,17 +117,25 @@
       <video data-src="/media/lumininGif1_intro.mp4" poster="/media/lumininGif1_intro_poster.jpg" autoplay muted loop playsinline></video>
       <div><h3>intro</h3><p>TODO: a sentence on the song and the light's mood.</p></div>
     </div>
-    <div class="performance">
-      <video data-src="/media/lumininGif3_riper.mp4" poster="/media/lumininGif3_riper_poster.jpg" autoplay muted loop playsinline></video>
+    <!-- The close-up beside the 1.0 sketch, simulated, following the video's colours (see src/sketches/riper_sim.js) -->
+    <div class="performance paired">
+      <div class="luminin-pair">
+        <video data-src="/media/lumininGif3_riper.mp4" poster="/media/lumininGif3_riper_poster.jpg" autoplay muted loop playsinline></video>
+        <figure class="riper-sim">
+          <canvas aria-label="The two LED screens, simulated, showing the same letters and colours as the screens in the video beside them."></canvas>
+          <p class="sim-label">simulated</p>
+        </figure>
+      </div>
       <div><h3>riper than ripe</h3><p>TODO: a sentence on the song and the light's mood.</p></div>
     </div>
+    <script type="module" src="/src/sketches/riper_sim.js"></script>
     <div class="performance">
       <video data-src="/media/lumininGif4_unfamiliar.mp4" poster="/media/lumininGif4_unfamiliar_poster.jpg" autoplay muted loop playsinline></video>
       <div><h3>unfamiliar</h3><p>TODO: a sentence on the song and the light's mood.</p></div>
     </div>
     <div class="performance">
       <video data-src="/media/lumininGif2_jkolitm.mp4" poster="/media/lumininGif2_jkolitm_poster.jpg" autoplay muted loop playsinline></video>
-      <div><h3>TODO: full title (jkolitm)</h3><p>TODO: a sentence on the song and the light's mood.</p></div>
+      <div><h3>just keep on living in the moment</h3><p>TODO: a sentence on the song and the light's mood.</p></div>
     </div>
     <div class="performance">
       <video data-src="/media/lumininGif6_red.mp4" poster="/media/lumininGif6_red_poster.jpg" autoplay muted loop playsinline></video>

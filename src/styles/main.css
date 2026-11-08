@@ -1354,9 +1354,20 @@ a.card:hover {
 .luminin-flow span { border: 1px solid currentColor; padding: 0.3em 0.7em; }
 .luminin-sim { position: relative; max-width: 700px; margin: 24px auto 0; }
 .luminin-sim canvas { display: block; width: 100% !important; height: auto !important; aspect-ratio: 8 / 3; background-color: black; outline: none; cursor: crosshair; }
+.luminin-stage { position: relative; max-width: 700px; margin: 24px auto 0; }
+.luminin-stage canvas { display: block; width: 100%; height: auto; background-color: #121212; outline: none; cursor: grab; touch-action: none; }
+.luminin-stage canvas:active { cursor: grabbing; }
+.luminin-gestures { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 8px; }
+.luminin-gestures button { padding: 4px 10px; border: 1px solid #7a7a7a; background: none; color: white; font-family: 'Inconsolata', monospace; font-size: 13px; cursor: pointer; }
+.luminin-gestures button:hover { background-color: rgba(100, 100, 100, 0.6); }
 .page .luminin-sim-readout { margin: 8px auto 24px; color: #7a7a7a; font-family: 'Inconsolata', monospace; font-size: 13px; text-align: center; }
 .luminin-ideas li { margin-bottom: 0.6em; }
 .performance { display: grid; grid-template-columns: 3fr 2fr; gap: 1.2em; align-items: center; margin: 1.5em 0; }
 .performance video { width: 100%; }
 .performance h3 { margin-top: 0; }
 @media (max-width: 700px) { .performance { grid-template-columns: 1fr; } }
+/* A close-up with its simulation beside it, and the words below */
+.performance.paired { grid-template-columns: 1fr; }
+.luminin-pair { display: grid; grid-template-columns: 4fr 3fr; gap: 1.2em; align-items: center; }
+.riper-sim { position: relative; margin: 0; }
+.riper-sim canvas { display: block; width: 100%; height: auto; background-color: black; }
