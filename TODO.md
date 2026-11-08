@@ -17,11 +17,9 @@ Updated 8 November 2026 (save point 65). Placeholders on the site show as dashed
 - [ ] The year of the Odysseus video
 - [ ] Show clips: four slots waiting for clips (song title, venue, date)
 - [ ] Photos: four slots waiting for photos
-- [ ] Close-ups: check the song titles and write a line on each song's mood; the full title of the song whose file says "hdme"
+- [ ] Close-ups: check the song titles and write a line on each song's mood (one is called "red": is that its real title?)
 
 ### Art
-- [ ] Art list page (`art/all.html`): one card still needs a thumbnail and a one-line description
-- [ ] Visuals for O. Wake (`art/band-visuals.html`): intro, the pieces, and which song each was for (its card on the list page is the one missing a thumbnail)
 - [ ] Years for Sun Deity, the visualizers and the animation work (their cards have none)
 
 ### Bio

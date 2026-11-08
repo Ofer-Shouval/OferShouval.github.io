@@ -129,8 +129,8 @@ let view = { x: 0, depth: 0 };
 
 function setup() {
   density = Math.min(2, window.devicePixelRatio); // Sharp enough, and any more is slow on phones
-  pixelDensity(density);
   let canvas = createCanvas(windowWidth, windowHeight);
+  pixelDensity(density); // (After making the canvas, which sets it back to the screen's own, 3 on iPhones; the drawing assumes `density`)
   canvas.position(0, 0);
   canvas.style('z-index', '-1');
   // Sharp enough for the biggest figures on this screen, and no bigger
@@ -433,7 +433,8 @@ function standHoles() {
     let band = bands[hole.link.dataset.row] ?? bands.any;
     let letters = hole.name.textContent.length;
     let wide = Math.min(widest, letters * holeNameRoom.perLetter + holeNameRoom.padding);
-    let tall = Math.ceil((letters * holeNameRoom.perLetter) / widest) * holeNameRoom.perLine + holeNameRoom.gap;
+    // (On narrow screens they can't spread sideways, so they need more room one above the other, to clear each other's posts)
+    let tall = Math.ceil((letters * holeNameRoom.perLetter) / widest) * holeNameRoom.perLine + holeNameRoom.gap * (width < 600 ? 1.6 : 1);
     let best = null;
     let bestRoom = -1;
     let spot = (width < 600 && hole.link.dataset.spotNarrow) || hole.link.dataset.spot;
@@ -443,7 +444,11 @@ function standHoles() {
       bestRoom = Infinity;
     }
     for (let attempt = 0; bestRoom < Infinity && attempt < holeTries; attempt++) {
-      let x = width / 2 + (hash(holeSeed + i * 1000 + attempt + 0.1) - 0.5) * (Math.min(width, holeScatterWidth) - wide);
+      // Its sign kept on the screen even once the camera's dipped all the way, which spreads everything out
+      // from the middle by up to pushZoom (see pushCamera() and placeHoles())
+      // (Their names grow a little as it dips, so a bit more room than they take now, and a margin)
+      let across = Math.min(Math.min(width, holeScatterWidth) - wide, (width - wide * 1.25 - 24) / pushZoom);
+      let x = width / 2 + (hash(holeSeed + i * 1000 + attempt + 0.1) - 0.5) * across;
       let y = height * lerp(band[0], band[1], hash(holeSeed + i * 1000 + attempt + 0.2));
       let roomHere = Math.min(Infinity, ...spots.map((spot) => Math.max(Math.abs(x - spot.x) / ((wide + spot.wide) / 2), Math.abs(y - spot.y) / ((tall + spot.tall) / 2))));
       if (roomHere > bestRoom) {
@@ -933,14 +938,16 @@ function showMouseInside(ctx, seconds, cellX, cellY, cellWidth, cellHeight) {
     cut.height = Math.ceil(cellHeight);
   }
   const context = cut.getContext('2d');
+  // The video first, then cut to the mouse's white parts. (The other way round, the video drawn 'source-in' over
+  // the mouse's shape, Safari, and so every browser on an iPhone, ignores the shape and fills the whole picture.)
   context.globalCompositeOperation = 'copy';
-  context.drawImage(mouseInside, cellX, cellY, cellWidth, cellHeight, 0, 0, cut.width, cut.height);
-  context.globalCompositeOperation = 'source-in';
   context.filter = `brightness(${mouseInsideBright}) saturate(${mouseInsideSaturate}) hue-rotate(${(seconds * mouseInsideHueTurn) % 360}deg)`;
   const sourceWide = video.videoWidth * mouseInsideZoom;
   const sourceTall = (sourceWide * cut.height) / cut.width;
   context.drawImage(video, (video.videoWidth - sourceWide) / 2, (video.videoHeight - sourceTall) / 2, sourceWide, sourceTall, 0, 0, cut.width, cut.height);
   context.filter = 'none';
+  context.globalCompositeOperation = 'destination-in';
+  context.drawImage(mouseInside, cellX, cellY, cellWidth, cellHeight, 0, 0, cut.width, cut.height);
   context.globalCompositeOperation = 'source-over';
   ctx.drawImage(cut, -mouseFeetX, -mouseFeetY, mouseWidth, mouseHeight);
 }
@@ -982,6 +989,7 @@ function hash(x) {
 
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
+  if (pixelDensity() !== density) pixelDensity(density);
   buildCrowd();
 }
 
