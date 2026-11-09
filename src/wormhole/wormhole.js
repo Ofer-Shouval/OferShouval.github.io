@@ -11,9 +11,8 @@ import { soundButton, startAudio, soundWanted, onSoundChange, setSound } from '.
 // middle and the array getting closer to static, the flowers still flying past. When the worm's a few pixels wide, or
 // once it's been long enough (see arrayHold), the array absorbs it, and it cuts
 // to the noisy spiral bursting out, white on black, with lightning, some of it in the colours of the Luminin. That last
-// stage is a sketch of its own, spiral-worm.js, which this hands the screen over to: the spiral unwinds into a worm,
-// which flies on to three portals, to art, music and bio, and goes through whichever's chosen. The skip link at the
-// bottom goes straight to the portals.
+// stage is a sketch of its own, spiral-worm.js, which this hands the screen over to: the spiral waits with three portals
+// round it, to art, music and bio, and once one's chosen, it unwinds into a worm, which flies on into the chosen portal. The skip link at the bottom goes straight to the portals.
 //
 // Playing moves it along (see screensToNext), and it carries on slowly by itself if nobody's playing
 // (see secondsToNext). Psychworm moves on when it's clicked, by flying through a flower: each of its segments turns into
@@ -49,7 +48,7 @@ const stages = [
   // The pixel array used to be a stage of its own here. It's part of the flowers stage now (see arrayHold).
   {
     name: 'noisy spiral',
-    hint: 'click for lightning, let go for a rose',
+    hint: 'choose where to go', // (It waits with the portals round it, see spiral-worm.js)
     sketch: spiralWorm, // The stage is this sketch, which takes over the screen (see handOver())
     settings: {}, // It takes over the screen straight away, so this one never draws it
   },

@@ -16,7 +16,7 @@
 // change is worked out once (see buildCrowd()), and each frame only works out where they've got to.
 
 import p5 from 'p5';
-import { paintSheets, paintHoles, paintSigns, paintMouse, paintMouseFace, trailBrush, holeMargin, signMargin, frameWidth, frameHeight, feetX, feetY, steps } from './brush_frames.js';
+import { paintSheets, paintHoles, paintSigns, paintMouse, paintMouseFace, holeMargin, signMargin, frameWidth, frameHeight, feetX, feetY, steps } from './brush_frames.js';
 import { mouseWidth, mouseHeight, mouseFeetX, mouseFeetY, mouseSteps, mouseStride, mouseViews, mouseSitting, mouseLowering, mouseWalking, mouseActions } from './mouse.js';
 
 // The friendly-error checker slows every p5 call; it's for development, not the live site.
@@ -986,19 +986,20 @@ const mouseInsideSaturate = 2.2; // How much its colours are pushed up
 const mouseInsideHueTurn = 40; // How many degrees its hues turn round each second
 const mouseOutline = false; // Is it drawn with its black outline? Without, it's all colour (until the video's ready, when it's drawn as usual)
 const mouseEdge = 0.5; // ...and without it, how thick a hairline goes round it instead, in screen pixels (0 = none)
-// Its trail: a line follows it along the ground, unseen, and a paintbrush paints along that line in the colours it's
-// showing as it goes, soft and see-through, building up where it crosses itself. The paint's on a map of the ground
-// seen from above, which is never cleared, and every frame the map is laid on the ground in perspective, a strip at a
-// time, so the trail stays where it was painted, getting smaller in the distance, with everyone walking over it.
+// Its trail: a stream of see-through circles in the colours it's showing, scattered behind it as it walks, each placed a
+// random (Gaussian) distance from where it walked, so most land near its path and fewer further out, and each soft,
+// fading out from its middle like a blurred disc, so they blur together into one smudge. They're painted on a map of
+// the ground seen from above, which is never cleared, and every frame the map is laid on the ground in perspective, a
+// strip at a time, so the trail stays where it was left, getting smaller in the distance, with everyone walking over it.
 const trailOn = true;
-const trailStep = 6; // How far it walks between the line's points, on the map
-const trailPiece = 5; // How many of the line's points are painted at a time
-const trailWeight = 0.4; // How wide the brush is, as a share of its own width
-const trailBristles = 9; // How many lines it's painted in, side by side, each following the line behind it (like a brush's bristles)
-const trailBristleWeight = 0.22; // How thick each bristle's line is, as a share of the brush's width
+const trailStep = 4; // How far it walks between each handful of circles, on the map
+const trailCircles = 3; // How many circles in each handful
+const trailSpread = 0.16; // How far they scatter from its path (the Gaussian's spread), as a share of its own width
+const trailSize = [0.1, 0.22]; // How big a circle is, smallest to biggest, as a share of its own width
+const trailAlpha = 0.3; // How strong a circle is in its middle (they build up where they overlap)
 const trailFlat = 0.42; // How squashed the paint looks lying on the ground, seen at an angle (sets the map's proportions)
 const trailVivid = 1.6; // How much its colours are pushed up from the video's
-const trailBlend = 0.35; // How far the paint's colour moves toward what it's showing now, each piece (smaller = smoother)
+const trailEase = 0.05; // How far the circles' colour moves toward what it's showing now, each frame (smaller = smoother)
 const trailMapMost = [4096, 2048]; // The biggest the map gets, in pixels, across and from near to far
 
 function insideSheet() {
@@ -1079,13 +1080,11 @@ let mouseFace = null; // Its face in thin lines (see paintMouseFace())
 // The map of the ground the trail's painted on (see trailOn): x across, as in the world, and its depth from far (the
 // top) to near (the bottom), each scaled so a round dab of paint looks the way a flat round thing on the ground would
 let trailMap = null;
-let trailPainter = null;
-let trailLine = []; // The line's points not yet painted, on the map (the first is the last one painted, to join on)
+let trailLast = null; // Where the last handful of circles was scattered, on the map
 let trailRGB = null; // The paint's colour now
 let trailPicker = null; // A tiny canvas for finding the colour it's showing
 
 function setupTrail() {
-  trailPainter = trailBrush();
   // How far the map reaches: as far sideways as the mouse can go, and from just behind where it starts to past the furthest hole
   const nearest = mouseEntersFrom - 0.2;
   const furthest = Math.max(mouseHome, ...holes.map((hole) => hole.depth ?? 0)) + 0.6;
@@ -1106,8 +1105,7 @@ function setupTrail() {
 
 const onMap = (x, depth) => [(x + trailMap.reach) * trailMap.across, (trailMap.furthest - depth) * trailMap.along];
 
-// Each frame: its colour now, and a point on the line where it is, once it's walked far enough. Every few points, the
-// brush paints that piece of the line.
+// Each frame: its colour now, and, once it's walked far enough, a handful of circles scattered round where it is
 function leaveTrail(cut) {
   if (!trailMap || mouse.falling !== null) return;
   // Its colour just now: the average of its coloured parts, made more vivid, and eased into from the paint's colour
@@ -1129,57 +1127,46 @@ function leaveTrail(cut) {
     [r, g, b] = [r / weight, g / weight, b / weight];
     const grey = (r + g + b) / 3;
     const now = [r, g, b].map((c) => Math.max(0, Math.min(255, grey + (c - grey) * trailVivid)));
-    trailRGB = trailRGB ? trailRGB.map((c, n) => c + (now[n] - c) * 0.05) : now; // (Eased every frame; trailBlend is per piece)
+    trailRGB = trailRGB ? trailRGB.map((c, n) => c + (now[n] - c) * trailEase) : now;
   }
   const point = onMap(mouse.x, mouse.depth);
-  const last = trailLine.at(-1);
-  if (point[1] < 0 || point[1] > trailMap.canvas.height || point[0] < 0 || point[0] > trailMap.canvas.width) return;
-  if (last && Math.hypot(point[0] - last[0], point[1] - last[1]) < trailStep) return;
-  if (last && Math.hypot(point[0] - last[0], point[1] - last[1]) > trailStep * 12) trailLine = []; // A jump: start a new line
-  trailLine.push(point);
-  if (trailLine.length > trailPiece && trailRGB) paintTrail();
+  if (!trailRGB || point[1] < 0 || point[1] > trailMap.canvas.height || point[0] < 0 || point[0] > trailMap.canvas.width) return;
+  if (trailLast && Math.hypot(point[0] - trailLast[0], point[1] - trailLast[1]) < trailStep) return;
+  trailLast = point;
+  scatterCircles(point);
 }
 
-let trailPaintRGB = null;
-let trailBristleSet = null; // The brush's bristles, the same all the way along (see paintTrail())
-function paintTrail() {
-  const points = trailLine;
-  trailPaintRGB = trailPaintRGB ? trailPaintRGB.map((c, n) => c + (trailRGB[n] - c) * trailBlend) : trailRGB;
-  const colour = `rgb(${trailPaintRGB.map(Math.round).join(', ')})`;
-  const brushWide = trailWeight * mouseWidth * mouseScale * trailMap.across;
-  // Painted on the brush's small canvas, around the piece's middle, then added to the map there
-  const xs = points.map(([x]) => x);
-  const ys = points.map(([, y]) => y);
-  const middle = [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
-  const size = trailPainter.size;
-  // The bristles: lines side by side across the brush, each following the line at its own distance to one side, so
-  // the paint's streaks run along the trail, stretching out behind it
-  trailBristleSet ??= Array.from({ length: trailBristles }, (_, n) => ({
-    across: (n / (trailBristles - 1) - 0.5) + (Math.random() - 0.5) * 0.08, // Where it is across the brush, from -0.5 to 0.5
-    weight: trailBristleWeight * (0.6 + Math.random() * 0.8),
-    shade: (Math.random() - 0.5) * 30, // A little lighter or darker than the rest
-  }));
-  const local = points.map(([x, y]) => [x - middle[0] + size / 2, y - middle[1] + size / 2]);
-  const sideways = local.map((point, i) => {
-    const before = local[Math.max(0, i - 1)];
-    const after = local[Math.min(local.length - 1, i + 1)];
-    const length = Math.hypot(after[0] - before[0], after[1] - before[1]) || 1;
-    return [-(after[1] - before[1]) / length, (after[0] - before[0]) / length];
-  });
-  const lines = trailBristleSet.map(({ across, weight, shade }) => ({
-    points: local.map(([x, y], i) => [x + sideways[i][0] * across * brushWide, y + sideways[i][1] * across * brushWide]),
-    colour: `rgb(${trailPaintRGB.map((c) => Math.round(Math.max(0, Math.min(255, c + shade)))).join(', ')})`,
-    weight: weight * brushWide,
-  }));
-  const picture = trailPainter.paint(lines);
-  const left = Math.round(middle[0] - size / 2);
-  const top = Math.round(middle[1] - size / 2);
-  trailMap.context.drawImage(picture, left, top);
-  const p = trailMap.painted;
-  trailMap.painted = p
-    ? { left: Math.min(p.left, left), top: Math.min(p.top, top), right: Math.max(p.right, left + size), bottom: Math.max(p.bottom, top + size) }
-    : { left, top, right: left + size, bottom: top + size };
-  trailLine = [points.at(-1)]; // The next piece carries on from here
+// A random number from a Gaussian (bell curve) with no shift and a spread of 1
+function gaussian() {
+  let u = 0;
+  while (u === 0) u = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * Math.random());
+}
+
+function scatterCircles([x, y]) {
+  const own = mouseWidth * mouseScale * trailMap.across; // Its own width, on the map
+  const context = trailMap.context;
+  const [r, g, b] = trailRGB.map(Math.round);
+  for (let i = 0; i < trailCircles; i++) {
+    const cx = x + gaussian() * trailSpread * own;
+    const cy = y + gaussian() * trailSpread * own;
+    const radius = own * (trailSize[0] + Math.random() * (trailSize[1] - trailSize[0]));
+    // Soft: strongest in the middle, fading smoothly to nothing at its edge, like a blurred disc
+    const soft = context.createRadialGradient(cx, cy, 0, cx, cy, radius);
+    soft.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${trailAlpha})`);
+    soft.addColorStop(0.5, `rgba(${r}, ${g}, ${b}, ${trailAlpha * 0.55})`);
+    soft.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+    context.fillStyle = soft;
+    context.fillRect(cx - radius, cy - radius, radius * 2, radius * 2);
+    const left = Math.floor(cx - radius);
+    const top = Math.floor(cy - radius);
+    const right = Math.ceil(cx + radius);
+    const bottom = Math.ceil(cy + radius);
+    const p = trailMap.painted;
+    trailMap.painted = p
+      ? { left: Math.min(p.left, left), top: Math.min(p.top, top), right: Math.max(p.right, right), bottom: Math.max(p.bottom, bottom) }
+      : { left, top, right, bottom };
+  }
 }
 
 // The map laid on the ground in perspective: for each thin strip of the screen across the painted part of the ground,
@@ -1194,7 +1181,7 @@ function showTrail(ctx) {
   const end = Math.min(height, toY(map.furthest - map.painted.bottom / map.along));
   ctx.setTransform(density, 0, 0, density, 0, 0);
   ctx.globalAlpha = 1;
-  const strip = 2;
+  const strip = 1;
   for (let y = Math.floor(top); y < end; y += strip) {
     const size = sizeAt(y + strip / 2);
     const rowTop = (map.furthest - depthAt(y)) * map.along;
@@ -1209,7 +1196,11 @@ function showTrail(ctx) {
     if (to <= from || sourceBottom <= sourceTop) continue;
     const screenFrom = width / 2 + (from / map.across - map.reach - view.x) * size;
     const screenTo = width / 2 + (to / map.across - map.reach - view.x) * size;
-    ctx.drawImage(map.canvas, from, sourceTop, to - from, Math.max(0.5, sourceBottom - sourceTop), screenFrom, y, screenTo - screenFrom, strip);
+    // (At least a whole row of the map, centred on the strip. The strips meet exactly, a whole pixel each: the paint's
+    // see-through, so any overlap would show as a darker line.)
+    const rows = Math.max(1, sourceBottom - sourceTop);
+    const rowsTop = Math.max(0, Math.min(map.canvas.height - rows, (sourceTop + sourceBottom) / 2 - rows / 2));
+    ctx.drawImage(map.canvas, from, rowsTop, to - from, rows, screenFrom, y, screenTo - screenFrom, strip);
   }
 }
 

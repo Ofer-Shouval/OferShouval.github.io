@@ -17,12 +17,14 @@
 // the first part of the worm (see emerge). It unwinds like thread off a spool: the spiral's used up from the outside in,
 // as the worm gets longer, its head leading the way out, until the spiral's gone (see unwindTime).
 //
-// It's the last stage of the wormhole on the front page (see wormhole.js): it opens on the noisy spiral, big, as it is
-// there (see spiralTime), loose at first and winding tighter, with its lines closer and closer together and the line
-// longer and longer, always as big. Then the worm comes out of it. Once the worm's let go and jolted forward, it flies on
-// for a moment, and three portals appear, to art, music and bio (see portals): each a point, with its name on top of it
-// like a link, at the corners of a triangle that turns slowly round the middle of the screen, waiting for one to be
-// chosen. The chosen one grows from its point into a thin ring, and drifts to the middle of the screen and grows faster and faster as the stars rush past, drawing
+// It's the last stage of the wormhole on the front page (see wormhole.js). It opens, once the old TV's switched off, on
+// the noisy spiral, big, as it is in the wormhole (see spiralTime), loose at first and winding tighter, with its lines
+// closer and closer together and the line longer and longer, always as big, and round it three portals, to art, music
+// and bio (see portals): each a point, with its name on top of it like a link, at the corners of a triangle that turns
+// slowly round the middle of the screen (see drawChoosing()). The spiral waits, wound up, until one's chosen. Then the
+// worm comes out of it. Once the worm's let go and jolted forward, it flies on for a moment, and the
+// portal that was chosen opens ahead of it. (With chooseFirst: false in its options, it plays first instead, and all
+// three portals appear for the choosing at the end.) The chosen one grows from its point into a thin ring, and drifts to the middle of the screen and grows faster and faster as the stars rush past, drawing
 // the worm into it, and once it's as wide as the screen's smaller side, it fills: with white for art, black for music
 // and static for bio, each like the page it goes on to. The noisy spiral's lightning flashes all through it, some of it in the colours of the
 // Luminin, until the end (see strikeEvery), apart from while it's unwinding into the worm, when there's only what
@@ -46,18 +48,18 @@ const horizon = 0.25; // How far down the screen the point it's heading away tow
 // The stars streaking past (as in wormhole.js)
 const starCount = 120;
 const starSpeed = 0.35; // How much of the way to the camera a star comes each second
-const setOffTime = 3.5; // How many seconds after it's free its tail's let go, and its tail takes to start drifting
+const setOffTime = 1.75; // How many seconds after it's free its tail's let go, and its tail takes to start drifting
 const driftWide = 0.25; // How far its tail drifts from the middle of the screen, once it's free, as a share of the width
 const driftTall = 0.12; // ...and up and down, as a share of the height
 const driftSpeed = 0.15; // How quickly it drifts (smaller = slower)
 
 // The psychworm's view, which it comes round to once it's set off (as in wormhole.js)
-const releaseTime = 4; // How many seconds that takes
+const releaseTime = 2; // How many seconds that takes
 
 // Like a rubber band: just before its tail's let go, it's pulled out longer and thinner, while the camera rises to look
 // down on it, so the stretch shows. Once it's let go, it snaps back to its usual size, and spins round itself: its coil
 // turns round the middle of its body, like a drill bit spinning, while its body stays on its path.
-const stretchTime = 3; // How many seconds before it's let go it starts stretching
+const stretchTime = 1.5; // How many seconds before it's let go it starts stretching
 const stretchOut = 2; // How much longer it gets (1 = twice as long)
 const stretchCalm = 0.85; // How much its noise calms down while it's stretched out, pulled taut (1 = a plain coil)
 const snapTime = 0.07; // How quickly it snaps back once it's let go, in seconds (bigger = slower)
@@ -69,11 +71,11 @@ const formingZoom = 0.85; // How small everything's got, as the camera pulls bac
 // Snapping back from being pulled out by the mouse, it flashes the screen: a few full flashes, white and in the colours of the Luminin, with a faint flicker
 // in between. Full flashes are kept at least boltFlashGap apart, and the flicker's too faint to count as flashing, so
 // there can't be more than three flashes in a second, the limit for not being a danger to people with epilepsy.
-const boltFlashes = ['white', 'colour', 'white']; // The full flashes each letting go brings, one after another
+const boltFlashes = ['colour']; // The full flashes each letting go brings, one after another (only in colour: no white flashes)
 const boltFlashLength = 0.06; // How many seconds a white flash lasts (a colour one lasts strikeClipLength)
 const boltFlashGap = 0.34; // The least time between full flashes, in seconds
 const boltFlicker = 0.5; // How many seconds the faint flicker after it lasts
-const boltFlickerMost = 0.25; // How bright the flicker gets, at most, out of 1 (keep it under 0.3, so it's too faint to count as a flash)
+const boltFlickerMost = 0; // How bright the flicker gets, at most, out of 1 (0: none, since it's white)
 const releasedThinner = 0.8; // How fat it is once it's let go, compared to before (it gets there as the view comes round)
 const settleView = 0.35; // How quickly the camera comes back down once it's let go, in seconds (bigger = slower)
 // As it's let go and snaps back, it jolts forward: the stars rush past much faster for a moment, and slow back down
@@ -106,22 +108,31 @@ const roseNoise = 0.05; // How quickly the noise changes from one point to the n
 const roseReach = 2; // How far out it can go, compared to the body's width there: it's held in more and more toward that
 // The noisy spiral it opens on, before the worm comes out of it
 const spiralTime = 6; // How many seconds it's there before it starts unwinding
+// Opening on the portals (see choosing), it grows slowly out of its middle, from a point, and stays smaller, so the
+// portals can turn round it closer in
+const choosingSpiral = 0.55; // How big it gets, compared to its usual size
+const choiceRing = 16; // How big the chosen portal opens to at once, across its radius in pixels: a ring, so it's clear the worm's going through it
+const choiceOpen = 0.5; // How many seconds it takes to open to that
+const rowTop = [110, 0.15]; // How far down the screen the row of portals is: this many pixels, or this share of its height if that's further (below the navbar, with room for their names)
+const choiceGrowTime = 4; // How many seconds it takes, once the worm's there, to grow until it covers the screen (portalTime otherwise)
+const choosingGrow = 8; // How many seconds it takes to grow, easing in and out (it doesn't unwind before it's grown)
+const choosingTurns = 3.5; // How many times it goes round, once it's grown
 const spiralBig = 2.8; // How far out it goes: the smaller side of the screen divided by this
 const roseSettling = 0.05; // How quickly it gets back to how it was wound, after bursting into a rose, each time it changes
 const roseTightness = 250; // Lightning, and letting go of the mouse, set it bursting into a rose, wound at least this tightly
 // Lightning: the colours swap for a moment every so often, and each flash sets the spiral
 // bursting into a rose. Flashes are kept at least strikeGap apart, so there can't be more than three in a second, which is
 // the limit for not being a danger to people with epilepsy.
-const strikeEvery = [3, 9]; // How many seconds there are between strikes, at the least and the most
-const strikesFirst = 3; // How many strikes it opens with
+const strikeEvery = [7, 16]; // How many seconds there are between strikes, at the least and the most
+const strikesFirst = 1; // How many strikes it opens with
 const strikesFirstEvery = [0.5, 1.1]; // How many seconds there are between those
 const strikeLength = 0.06; // How many seconds a flash stays at its brightest
 const strikeFade = 0; // ...and how many it takes to fade out after that (0 = it cuts out)
 const strikeGap = 0.4; // How many seconds there are from the start of one flash to the start of the next, in a double strike
-const strikeDouble = 0.4; // How often a strike flashes twice (1 = always)
+const strikeDouble = 0.15; // How often a strike flashes twice (1 = always)
 // Colourful lightning: some strikes flash a fragment of the stabilized close-up of the Luminin, rather than white
 const strikeClip = '/media/lumininCloseupStabilized.mp4';
-const strikeInColour = 0.7; // How often a strike's in colour (1 = always), as long as the video's ready
+const strikeInColour = 1; // How often a strike's in colour (1 = always). The rest would be white, so there are none: if the video isn't ready, there's no flash.
 const strikeClipLength = 0.1; // How many seconds a strike in colour lasts. It cuts in and out, without fading.
 const strikeClipCrop = [0.35, 0.8]; // How much of the width and height of the video a fragment shows, at the least and the most
 // The end: once it's flown on a while, three portals open ahead of it, in a triangle, and wait for one to be chosen,
@@ -132,7 +143,7 @@ const portals = [
   { name: 'music', page: '/music/', inside: 'black', fill: 'black', fillTime: 0.4, towards: [-0.87, 0.5] },
   { name: 'bio', page: '/bio/', inside: 'static', fill: 'static', fillTime: 0.6, towards: [0.87, 0.5] },
 ];
-const portalAfter = 2.5; // How many seconds after it's let go they appear
+const portalAfter = 1.25; // How many seconds after it's let go they appear
 const portalOpen = 1.5; // How many seconds they take to fade in
 const portalPoint = 6; // How big each point is across, while they're waiting, in pixels
 const portalTriangle = 0.22; // How far each is from the middle of the screen, as a share of the screen's smaller side
@@ -145,7 +156,7 @@ const portalPull = 0.9; // How far into the chosen one's middle the worm's drawn
 const portalStatic = 96; // How many dots across the bio portal's static is
 const exitRush = 12; // How much faster the stars go by the time it's covered the screen
 // The spiral it comes out of
-const unwindTime = 6; // How many seconds the spiral takes to unwind into the worm
+const unwindTime = 3; // How many seconds the spiral takes to unwind into the worm
 const emerge = 0.25; // How much of the worm, from its tail, it takes to come out of the spiral and onto its own path
 const spiralReach = 5; // Sets how far out its tail goes round, once it's let go (see circling): the smaller side of the screen divided by this
 const spiralStep = 0.05; // How far around it goes between one point and the next, in radians
@@ -209,6 +220,14 @@ export default function spiralWorm(p, container, options = {}) {
   let snapFrom = 1; // ...and how stretched it was then
   let pressedAt = null; // When the mouse was pressed down, pulling it out
   let chosen = null; // The portal that's been chosen, and when (chosen.at)
+  // It opens on the portals, waiting for one to be chosen, and only then plays: the spiral, the worm, and the worm
+  // flying on into the one that was chosen (see drawChoosing())
+  let choosing = options.chooseFirst !== false;
+  let choice = null; // The portal chosen before it played, which opens for the worm once it's flown on
+  let choosingFrom = 0; // When the portals came up to be chosen from
+  let choiceAt = null; // When one was chosen: it stays where it is, waiting, while the others fade away
+  let ignoreRelease = false; // Is the mouse being let go after choosing a portal?
+  const waiting = () => choosing || (choice && !chosen); // Are the portals still on their triangle round the spiral?
   let fillsAt = null; // When the chosen one got as wide as the screen's smaller side
   let leaving = false; // Has it gone on to the next page?
   let wormIn = false; // Has all of the worm gone into the chosen one?
@@ -239,13 +258,29 @@ export default function spiralWorm(p, container, options = {}) {
     const closer = 1 / p.lerp(1, p.lerp(headDistance, lookDownDepth, lift), along * stretch);
     const place = weaveAt(seconds - (1 - along) * bodyTime);
     const tail = weaveAt(seconds - bodyTime);
-    const farX = p.width / 2;
-    const farY = p.lerp(p.height * horizon, -p.height * lookDown, lift); // Further up as the camera rises
+    // Heading away toward a point up near the horizon, further up as the camera rises, or, once a portal's been chosen,
+    // toward it, so it reaches out and stretches toward the portal it's going through
+    const aim = choice?.at;
+    const farX = aim ? aim.x : p.width / 2;
+    const farY = aim ? aim.y : p.lerp(p.height * horizon, -p.height * lookDown, lift);
+    const sway = 1 - pinned(along);
     return {
-      x: farX + (centre.x - farX) * closer + (place.x - tail.x) * weaving * closer,
-      y: farY + (centre.y - farY) * closer - (place.y - tail.y) * weaving * closer,
+      x: farX + (centre.x - farX) * closer + (place.x - tail.x) * weaving * closer * sway,
+      y: farY + (centre.y - farY) * closer - (place.y - tail.y) * weaving * closer * sway,
       closer,
     };
+  }
+
+  // How firmly a place along the worm points at the chosen portal, from 0 (swaying freely) to 1 (right on it): its head
+  // points straight into it, and its weave sways it less and less toward its head, so it's clearly going through
+  function pinned(along) {
+    return choice ? Math.min(1, along) ** 1.5 : 0;
+  }
+
+  // Where it's all heading: a point up near the horizon, or, once a portal's been chosen, that portal, so the worm, the
+  // view behind it and the stars all go toward it
+  function headingFor() {
+    return choice?.at ?? { x: p.width / 2, y: p.height * horizon };
   }
 
   // Stars streaking out from where it's heading, each a line from where it was last frame to where it is now
@@ -254,8 +289,7 @@ export default function spiralWorm(p, container, options = {}) {
     if (!stars.length) {
       for (let i = 0; i < starCount; i++) stars.push({ x: p.random(-1, 1), y: p.random(-1, 1), z: p.random(0.05, 1) });
     }
-    const farX = p.width / 2;
-    const farY = p.height * horizon;
+    const { x: farX, y: farY } = headingFor();
     const reach = Math.max(p.width, p.height) * 0.5;
     for (const star of stars) {
       const fromX = farX + (star.x * reach) / star.z;
@@ -275,7 +309,7 @@ export default function spiralWorm(p, container, options = {}) {
 
   // The spiral bursts into a rose, while there's still some of it. Lightning sets it off, and so does letting go of the mouse.
   function roseBurst() {
-    if (seconds >= unwindStart + unwindTime) return;
+    if (choosing || seconds >= unwindStart + unwindTime) return; // (None while it waits for a portal to be chosen)
     spiralRoughness = spiralRoughest;
     roseFloor = roseTightness;
   }
@@ -283,6 +317,11 @@ export default function spiralWorm(p, container, options = {}) {
   // How bright the flash of lightning is, from 0 to 1. Moves on to the next one when it's time.
   function strikeLight(ending) {
     if (calm || ending) return 0;
+    if (choosing) {
+      // None while it waits for a portal to be chosen
+      nextStrike = Infinity;
+      return 0;
+    }
     // None comes by itself while it's unwinding: it waits until that's over
     const unwinding = seconds >= unwindStart && seconds < unwindStart + unwindTime;
     if (seconds >= nextStrike && unwinding && !asked) nextStrike = unwindStart + unwindTime + p.random(...strikeEvery);
@@ -292,8 +331,9 @@ export default function spiralWorm(p, container, options = {}) {
       asked = false;
       strikeStarted = seconds;
       pickFragment();
-      strikeFades = !clipCrop;
-      strikeEnds = seconds + (clipCrop ? strikeClipLength : strikeLength);
+      // Only in colour: without a fragment of the video to show, it doesn't flash at all
+      strikeFades = false;
+      strikeEnds = seconds + (clipCrop ? strikeClipLength : 0);
       roseBurst();
       if (firstStrikes > 0) {
         firstStrikes--;
@@ -357,9 +397,10 @@ export default function spiralWorm(p, container, options = {}) {
   function seenFromBehind(along, camera) {
     const closer = 1 / p.lerp(tailDistance, headDistance, along * stretch);
     const place = weaveAt(seconds - (1 - along) * bodyTime);
+    const sway = 1 - pinned(along);
     return {
-      x: p.width / 2 + (place.x - camera.x) * closer,
-      y: p.height * horizon + (p.height * cameraAbove - (place.y - camera.y)) * closer,
+      x: headingFor().x + (place.x - camera.x) * closer * sway,
+      y: headingFor().y + (p.height * cameraAbove - (place.y - camera.y)) * closer * sway,
       closer,
     };
   }
@@ -373,6 +414,22 @@ export default function spiralWorm(p, container, options = {}) {
     // Pressing the mouse brings a flash of lightning, as long as it's not too soon after the last (see strikeGap), and
     // letting go sets the spiral bursting into a rose
     canvas.mousePressed(() => {
+      // Choosing where to go: then the spiral unwinds into the worm (once it's been open long enough, see spiralTime)
+      if (choosing) {
+        const picked = portalAtMouse();
+        if (picked) {
+          choosing = false;
+          choice = picked;
+          choiceAt = seconds;
+          p.canvas.style.cursor = '';
+          unwindStart = Math.max(openedAt + Math.max(spiralTime, choosingGrow), seconds + 0.3);
+          // ...and the lightning comes back, though not straight away, and not from this click (see ignoreRelease)
+          nextStrike = seconds + p.random(...strikeEvery);
+          firstStrikes = 0;
+          ignoreRelease = true;
+          return;
+        }
+      }
       // Choosing a portal, while they're waiting
       const picked = portalsUp && !chosen ? portalAtMouse() : null;
       if (picked) {
@@ -380,6 +437,7 @@ export default function spiralWorm(p, container, options = {}) {
         p.canvas.style.cursor = '';
         return;
       }
+      if (choosing) return; // No lightning until a portal's chosen
       pressedAt = seconds;
       if (seconds - strikeStarted >= strikeGap) {
         nextStrike = seconds;
@@ -387,6 +445,10 @@ export default function spiralWorm(p, container, options = {}) {
       }
     });
     canvas.mouseReleased(() => {
+      if (ignoreRelease) {
+        ignoreRelease = false; // Letting go of the click that chose a portal doesn't burst the spiral into a rose
+        return;
+      }
       roseBurst();
       pressedAt = null;
       // Once the worm's been let go, pulled out again by holding the mouse down, it snaps back, with a few flashes
@@ -402,16 +464,23 @@ export default function spiralWorm(p, container, options = {}) {
     // Skipping goes straight to the end, where the portals are, which is where it starts if it's been skipped to (see
     // skipToPortals() in wormhole.js)
     container.skipToPortals = () => {
-      if (portalsUp) return;
+      if (choosing || portalsUp) return;
       unwindStart = seconds - unwindTime - setOffTime - portalAfter;
     };
-    if (options.atPortals) container.skipToPortals();
+    if (options.atPortals && !choosing) container.skipToPortals();
   };
 
   p.windowResized = () => p.resizeCanvas(container.clientWidth, container.clientHeight);
 
-  // Where each portal is, while they're waiting: at a corner of a triangle turning slowly round the middle of the screen
+  // Where each portal is, while they're waiting
   function openingAt(portal) {
+    // Opening on the portals, they stand still in a row across the top of the screen, over the spiral, and the chosen
+    // one stays where it is (see rowTop)
+    if (options.chooseFirst !== false) {
+      const place = portals.indexOf(portal);
+      return { x: (p.width * (place + 1)) / (portals.length + 1), y: Math.max(rowTop[0], p.height * rowTop[1]) };
+    }
+    // Otherwise, at the corners of a triangle turning slowly round the middle of the screen
     const out = portalTriangle * Math.min(p.width, p.height);
     const turned = (seconds - portalsFrom) * portalSpin;
     const [x, y] = portal.towards;
@@ -420,10 +489,15 @@ export default function spiralWorm(p, container, options = {}) {
       y: p.height / 2 + (x * Math.sin(turned) + y * Math.cos(turned)) * out,
     };
   }
-
   // How big a waiting portal is across
   function waitingSize() {
     return portalPoint;
+  }
+
+  // How big the chosen one is, waiting for the worm, across its radius: opening from its point into a ring, and staying so
+  function choiceRadius() {
+    const open = Math.min(1, (seconds - choiceAt) / choiceOpen);
+    return p.lerp(waitingSize() / 2, choiceRing, 1 - (1 - open) ** 3);
   }
 
   // The portal the mouse is over, while they're waiting: on its point, or its name on top of it
@@ -453,6 +527,54 @@ export default function spiralWorm(p, container, options = {}) {
     context.restore();
   }
 
+  // The portals, round the noisy spiral while it waits, at the corners of their triangle turning round the middle of the
+  // screen, each a point with its name on top of it, fading in, waiting for one to be chosen
+  function drawChoosing() {
+    const context = p.drawingContext;
+    if (!choosingFrom) choosingFrom = seconds;
+    portalsFrom = choosingFrom;
+    const opened = Math.min(1, (seconds - choosingFrom) / portalOpen);
+    const fadedIn = opened * opened * (3 - 2 * opened);
+    const over = choosing ? portalAtMouse() : null;
+    if (choosing) p.canvas.style.cursor = over ? 'pointer' : '';
+    for (const portal of portals) {
+      // Once one's chosen, it stays, and the others fade away
+      const shown = fadedIn * (choice && portal !== choice ? Math.max(0, 1 - (seconds - choiceAt) / portalGone) : 1);
+      portal.at = openingAt(portal);
+      if (shown <= 0) continue;
+      const { x, y } = portal.at;
+      let radius = waitingSize() / 2;
+      context.save();
+      context.globalAlpha = shown;
+      if (portal === choice) {
+        // Chosen: it stops, and opens at once from its point into a ring, a hole for the worm to go through
+        radius = choiceRadius();
+        fillPortal(context, x, y, radius, portal.inside); // (Dark inside, or static for bio, as it is once it opens)
+        context.beginPath();
+        context.arc(x, y, radius, 0, Math.PI * 2);
+        context.strokeStyle = 'white';
+        context.lineWidth = portalRing;
+        context.stroke();
+      } else {
+        context.beginPath();
+        context.arc(x, y, radius, 0, Math.PI * 2);
+        context.fillStyle = 'white';
+        context.fill();
+      }
+      context.globalAlpha = shown * (portal === over || portal === choice ? 1 : 0.8);
+      context.font = '16px "Major Mono Display", monospace';
+      context.textAlign = 'center';
+      context.textBaseline = 'bottom';
+      const nameY = y - radius - 10;
+      context.fillText(portal.name, x, nameY);
+      if (portal === over) {
+        const wide = context.measureText(portal.name).width;
+        context.fillRect(x - wide / 2, nameY + 3, wide, 1);
+      }
+      context.restore();
+    }
+  }
+
   p.draw = () => {
     const dt = Math.min(p.deltaTime / 1000, 0.1);
     seconds += dt;
@@ -466,6 +588,7 @@ export default function spiralWorm(p, container, options = {}) {
     }
 
     const context = p.drawingContext;
+    if (choosing) unwindStart = Math.max(unwindStart, seconds + 0.05); // The spiral waits, wound up, until a portal's chosen
     const unwound = Math.min(1, Math.max(0, (seconds - unwindStart) / unwindTime)); // How much of it's unwound, from 0 to 1
     // Once it's all unwound, it's free, and sets off
     const freeFor = seconds - unwindStart - unwindTime;
@@ -481,10 +604,14 @@ export default function spiralWorm(p, container, options = {}) {
     // ...and once it's flown on a while, rushing faster and faster until the screen's white
     // The portals opening, growing from a point, easing in and out, and once one's chosen, it growing until it covers the screen
     portalsUp = sinceLetGo > portalAfter;
+    // Chosen before it played: only that one opens, from where it's been waiting, and it starts growing at once,
+    // drawing the worm in (it's already showing, so it doesn't fade in again)
+    if (portalsUp && choice && !chosen) chosen = { portal: choice, at: seconds };
+    if (choice) portalsOpen = 1;
     const opened = Math.min(1, Math.max(0, (sinceLetGo - portalAfter) / portalOpen));
     portalsOpen = opened * opened * (3 - 2 * opened);
     if (!portalsUp) portalsFrom = seconds;
-    const exiting = chosen ? Math.min(1, (seconds - chosen.at) / portalTime) : 0; // How far the chosen one's grown
+    const exiting = chosen ? Math.min(1, (seconds - chosen.at) / (choice ? choiceGrowTime : portalTime)) : 0; // How far the chosen one's grown
     // The ground, with any lightning: the spiral's, or the flashes that come with the worm snapping back
     const sinceBoltFlash = boltFlashAt === null ? Infinity : seconds - boltFlashAt;
     let fullBoltFlash = 0;
@@ -494,8 +621,8 @@ export default function spiralWorm(p, container, options = {}) {
         flash.started = true;
         lastFullFlash = seconds;
         clipCrop = null;
-        if (flash.kind === 'colour') pickFragment(); // In the colours of the Luminin, if the video's ready, and white if not
-        flash.length = clipCrop ? strikeClipLength : boltFlashLength;
+        if (flash.kind === 'colour') pickFragment(); // In the colours of the Luminin, if the video's ready, and none if not
+        flash.length = clipCrop ? strikeClipLength : flash.kind === 'white' ? boltFlashLength : 0;
       }
       if (seconds < flash.at + flash.length) fullBoltFlash = 1;
       else {
@@ -561,13 +688,25 @@ export default function spiralWorm(p, container, options = {}) {
     // amount every time.
     const spiral = [];
     // As big as ever, however tightly it's wound: tighter, it just goes round more times before it gets there
-    const limit = Math.min(p.width, p.height) / spiralBig;
+    let limit = Math.min(p.width, p.height) / spiralBig;
+    if (options.chooseFirst !== false) {
+      const grown = Math.min(1, (seconds - openedAt) / choosingGrow);
+      limit *= choosingSpiral * grown * grown * (3 - 2 * grown);
+    }
     const winding = loosest * Math.pow(tightest / loosest, Math.min(1, (seconds - openedAt) / tightenTime));
-    const tightness = Math.max(winding, roseFloor);
+    // Opening on the portals, it's wound to have choosingTurns turns once it's grown (it's as far out as (turned angle)²
+    // / tightness, so that's how tight it has to be), and growing, they come out from the middle one after another
+    const grownLimit = (Math.min(p.width, p.height) / spiralBig) * choosingSpiral;
+    const tightness = options.chooseFirst !== false ? Math.max((2 * Math.PI * choosingTurns) ** 2 / grownLimit, roseFloor) : Math.max(winding, roseFloor);
     let x = 0;
     let y = 0;
     let around = 0;
-    for (let i = 0; i < spiralMostPoints && Math.hypot(x, y) < limit; i++) {
+    // Opening on the portals, it ends where its smooth path (radius = angle² / tightness) would reach its size, at the
+    // same angle whatever the noise does, so its outer end comes steadily round as it grows instead of jumping back and
+    // forth as the noise changes. (Otherwise it ends wherever the noisy line first gets that far out.)
+    const byAngle = options.chooseFirst !== false;
+    const endAngle = Math.sqrt(limit * tightness);
+    for (let i = 0; i < spiralMostPoints && (byAngle ? around < endAngle && Math.hypot(x, y) < limit * 1.6 : Math.hypot(x, y) < limit); i++) {
       const wobble = p.noise(around, row);
       const radius = (around * around) / tightness;
       x = radius * Math.cos(around) + (x / spiralRoughness) * wobble;
@@ -659,10 +798,11 @@ export default function spiralWorm(p, container, options = {}) {
         const opening = openingAt(portal);
         portal.at ??= { ...opening };
         if (!chosen) Object.assign(portal.at, opening);
-        let radius = waitingSize() / 2;
+        let radius = isChosen && choice ? choiceRadius() : waitingSize() / 2; // (Chosen first, it grows on from its ring)
         if (isChosen) {
           const nearer = exiting * exiting * (3 - 2 * exiting);
-          const wanted = { x: p.lerp(opening.x, p.width / 2, nearer), y: p.lerp(opening.y, p.height / 2, nearer) };
+          // (Chosen first, it opens where it's been waiting, with the worm already heading into it)
+          const wanted = choice ? opening : { x: p.lerp(opening.x, p.width / 2, nearer), y: p.lerp(opening.y, p.height / 2, nearer) };
           const keep = 1 - Math.exp(-dt / portalFollow);
           portal.at.x += (wanted.x - portal.at.x) * keep;
           portal.at.y += (wanted.y - portal.at.y) * keep;
@@ -756,6 +896,8 @@ export default function spiralWorm(p, container, options = {}) {
       context.stroke();
     }
     context.restore();
+
+    if (waiting()) drawChoosing();
 
     // The end: once the worm's gone into the chosen portal and it's filled, it's on to its page (or once it's covered
     // the screen, whatever happens)
