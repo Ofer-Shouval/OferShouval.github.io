@@ -242,11 +242,23 @@ function setupMouseControls() {
   });
   window.addEventListener('keyup', (event) => keysHeld.delete(event.code));
   window.addEventListener('blur', () => keysHeld.clear());
+  // A click or tap walks it there, and holding and dragging keeps it walking toward wherever the pointer is,
+  // which on a phone is the only way to steer it as it goes
+  let steering = null; // The pointer that's steering it, while it's held down
   window.addEventListener('pointerdown', (event) => {
     hideInstructions();
     if (event.target.closest('a') || mouseTarget?.walkingOn) return;
     mouseTarget = groundPoint(event.clientX, event.clientY);
+    steering = event.pointerId;
   });
+  window.addEventListener('pointermove', (event) => {
+    if (event.pointerId !== steering || mouseTarget?.walkingOn || mouse.falling !== null) return;
+    if (mouseTarget && mouseTarget.hurry) return; // On its way to a hole that's been picked
+    mouseTarget = groundPoint(event.clientX, event.clientY);
+  });
+  for (const type of ['pointerup', 'pointercancel']) {
+    window.addEventListener(type, (event) => event.pointerId === steering && (steering = null));
+  }
 }
 
 // How far sideways the camera can go, which is as far as the furthest hole
@@ -724,6 +736,7 @@ function draw() {
 
   let mouseShown = false;
   let nextSign = 0;
+  let nextStamp = 0;
   // The furthest row first, so the nearer ones walk in front of it
   for (let n = furthest; n >= nearest; n--) {
     let row = rowAt(n);
@@ -734,6 +747,11 @@ function draw() {
     while (nextSign < holes.length && rowGround > holes[nextSign].ground) {
       showSign(ctx, holes[nextSign]);
       nextSign++;
+    }
+    // ...and the mouse's trail
+    while (nextStamp < trail.length && rowGround > trailGround(trail[nextStamp])) {
+      showStamp(ctx, trail[nextStamp]);
+      nextStamp++;
     }
     // Likewise for the mouse
     if (!mouseShown && rowGround > mouseGround) {
@@ -788,6 +806,10 @@ function draw() {
   while (nextSign < holes.length) {
     showSign(ctx, holes[nextSign]);
     nextSign++;
+  }
+  while (nextStamp < trail.length) {
+    if (trailGround(trail[nextStamp]) < height + 50) showStamp(ctx, trail[nextStamp]);
+    nextStamp++;
   }
   if (!mouseShown) showMouse(ctx, seconds);
   crowdOpening = false;
@@ -928,6 +950,16 @@ const mouseInsideZoom = 0.25; // How much of the video's width shows inside it (
 const mouseInsideBright = 1.6; // How much brighter than the video it is, glowing against the dusk
 const mouseInsideSaturate = 2.2; // How much its colours are pushed up
 const mouseInsideHueTurn = 40; // How many degrees its hues turn round each second
+const mouseOutline = false; // Is it drawn with its black outline? Without, it's all colour (until the video's ready, when it's drawn as usual)
+const mouseEdge = 0.5; // ...and without it, how thick a hairline goes round it instead, in screen pixels (0 = none)
+// Its trail: a smudge of itself left behind it, as a p5 sketch leaves one when it doesn't redraw its background. Each
+// smudge is a copy of it, kept where it was left in the world and drawn from there like everyone else, so the trail
+// stays put on the ground, getting smaller in the distance, with people walking in front of it and behind it.
+const trailOn = true;
+const trailStrength = 0.85; // How strongly it shows
+const trailSpacing = 0.05; // How far it walks between copies, as a share of its own width on the screen (smaller = smoother)
+const trailMost = 1500; // The most copies kept, the oldest going first after that
+const trailSharp = 0.5; // How sharp the copies are kept, as a share of the mouse's own picture (smaller saves memory)
 
 function insideSheet() {
   const canvas = document.createElement('canvas');
@@ -972,9 +1004,82 @@ function showMouseInside(ctx, seconds, cellX, cellY, cellWidth, cellHeight) {
     context.fillRect(0, 0, cut.width, cut.height);
   }
   context.globalCompositeOperation = 'destination-in';
-  context.drawImage(mouseInside, cellX, cellY, cellWidth, cellHeight, 0, 0, cut.width, cut.height);
+  // (Without its outline, its whole shape takes the colours, lines and all; with it, only its white parts do)
+  context.drawImage(mouseOutline ? mouseInside : mouseSheet, cellX, cellY, cellWidth, cellHeight, 0, 0, cut.width, cut.height);
   context.globalCompositeOperation = 'source-over';
+  if (!mouseOutline && mouseEdge > 0) {
+    // A hairline round it: its shape in black, nudged a fraction of a pixel every way, under its colours
+    mouseEdgeCut ??= document.createElement('canvas');
+    const edge = mouseEdgeCut;
+    if (edge.width !== cut.width || edge.height !== cut.height) {
+      edge.width = cut.width;
+      edge.height = cut.height;
+    }
+    const edgeContext = edge.getContext('2d');
+    edgeContext.globalCompositeOperation = 'copy';
+    edgeContext.drawImage(cut, 0, 0);
+    edgeContext.globalCompositeOperation = 'source-in';
+    edgeContext.fillStyle = 'black';
+    edgeContext.fillRect(0, 0, edge.width, edge.height);
+    edgeContext.globalCompositeOperation = 'source-over';
+    const unit = Math.abs(ctx.getTransform().a) / density; // Screen pixels in one of the mouse's own
+    const nudge = mouseEdge / unit;
+    for (let turn = 0; turn < 8; turn++) {
+      const angle = (turn / 8) * Math.PI * 2;
+      ctx.drawImage(edge, -mouseFeetX + Math.cos(angle) * nudge, -mouseFeetY + Math.sin(angle) * nudge, mouseWidth, mouseHeight);
+    }
+  }
   ctx.drawImage(cut, -mouseFeetX, -mouseFeetY, mouseWidth, mouseHeight);
+  if (trailOn) leaveTrail(cut);
+}
+
+let mouseEdgeCut = null; // Its shape in black, for the hairline
+
+// The copies of it left behind, nearest last (see trailOn)
+let trail = [];
+let trailLast = null; // Where the last copy was left
+
+// A copy of it as it is now, left where it is, once it's walked far enough from the last one
+function leaveTrail(cut) {
+  if (mouse.falling !== null) return;
+  const big = sizeOf(mouse.depth);
+  const size = big * mouseScale;
+  const here = { x: screenX(mouse.x, big), y: groundAt(big, bottomSize()) };
+  if (trailLast) {
+    const then = sizeOf(trailLast.depth);
+    const moved = Math.hypot(screenX(trailLast.x, then) - here.x, groundAt(then, bottomSize()) - here.y);
+    if (moved < trailSpacing * mouseWidth * size) return;
+  }
+  const copy = document.createElement('canvas');
+  copy.width = Math.max(1, Math.round(cut.width * trailSharp));
+  copy.height = Math.max(1, Math.round(cut.height * trailSharp));
+  copy.getContext('2d').drawImage(cut, 0, 0, copy.width, copy.height);
+  const stamp = { x: mouse.x, depth: mouse.depth, facing: mouse.facing, picture: copy, made: trailLast ? trailLast.made + 1 : 0 };
+  trailLast = stamp;
+  // Kept furthest first, as everything's drawn
+  let i = trail.length;
+  while (i > 0 && trail[i - 1].depth < stamp.depth) i--;
+  trail.splice(i, 0, stamp);
+  if (trail.length > trailMost) {
+    let oldest = 0;
+    for (let n = 1; n < trail.length; n++) if (trail[n].made < trail[oldest].made) oldest = n;
+    trail.splice(oldest, 1);
+  }
+}
+
+// Where a copy's feet are on the screen
+const trailGround = (stamp) => groundAt(sizeOf(stamp.depth), bottomSize());
+
+function showStamp(ctx, stamp) {
+  const big = sizeOf(stamp.depth);
+  const size = big * mouseScale;
+  const x = screenX(stamp.x, big);
+  const reach = mouseWidth * size;
+  if (x < -reach || x > width + reach) return;
+  ctx.setTransform(stamp.facing * size * density, 0, 0, size * density, x * density, groundAt(big, bottomSize()) * density);
+  ctx.globalAlpha = trailStrength;
+  ctx.drawImage(stamp.picture, -mouseFeetX, -mouseFeetY, mouseWidth, mouseHeight);
+  ctx.globalAlpha = 1;
 }
 
 // The mouse, drawn facing whichever way it's going (see moveMouse())
@@ -990,7 +1095,8 @@ function showMouse(ctx, seconds) {
   let cellX = (Math.floor(step) % mouseSteps) * cellWidth;
   let cellY = (mouse.view * mouseActions + action) * cellHeight;
   lumininVideo ??= startLumininVideo();
-  ctx.drawImage(mouseSheet, cellX, cellY, cellWidth, cellHeight, -mouseFeetX, -mouseFeetY, mouseWidth, mouseHeight);
+  const videoReady = lumininVideo && lumininVideo.readyState >= 2 && lumininVideo.videoWidth;
+  if (mouseOutline || !videoReady) ctx.drawImage(mouseSheet, cellX, cellY, cellWidth, cellHeight, -mouseFeetX, -mouseFeetY, mouseWidth, mouseHeight);
   showMouseInside(ctx, seconds, cellX, cellY, cellWidth, cellHeight);
 }
 
