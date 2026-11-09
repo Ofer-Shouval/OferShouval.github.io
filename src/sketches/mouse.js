@@ -182,6 +182,7 @@ export function mousePose(step, view, action) {
 
   let lines = [];
   let fills = [bodyOutline, headOutline];
+  let face = { eyes: [], nose: null }; // Where its eyes and nose are, when they're toward us
   // Add a line along a curve, which is at this depth, so it's hidden by any solid in front of that.
   // key: says which line this is, from one picture to the next
   // reach: how far it runs past its ends, as a fraction of how far it usually would
@@ -202,7 +203,7 @@ export function mousePose(step, view, action) {
         let from = at(start);
         let last = stroke?.points.at(-1);
         if (!last || Math.hypot(last[0] - from[0], last[1] - from[1]) > 0.01) {
-          stroke = { points: [from], weight };
+          stroke = { points: [from], weight, key };
           lines.push(stroke);
         }
         stroke.points.push(at(end));
@@ -234,14 +235,17 @@ export function mousePose(step, view, action) {
     fills.push(outline);
   }
 
-  // Its eyes, on whichever sides of its head are toward us
+  // Its eyes, on whichever sides of its head are toward us (and, for drawing its face on its own, where they and
+  // its nose are: see face)
   for (let side of [-1, 1]) {
     let eye = onHead([9, 6 * side, 3]);
     if (nearness(eye) > solids[1].depth + 2) {
       let [x, y] = onScreen(eye);
       addCurve(curveThrough([[x - 1, y], [x + 1, y]]), 5100 + side, 99, 1.1, 0);
+      face.eyes.push([x, y]);
     }
   }
+  if (face.eyes.length) face.nose = onScreen(onHead(nose));
 
   // Its legs. Sitting, its chest rests on its straight front legs, with its back legs folded up beside
   // its haunches. Walking, opposite corners go together, and the sliding is straight along the ground
@@ -284,5 +288,5 @@ export function mousePose(step, view, action) {
     });
   }
 
-  return { lines, fills };
+  return { lines, fills, face };
 }

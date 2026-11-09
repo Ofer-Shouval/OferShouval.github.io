@@ -16,7 +16,7 @@
 // change is worked out once (see buildCrowd()), and each frame only works out where they've got to.
 
 import p5 from 'p5';
-import { paintSheets, paintHoles, paintSigns, paintMouse, holeMargin, signMargin, frameWidth, frameHeight, feetX, feetY, steps } from './brush_frames.js';
+import { paintSheets, paintHoles, paintSigns, paintMouse, paintMouseFace, trailBrush, holeMargin, signMargin, frameWidth, frameHeight, feetX, feetY, steps } from './brush_frames.js';
 import { mouseWidth, mouseHeight, mouseFeetX, mouseFeetY, mouseSteps, mouseStride, mouseViews, mouseSitting, mouseLowering, mouseWalking, mouseActions } from './mouse.js';
 
 // The friendly-error checker slows every p5 call; it's for development, not the live site.
@@ -137,9 +137,11 @@ function setup() {
   resolution = constrain(bottomSize() * 1.1 * density * pushZoom, 1, 3); // (Sharp enough pushed in, too)
   setupHoles(); // (Before the sheets, since painting those finishes with the brush)
   mouseSheet = paintMouse(brushName, mouseWeight, resolution * mouseScale);
+  mouseFace = paintMouseFace(mouseSheet); // Its eyes, nose and whiskers in thin lines, for over its colours
   setupMouseControls();
   sheets = paintSheets(brushName, lineWeights, resolution);
   buildCrowd();
+  if (trailOn) setupTrail(); // (After the holes are placed, since the trail's map reaches as far as they do)
 }
 
 // The mouse walks on once the worm's out of its hole
@@ -713,6 +715,7 @@ function draw() {
   placeHoles();
   background(255);
   if (duskOn) showGround(drawingContext);
+  if (trailOn) showTrail(drawingContext); // Painted on the ground, so under everyone
   let seconds = millis() / 1000;
   crowdStarted ??= seconds;
   // It grows by the same share of itself all the way, so that they keep arriving at a pace that shows
@@ -736,7 +739,6 @@ function draw() {
 
   let mouseShown = false;
   let nextSign = 0;
-  let nextStamp = 0;
   // The furthest row first, so the nearer ones walk in front of it
   for (let n = furthest; n >= nearest; n--) {
     let row = rowAt(n);
@@ -747,11 +749,6 @@ function draw() {
     while (nextSign < holes.length && rowGround > holes[nextSign].ground) {
       showSign(ctx, holes[nextSign]);
       nextSign++;
-    }
-    // ...and the mouse's trail
-    while (nextStamp < trail.length && rowGround > trailGround(trail[nextStamp])) {
-      showStamp(ctx, trail[nextStamp]);
-      nextStamp++;
     }
     // Likewise for the mouse
     if (!mouseShown && rowGround > mouseGround) {
@@ -806,10 +803,6 @@ function draw() {
   while (nextSign < holes.length) {
     showSign(ctx, holes[nextSign]);
     nextSign++;
-  }
-  while (nextStamp < trail.length) {
-    if (trailGround(trail[nextStamp]) < height + 50) showStamp(ctx, trail[nextStamp]);
-    nextStamp++;
   }
   if (!mouseShown) showMouse(ctx, seconds);
   crowdOpening = false;
@@ -952,14 +945,18 @@ const mouseInsideSaturate = 2.2; // How much its colours are pushed up
 const mouseInsideHueTurn = 40; // How many degrees its hues turn round each second
 const mouseOutline = false; // Is it drawn with its black outline? Without, it's all colour (until the video's ready, when it's drawn as usual)
 const mouseEdge = 0.5; // ...and without it, how thick a hairline goes round it instead, in screen pixels (0 = none)
-// Its trail: a smudge of itself left behind it, as a p5 sketch leaves one when it doesn't redraw its background. Each
-// smudge is a copy of it, kept where it was left in the world and drawn from there like everyone else, so the trail
-// stays put on the ground, getting smaller in the distance, with people walking in front of it and behind it.
+// Its trail: a line follows it along the ground, unseen, and a paintbrush paints along that line in the colours it's
+// showing as it goes, soft and see-through, building up where it crosses itself. The paint's on a map of the ground
+// seen from above, which is never cleared, and every frame the map is laid on the ground in perspective, a strip at a
+// time, so the trail stays where it was painted, getting smaller in the distance, with everyone walking over it.
 const trailOn = true;
-const trailStrength = 0.85; // How strongly it shows
-const trailSpacing = 0.05; // How far it walks between copies, as a share of its own width on the screen (smaller = smoother)
-const trailMost = 1500; // The most copies kept, the oldest going first after that
-const trailSharp = 0.5; // How sharp the copies are kept, as a share of the mouse's own picture (smaller saves memory)
+const trailStep = 6; // How far it walks between the line's points, on the map
+const trailPiece = 5; // How many of the line's points are painted at a time
+const trailWeight = 0.3; // How wide the brush is, as a share of its own width
+const trailFlat = 0.42; // How squashed the paint looks lying on the ground, seen at an angle (sets the map's proportions)
+const trailVivid = 1.6; // How much its colours are pushed up from the video's
+const trailBlend = 0.35; // How far the paint's colour moves toward what it's showing now, each piece (smaller = smoother)
+const trailMapMost = [4096, 2048]; // The biggest the map gets, in pixels, across and from near to far
 
 function insideSheet() {
   const canvas = document.createElement('canvas');
@@ -1034,52 +1031,123 @@ function showMouseInside(ctx, seconds, cellX, cellY, cellWidth, cellHeight) {
 }
 
 let mouseEdgeCut = null; // Its shape in black, for the hairline
+let mouseFace = null; // Its face in thin lines (see paintMouseFace())
 
-// The copies of it left behind, nearest last (see trailOn)
-let trail = [];
-let trailLast = null; // Where the last copy was left
+// The map of the ground the trail's painted on (see trailOn): x across, as in the world, and its depth from far (the
+// top) to near (the bottom), each scaled so a round dab of paint looks the way a flat round thing on the ground would
+let trailMap = null;
+let trailPainter = null;
+let trailLine = []; // The line's points not yet painted, on the map (the first is the last one painted, to join on)
+let trailRGB = null; // The paint's colour now
+let trailPicker = null; // A tiny canvas for finding the colour it's showing
 
-// A copy of it as it is now, left where it is, once it's walked far enough from the last one
-function leaveTrail(cut) {
-  if (mouse.falling !== null) return;
-  const big = sizeOf(mouse.depth);
-  const size = big * mouseScale;
-  const here = { x: screenX(mouse.x, big), y: groundAt(big, bottomSize()) };
-  if (trailLast) {
-    const then = sizeOf(trailLast.depth);
-    const moved = Math.hypot(screenX(trailLast.x, then) - here.x, groundAt(then, bottomSize()) - here.y);
-    if (moved < trailSpacing * mouseWidth * size) return;
-  }
-  const copy = document.createElement('canvas');
-  copy.width = Math.max(1, Math.round(cut.width * trailSharp));
-  copy.height = Math.max(1, Math.round(cut.height * trailSharp));
-  copy.getContext('2d').drawImage(cut, 0, 0, copy.width, copy.height);
-  const stamp = { x: mouse.x, depth: mouse.depth, facing: mouse.facing, picture: copy, made: trailLast ? trailLast.made + 1 : 0 };
-  trailLast = stamp;
-  // Kept furthest first, as everything's drawn
-  let i = trail.length;
-  while (i > 0 && trail[i - 1].depth < stamp.depth) i--;
-  trail.splice(i, 0, stamp);
-  if (trail.length > trailMost) {
-    let oldest = 0;
-    for (let n = 1; n < trail.length; n++) if (trail[n].made < trail[oldest].made) oldest = n;
-    trail.splice(oldest, 1);
-  }
+function setupTrail() {
+  trailPainter = trailBrush();
+  // How far the map reaches: as far sideways as the mouse can go, and from just behind where it starts to past the furthest hole
+  const nearest = mouseEntersFrom - 0.2;
+  const furthest = Math.max(mouseHome, ...holes.map((hole) => hole.depth ?? 0)) + 0.6;
+  const reach = (holeReach ?? 0) + width / 2 / sizeOf(furthest) + 100;
+  // How many of the map's pixels for each of the world's: across, about one, and from near to far, enough that a round
+  // dab of paint looks squashed by trailFlat just in front of where the camera keeps the mouse
+  let across = 1;
+  const big = sizeOf(mouseHome);
+  const downScreen = (groundAt(sizeOf(mouseHome - 0.01), bottomSize()) - groundAt(sizeOf(mouseHome + 0.01), bottomSize())) / 0.02;
+  let along = (downScreen * across) / (trailFlat * big);
+  across = Math.min(across, trailMapMost[0] / (reach * 2));
+  along = Math.min(along, trailMapMost[1] / (furthest - nearest));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.ceil(reach * 2 * across);
+  canvas.height = Math.ceil((furthest - nearest) * along);
+  trailMap = { canvas, context: canvas.getContext('2d'), reach, furthest, nearest, across, along, painted: null };
 }
 
-// Where a copy's feet are on the screen
-const trailGround = (stamp) => groundAt(sizeOf(stamp.depth), bottomSize());
+const onMap = (x, depth) => [(x + trailMap.reach) * trailMap.across, (trailMap.furthest - depth) * trailMap.along];
 
-function showStamp(ctx, stamp) {
-  const big = sizeOf(stamp.depth);
-  const size = big * mouseScale;
-  const x = screenX(stamp.x, big);
-  const reach = mouseWidth * size;
-  if (x < -reach || x > width + reach) return;
-  ctx.setTransform(stamp.facing * size * density, 0, 0, size * density, x * density, groundAt(big, bottomSize()) * density);
-  ctx.globalAlpha = trailStrength;
-  ctx.drawImage(stamp.picture, -mouseFeetX, -mouseFeetY, mouseWidth, mouseHeight);
+// Each frame: its colour now, and a point on the line where it is, once it's walked far enough. Every few points, the
+// brush paints that piece of the line.
+function leaveTrail(cut) {
+  if (!trailMap || mouse.falling !== null) return;
+  // Its colour just now: the average of its coloured parts, made more vivid, and eased into from the paint's colour
+  trailPicker ??= document.createElement('canvas');
+  trailPicker.width = trailPicker.height = 12;
+  const picker = trailPicker.getContext('2d', { willReadFrequently: true });
+  picker.clearRect(0, 0, 12, 12);
+  picker.drawImage(cut, 0, 0, 12, 12);
+  const data = picker.getImageData(0, 0, 12, 12).data;
+  let [r, g, b, weight] = [0, 0, 0, 0];
+  for (let i = 0; i < data.length; i += 4) {
+    const a = data[i + 3] / 255;
+    r += data[i] * a;
+    g += data[i + 1] * a;
+    b += data[i + 2] * a;
+    weight += a;
+  }
+  if (weight > 0.5) {
+    [r, g, b] = [r / weight, g / weight, b / weight];
+    const grey = (r + g + b) / 3;
+    const now = [r, g, b].map((c) => Math.max(0, Math.min(255, grey + (c - grey) * trailVivid)));
+    trailRGB = trailRGB ? trailRGB.map((c, n) => c + (now[n] - c) * 0.05) : now; // (Eased every frame; trailBlend is per piece)
+  }
+  const point = onMap(mouse.x, mouse.depth);
+  const last = trailLine.at(-1);
+  if (point[1] < 0 || point[1] > trailMap.canvas.height || point[0] < 0 || point[0] > trailMap.canvas.width) return;
+  if (last && Math.hypot(point[0] - last[0], point[1] - last[1]) < trailStep) return;
+  if (last && Math.hypot(point[0] - last[0], point[1] - last[1]) > trailStep * 12) trailLine = []; // A jump: start a new line
+  trailLine.push(point);
+  if (trailLine.length > trailPiece && trailRGB) paintTrail();
+}
+
+let trailPaintRGB = null;
+function paintTrail() {
+  const points = trailLine;
+  trailPaintRGB = trailPaintRGB ? trailPaintRGB.map((c, n) => c + (trailRGB[n] - c) * trailBlend) : trailRGB;
+  const colour = `rgb(${trailPaintRGB.map(Math.round).join(', ')})`;
+  const brushWide = trailWeight * mouseWidth * mouseScale * trailMap.across;
+  // Painted on the brush's small canvas, around the piece's middle, then added to the map there
+  const xs = points.map(([x]) => x);
+  const ys = points.map(([, y]) => y);
+  const middle = [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
+  const size = trailPainter.size;
+  const picture = trailPainter.paint(points.map(([x, y]) => [x - middle[0] + size / 2, y - middle[1] + size / 2]), colour, brushWide);
+  const left = Math.round(middle[0] - size / 2);
+  const top = Math.round(middle[1] - size / 2);
+  trailMap.context.drawImage(picture, left, top);
+  const p = trailMap.painted;
+  trailMap.painted = p
+    ? { left: Math.min(p.left, left), top: Math.min(p.top, top), right: Math.max(p.right, left + size), bottom: Math.max(p.bottom, top + size) }
+    : { left, top, right: left + size, bottom: top + size };
+  trailLine = [points.at(-1)]; // The next piece carries on from here
+}
+
+// The map laid on the ground in perspective: for each thin strip of the screen across the painted part of the ground,
+// the row of the map at that distance, stretched to how big things are there
+function showTrail(ctx) {
+  const map = trailMap;
+  if (!map?.painted) return;
+  const bottom = bottomSize();
+  const depthAt = (y) => view.depth - Math.log(sizeAt(y) / bottom); // The depth of the ground this far down the screen
+  const toY = (depth) => groundAt(sizeOf(depth), bottom);
+  const top = Math.max(0, toY(map.furthest - map.painted.top / map.along));
+  const end = Math.min(height, toY(map.furthest - map.painted.bottom / map.along));
+  ctx.setTransform(density, 0, 0, density, 0, 0);
   ctx.globalAlpha = 1;
+  const strip = 2;
+  for (let y = Math.floor(top); y < end; y += strip) {
+    const size = sizeAt(y + strip / 2);
+    const rowTop = (map.furthest - depthAt(y)) * map.along;
+    const rowBottom = (map.furthest - depthAt(y + strip)) * map.along;
+    // Only the part of the map that's painted, and on the screen
+    let from = Math.max(map.painted.left, (view.x - width / 2 / size + map.reach) * map.across);
+    let to = Math.min(map.painted.right, (view.x + width / 2 / size + map.reach) * map.across);
+    const sourceTop = Math.max(0, rowTop);
+    const sourceBottom = Math.min(map.canvas.height, rowBottom);
+    from = Math.max(0, from);
+    to = Math.min(map.canvas.width, to);
+    if (to <= from || sourceBottom <= sourceTop) continue;
+    const screenFrom = width / 2 + (from / map.across - map.reach - view.x) * size;
+    const screenTo = width / 2 + (to / map.across - map.reach - view.x) * size;
+    ctx.drawImage(map.canvas, from, sourceTop, to - from, Math.max(0.5, sourceBottom - sourceTop), screenFrom, y, screenTo - screenFrom, strip);
+  }
 }
 
 // The mouse, drawn facing whichever way it's going (see moveMouse())
@@ -1098,6 +1166,8 @@ function showMouse(ctx, seconds) {
   const videoReady = lumininVideo && lumininVideo.readyState >= 2 && lumininVideo.videoWidth;
   if (mouseOutline || !videoReady) ctx.drawImage(mouseSheet, cellX, cellY, cellWidth, cellHeight, -mouseFeetX, -mouseFeetY, mouseWidth, mouseHeight);
   showMouseInside(ctx, seconds, cellX, cellY, cellWidth, cellHeight);
+  // Filled with colour, its face goes over the top in thin lines
+  if (!mouseOutline && videoReady && mouseFace) ctx.drawImage(mouseFace, cellX, cellY, cellWidth, cellHeight, -mouseFeetX, -mouseFeetY, mouseWidth, mouseHeight);
 }
 
 // How far down the screen the ground is under a figure of this size.

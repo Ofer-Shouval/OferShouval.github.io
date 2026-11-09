@@ -232,6 +232,79 @@ export function paintMouse(name, weight, resolution) {
   return sheet;
 }
 
+// A paintbrush for the mouse's trail (see art_walk.js): soft, see-through paint laid along a line, a short piece at a
+// time. Each piece is painted on a small canvas of the brush's own, starting from clear, and handed back to be added
+// to the trail's map of the ground, so nothing is painted twice. (p5.brush only paints in WebGL, on its own canvas.)
+export function trailBrush(size = 512, { opacity = 26, scatter = 2, spacing = 0.25 } = {}) {
+  brush.add('trail paint', {
+    type: 'marker',
+    weight: 1,
+    scatter,
+    opacity,
+    spacing,
+    pressure: [1, 1],
+    markerTip: false, // (So pieces join without a darker blob where one ends and the next begins)
+    rotate: 'natural',
+    noise: 0.15,
+  });
+  let canvas = brush.createCanvas(size, size, { pixelDensity: 1, parent: null });
+  let gl = canvas.getContext('webgl2');
+  return {
+    size,
+    // Paint along points (in the canvas's own pixels, from its top left corner) and give back the canvas
+    paint(points, colour, weight) {
+      brush.clear();
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      brush.set('trail paint', colour, weight);
+      brush.spline(points.map(([x, y]) => [x - size / 2, y - size / 2]), 0.5); // (The brush measures from the middle)
+      brush.render();
+      return canvas;
+    },
+  };
+}
+
+// The mouse's face on its own, in thin lines laid out like its pictures (see paintMouse()): its eyes and nose as
+// dots, and its whiskers, for drawing over it when it's filled with colour instead of drawn in outline
+export function paintMouseFace(sheet, { line = 1.1, eye = 2.6, nose = 1.8 } = {}) {
+  let face = document.createElement('canvas');
+  face.width = sheet.width;
+  face.height = sheet.height;
+  let context = face.getContext('2d');
+  let rows = mouseViews * mouseActions;
+  let scale = sheet.width / mouseSteps / mouseWidth;
+  context.strokeStyle = 'black';
+  context.fillStyle = 'black';
+  context.lineCap = 'round';
+  context.lineJoin = 'round';
+  for (let row = 0; row < rows; row++) {
+    for (let step = 0; step < mouseSteps; step++) {
+      let { lines, face: features } = mousePose(step, Math.floor(row / mouseActions), row % mouseActions);
+      context.setTransform(scale, 0, 0, scale, (step * mouseWidth + mouseFeetX) * scale, (row * mouseHeight + mouseFeetY) * scale);
+      // Its whiskers (see mousePose())
+      context.lineWidth = line;
+      for (let { points, key } of lines) {
+        if (key < 7990 || key > 8030) continue;
+        context.beginPath();
+        points.forEach(([x, y]) => context.lineTo(x, y));
+        context.stroke();
+      }
+      for (let [x, y] of features.eyes) {
+        context.beginPath();
+        context.ellipse(x, y, eye, eye * 1.15, 0, 0, Math.PI * 2);
+        context.fill();
+      }
+      if (features.nose) {
+        context.beginPath();
+        context.arc(features.nose[0], features.nose[1], nose, 0, Math.PI * 2);
+        context.fill();
+      }
+    }
+  }
+  context.setTransform(1, 0, 0, 1, 0, 0);
+  return face;
+}
+
 // The brush leaves pale edges on its lines, which show on anything darker than white. Turn every
 // bit of it pure black, keeping how see-through it is.
 function makeBlack(canvas) {
