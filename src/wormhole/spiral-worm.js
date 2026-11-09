@@ -48,7 +48,7 @@ const horizon = 0.25; // How far down the screen the point it's heading away tow
 // The stars streaking past (as in wormhole.js)
 const starCount = 120;
 const starSpeed = 0.35; // How much of the way to the camera a star comes each second
-const setOffTime = 1.75; // How many seconds after it's free its tail's let go, and its tail takes to start drifting
+const setOffTime = 1.5; // How many seconds after it's free its tail's let go, and its tail takes to start drifting
 const driftWide = 0.25; // How far its tail drifts from the middle of the screen, once it's free, as a share of the width
 const driftTall = 0.12; // ...and up and down, as a share of the height
 const driftSpeed = 0.15; // How quickly it drifts (smaller = slower)
@@ -113,14 +113,13 @@ const spiralTime = 6; // How many seconds it's there before it starts unwinding
 const choosingSpiral = 0.55; // How big it gets, compared to its usual size
 const choiceRing = 16; // How big the chosen portal opens to at once, across its radius in pixels: a ring, so it's clear the worm's going through it
 const choiceOpen = 0.5; // How many seconds it takes to open to that
-const panArc = 0.35; // How far the chosen portal swings out to one side on its way to the middle, as a share of how far it goes
+const panArc = 0.22; // How far the chosen portal's arc to the middle bows out to one side, as a share of how far it goes (0 = straight)
 const panEase = 4; // How strongly the pan eases in and out (2 = gently, higher = slower to start and to settle)
-const gateFollow = 0.12; // How far the chosen portal sinks as the spiral slides down, as a share of how far it does (little: it's far off)
 const gateSpread = 1.4; // How far the others spread out away from it as the camera moves toward it (0 = not at all)
 const gateNearer = 0.4; // How much bigger the chosen one gets as the camera moves toward it (0 = not at all)
 const gateFade = 1.6; // How many seconds the others take to fade away, spreading out, once one's chosen
 const rowTop = [110, 0.15]; // How far down the screen the row of portals is: this many pixels, or this share of its height if that's further (below the navbar, with room for their names)
-const choiceRoseHold = 0.7; // How many seconds it's a rose, from the moment a portal's chosen, before it stretches out into the worm
+const choiceRoseHold = 0.1; // How many seconds after a portal's chosen the rose starts stretching out into the worm (soon: it's still blooming, never quite formed)
 const choiceGrowTime = 4; // How many seconds it takes, once the worm's there, to grow until it covers the screen (portalTime otherwise)
 const choosingGrow = 8; // How many seconds it takes to grow, easing in and out (it doesn't unwind before it's grown)
 const choosingTurns = 3.5; // How many times it goes round, once it's grown
@@ -163,7 +162,7 @@ const portalPull = 0.9; // How far into the chosen one's middle the worm's drawn
 const portalStatic = 96; // How many dots across the bio portal's static is
 const exitRush = 12; // How much faster the stars go by the time it's covered the screen
 // The spiral it comes out of
-const unwindTime = 3; // How many seconds the spiral takes to unwind into the worm
+const unwindTime = 2; // How many seconds the spiral takes to unwind into the worm
 // How the spiral becomes the worm. 'stretch': it doesn't unwind at all; its middle's pulled forward, away into the
 // distance toward where it's heading, and the rest follows, middle first, so the flat spiral stretches out into the
 // worm's tube, its middle becoming the worm's head and its outer edge the tail (see stretchLag). 'spool': it unwinds
@@ -354,7 +353,7 @@ export default function spiralWorm(p, container, options = {}) {
       strikeFades = false;
       strikeEnds = seconds + (clipCrop ? strikeClipLength : 0);
       const wasCalm = calmStrike;
-      if (calmStrike) calmStrike = false; // (The flash as a portal's chosen: the rose's already wound, without roughening)
+      if (calmStrike) calmStrike = false; // (The flash as a portal's chosen: its rose is already set off)
       else roseBurst();
       if (firstStrikes > 0) {
         firstStrikes--;
@@ -448,14 +447,13 @@ export default function spiralWorm(p, container, options = {}) {
           choice = picked;
           choiceAt = seconds;
           p.canvas.style.cursor = '';
-          // At once a flash in colour, and the spiral winds up into a rose, which a moment later (see choiceRoseHold, well
-          // under 2 seconds, however soon it's chosen) stretches out into the worm. (Wound up without roughening, unlike
-          // a burst, which would shrink it to a short line for a moment.)
+          // At once a flash in colour, and the spiral bursts into a rose, as lightning sets it off, which a moment later
+          // (see choiceRoseHold, under 2 seconds, however soon it's chosen) stretches out into the worm
           unwindStart = seconds + choiceRoseHold;
           nextStrike = seconds;
           firstStrikes = 0;
           calmStrike = true;
-          roseFloor = roseTightness;
+          roseBurst(); // The rose lightning sets off: a straight line for a moment, then blooming out, chaotic and big (see roseFull)
           ignoreRelease = true; // (Letting go of this click doesn't burst it again)
           return;
         }
@@ -513,25 +511,18 @@ export default function spiralWorm(p, container, options = {}) {
       if (choiceAt === null) return here;
       // Once one's chosen, the camera moves up and forward toward it, so they move as things do in depth: the spiral,
       // near, slides a long way down the screen, but the chosen one, far off where it's all heading, hardly moves,
-      // sinking only a little (see gateFollow), and the others, beside it, spread out away from it as it's neared
-      const drop = cameraDrop * gateFollow;
-      // ...and the camera pans round behind the worm, from when it starts stretching to when it goes through, so the
-      // chosen one eases into the middle of the screen, centred just as the worm goes through it, with the others
-      // panning along with it
+      // on its own smooth arc (below), and the others, beside it, spread out away from it as it's neared
+      // ...and the camera swings round behind the worm in one smooth arc, the whole way from when the spiral starts
+      // stretching to when the worm goes through, so the chosen one eases into the middle of the screen, centred just as
+      // the worm goes through it, with the others moving along with it (see panArc, panEase)
       const chosenAt = row(portals.indexOf(choice));
-      // On an arc, as a camera swinging round would, rather than in a straight line (see panArc)
-      const from = { x: chosenAt.x, y: chosenAt.y + drop };
+      const from = chosenAt;
       const to = { x: p.width / 2, y: p.height / 2 };
-      const across = { x: -(to.y - from.y), y: to.x - from.x }; // Square to the way it's going, as long as the way is
-      const swing = panArc * Math.sin(Math.PI * cameraPan);
-      const heading = {
-        x: p.lerp(from.x, to.x, cameraPan) + across.x * swing,
-        y: p.lerp(from.y, to.y, cameraPan) + across.y * swing - drop,
-      };
+      const heading = onArc(from, to, panArc, cameraPan);
       // (The others spread out as they fade, from the moment it's chosen)
       const spreading = Math.min(1, (seconds - choiceAt) / gateFade);
       const spread = 1 + gateSpread * (1 - (1 - spreading) ** 2);
-      return { x: heading.x + (here.x - chosenAt.x) * spread, y: heading.y + drop + (here.y - chosenAt.y) * spread };
+      return { x: heading.x + (here.x - chosenAt.x) * spread, y: heading.y + (here.y - chosenAt.y) * spread };
     }
     // Otherwise, at the corners of a triangle turning slowly round the middle of the screen
     const out = portalTriangle * Math.min(p.width, p.height);
@@ -542,6 +533,23 @@ export default function spiralWorm(p, container, options = {}) {
       y: p.height / 2 + (x * Math.sin(turned) + y * Math.cos(turned)) * out,
     };
   }
+  // A point along an arc of a circle from one point to another, bowed out to one side by `bow` (how far its middle is
+  // from the straight line, as a share of the line's length), `t` of the way along: so it bends evenly all the way
+  function onArc(from, to, bow, t) {
+    const length = Math.hypot(to.x - from.x, to.y - from.y);
+    if (length < 1 || bow <= 0) return { x: p.lerp(from.x, to.x, t), y: p.lerp(from.y, to.y, t) };
+    const side = { x: -(to.y - from.y) / length, y: (to.x - from.x) / length }; // Which way it bows
+    const sag = bow * length;
+    const radius = (length * length) / 4 / (2 * sag) + sag / 2;
+    const middle = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+    const centre = { x: middle.x - side.x * (radius - sag), y: middle.y - side.y * (radius - sag) };
+    const start = Math.atan2(from.y - centre.y, from.x - centre.x);
+    let sweep = Math.atan2(to.y - centre.y, to.x - centre.x) - start;
+    if (sweep > Math.PI) sweep -= Math.PI * 2;
+    if (sweep < -Math.PI) sweep += Math.PI * 2;
+    return { x: centre.x + radius * Math.cos(start + sweep * t), y: centre.y + radius * Math.sin(start + sweep * t) };
+  }
+
   // How big a waiting portal is across
   function waitingSize() {
     return portalPoint;
@@ -729,18 +737,19 @@ export default function spiralWorm(p, container, options = {}) {
     const shape = stretching ? 1 : unwound;
     const total = Math.max(1, Math.round(turns * perTurn * shape));
     // The spiral's in the middle of the screen, and slides down it as the camera moves up and forward over it
-    // Stretching, the camera eases down over it all the way from the start of the stretch to the launch, when the
-    // worm's let go, getting there just as it launches, and the portals with it (see gateFollow)
-    const slid = unravel === 'stretch' ? Math.min(1, Math.max(0, (seconds - unwindStart) / (unwindTime + setOffTime))) : 0;
+    // Stretching, the camera starts moving the moment a portal's chosen, as the rose begins, and eases down from then
+    // until the worm's let go, getting there just as it launches (see cameraFrom, launchAt)
+    const cameraFrom = choiceAt ?? unwindStart;
+    const launchAt = unwindStart + unwindTime + setOffTime;
+    const slid = unravel === 'stretch' ? Math.min(1, Math.max(0, (seconds - cameraFrom) / Math.max(0.1, launchAt - cameraFrom))) : 0;
     const sliding = unravel === 'stretch' ? slid * slid * (3 - 2 * slid) : forming;
     const centre = { x: p.width / 2, y: p.height * p.lerp(0.5, formingSlide, sliding) };
     cameraDrop = centre.y - p.height / 2; // (So the portals move with it, see openingAt())
     cameraMove = sliding;
     if (unravel === 'stretch') {
-      // The pan behind the worm takes from when the worm starts stretching, just before it's let go, to when the chosen
-      // portal's opened round it, easing in and out strongly (see panEase)
-      const panFrom = unwindStart + unwindTime + setOffTime - stretchTime;
-      const panned = Math.min(1, Math.max(0, (seconds - panFrom) / (stretchTime + portalAfter + choiceGrowTime)));
+      // The camera's arc takes the whole movement, from the moment the portal's chosen to when it's opened round the
+      // worm, easing in and out strongly (see panEase)
+      const panned = Math.min(1, Math.max(0, (seconds - cameraFrom) / Math.max(0.1, launchAt + portalAfter + choiceGrowTime - cameraFrom)));
       cameraPan = panned < 0.5 ? 0.5 * (2 * panned) ** panEase : 1 - 0.5 * (2 - 2 * panned) ** panEase;
     }
     // Where its tail is: where it comes off the spiral, until it's free, and then drifting about
@@ -760,7 +769,9 @@ export default function spiralWorm(p, container, options = {}) {
     let limit = Math.min(p.width, p.height) / spiralBig;
     if (options.chooseFirst !== false) {
       const grown = Math.min(1, (seconds - openedAt) / choosingGrow);
-      limit *= choosingSpiral * grown * grown * (3 - 2 * grown);
+      // ...though while it's a rose it opens out to its usual size, as big as roses get, shrinking back as it wears off
+      const rose = Math.min(1, roseFloor / roseTightness);
+      limit *= p.lerp(choosingSpiral * grown * grown * (3 - 2 * grown), 1, rose);
     }
     const winding = loosest * Math.pow(tightest / loosest, Math.min(1, (seconds - openedAt) / tightenTime));
     // Opening on the portals, it's wound to have choosingTurns turns once it's grown (it's as far out as (turned angle)²
@@ -800,16 +811,19 @@ export default function spiralWorm(p, container, options = {}) {
       const leaving = stretching ? 1 : p.lerp(coming * coming * (3 - 2 * coming), 1, released);
       const away = awayFrom(along, tailAt);
       let behind = away;
-      if (released > 0) {
+      // (Stretching, it stays in the view it formed in, the camera's own movements doing the rest, rather than going
+      // over to the psychworm's view from behind, which would morph it mid-flight)
+      const turning = stretching ? 0 : released;
+      if (turning > 0) {
         // In the psychworm's view, the tail end still goes round, less and less further along it
         const seen = seenFromBehind(along, camera);
         const going = Math.max(0, 1 - along / circlingTail) ** 2;
         behind = { x: seen.x + circle.x * going, y: seen.y + circle.y * going, closer: seen.closer };
       }
       const onPath = {
-        x: p.lerp(away.x, behind.x, released),
-        y: p.lerp(away.y, behind.y, released),
-        closer: p.lerp(away.closer, behind.closer, released),
+        x: p.lerp(away.x, behind.x, turning),
+        y: p.lerp(away.y, behind.y, turning),
+        closer: p.lerp(away.closer, behind.closer, turning),
       };
       const middle = { x: p.lerp(tailAt.x, onPath.x, leaving), y: p.lerp(tailAt.y, onPath.y, leaving) };
       const body = ((Math.sin(along * Math.PI) * (p.width / 8) * bodyScale * onPath.closer * size) / 2 / Math.sqrt(stretch)) * p.lerp(1, releasedThinner, released); // Thinner as it stretches, and once it's let go
@@ -941,7 +955,7 @@ export default function spiralWorm(p, container, options = {}) {
 
     // The camera pulls back as it moves up and forward, so the worm doesn't grow as it forms: everything's smaller,
     // round the spiral, until the view comes round to the psychworm's
-    const zoom = p.lerp(p.lerp(1, formingZoom, forming), 1, released);
+    const zoom = unravel === 'stretch' ? 1 : p.lerp(p.lerp(1, formingZoom, forming), 1, released); // (Stretching, no zoom: the camera moves instead)
     context.save();
     context.translate(centre.x, centre.y);
     context.scale(zoom, zoom);
