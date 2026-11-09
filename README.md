@@ -12,7 +12,7 @@ npm run preview  # serve the dist/ build locally
 ## Layout
 
 - `index.html` — home: the wormhole (old sketches turning into each other, in `src/wormhole/wormhole.js`), ending in three portals to art, music and bio (`src/wormhole/spiral-worm.js`)
-- `art/` — one page per piece; `art/index.html` is the walking landing page, and `art/all.html` the grid of everything; `art/sketchbook/` has the sketch test page, and its index forwards to the front page
+- `art/` — one page per piece; `art/index.html` is the walking landing page; `art/sketchbook/` has the sketch test page, and its index forwards to the front page
 - `music/` — `index.html` is the full-screen "Wake" sketch, with gates to `live.html`, `recordings.html` (releases grid), `videos.html` and `info.html`; `release-template.html` to copy for each release
 - `teaching/` — courses and student work (left out of the navbar and the build for now; still runs in `npm run dev`)
 - `bio/` — bio
@@ -26,7 +26,7 @@ npm run preview  # serve the dist/ build locally
 - `src/scripts/media.js` — lazy-loads videos on every page
 - `src/styles/main.css` — site styles
 - `public/media/` — images and videos, referenced as `/media/name.ext`
-- `archive/` — old pages, sketches and images, not part of the build (`archive/home-sketch-before-cleanup/` has the earlier versions of the home sketch)
+- `archive/` — old pages, sketches and images, not part of the build (`archive/art-list/all.html` was the art section's grid of everything; `archive/home-sketch-before-cleanup/` has the earlier versions of the home sketch)
 
 Any `.html` file outside `src/`, `public/` and `archive/` is built as a page automatically.
 Dashed "TODO" boxes (`class="placeholder"`) mark content still to be added.

@@ -228,19 +228,6 @@ ul {
 }
 
 
-/* The art landing page's link to the list of everything */
-
-.footer.art-list-link {
-  width: auto;
-  font-size: 13px;
-  opacity: 0.7;
-}
-
-.footer.art-list-link:hover {
-  opacity: 1;
-}
-
-
 /* The art landing page is black on white, the opposite of the rest of the site */
 
 .light .navbar {
@@ -256,17 +243,6 @@ ul {
 .light .nav-menu-list {
   background-color: white;
   border-color: #171717;
-}
-
-.light .footer.art-list-link {
-  color: black;
-  background-color: white;
-  padding: 2px 6px;
-  opacity: 1;
-}
-
-.light .footer.art-list-link:hover {
-  text-decoration: none;
 }
 
 
@@ -407,14 +383,8 @@ ul {
 }
 
 .fading .navbar,
-.fading .navbar a,
-.fading .art-list-link {
+.fading .navbar a {
   transition: background-color 1.5s, border-color 1.5s, color 1.5s, opacity 1.5s;
-}
-
-.fading.leaving .art-list-link {
-  opacity: 0;
-  pointer-events: none;
 }
 
 
@@ -1771,15 +1741,9 @@ body.art-inverted {
   text-decoration-color: white;
 }
 
-.art-inverted .footer.art-list-link {
-  background-color: black;
-  padding: 2px 6px;
-  opacity: 1;
-}
-
 
 /* The art page's signs in a column at the top right of the screen: clicking one sends the mouse to its hole, and pointing
-   at one shows the hole's name above the hole (see signsAtSide in art_walk.js) */
+   at one shows the hole's name at the top middle (see signsAtSide in art_walk.js) */
 
 .art-signs {
   position: fixed;
