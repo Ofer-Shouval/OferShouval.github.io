@@ -34,7 +34,7 @@ let curveDetail = 6; // How many short pieces each bend of a curve is made of
 let overshoot = [1, 5]; // How far a line runs past its ends
 let wander = 1.2; // How far the points a line curves through can be from where they should be
 let goneOver = 0.3; // What fraction of its outline gets a second, thinner line
-let thin = 0.3; // How thick its whiskers are, compared to its other lines
+let thin = 0.15; // How thick its whiskers are, compared to its other lines
 
 // The body: its rump, its middle and its shoulders, along its length, then out from its middle and up
 let bodyPoints = [

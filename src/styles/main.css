@@ -1778,6 +1778,79 @@ body.art-inverted {
 }
 
 
+/* The art page's signs in a column at the top right of the screen: clicking one sends the mouse to its hole, and pointing
+   at one shows the hole's name above the hole (see signsAtSide in art_walk.js) */
+
+.art-signs {
+  position: fixed;
+  z-index: 2;
+  right: 16px;
+  top: 66px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.art-sign {
+  padding: 4px 10px;
+  font-family: 'Major Mono Display', monospace;
+  font-size: 15px;
+  color: black;
+  background-color: white;
+  border: 1px solid black;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.art-sign:hover,
+.art-sign:focus-visible {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+/* ...with the holes' own names hidden, and the name of the one pointed at at the top of the screen instead */
+.art-signs-at-side .art-hole-name {
+  visibility: hidden;
+}
+
+.art-hole-title {
+  position: fixed;
+  z-index: 2;
+  top: 92px;
+  left: 16px;
+  right: 16px;
+  margin: 0;
+  text-align: center;
+  font-family: 'Major Mono Display', monospace;
+  font-size: 26px;
+  color: black;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.art-hole-title.shown {
+  opacity: 1;
+}
+
+.art-inverted .art-hole-title {
+  color: white;
+}
+
+/* (A hole behind the mouse has no tag: its sign's in the column) */
+.art-signs-at-side .art-hole-behind {
+  visibility: hidden;
+}
+
+.art-inverted .art-sign {
+  color: white;
+  background-color: black;
+  border-color: white;
+}
+
+
 /* Pointers to the art page's holes that are off the screen, at the edge they're past (see pointTo() in art_walk.js) */
 
 .art-pointer {

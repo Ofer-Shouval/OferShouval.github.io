@@ -77,6 +77,7 @@ let holeNameSize = [15, 24]; // The smallest and biggest their names can be, in 
 let signPen = { width: 160, height: 44, post: 80, weight: 2.6 }; // How the signposts are drawn, before they're stretched to fit
 let signPost = 110; // How tall a signpost's post is, in the frames' own pixels
 let signPostPixels = [16, 70]; // ...but no shorter or taller than this, in pixels, so that the sign's still readable from far away
+let signsAtSide = true; // Are the holes' signs in a column at the side of the screen, where clicking one sends the mouse to its hole, with the name of whichever hole, or sign, is pointed at shown at the top of the screen? Otherwise each has a signpost beside its hole.
 let holeTripTime = 3; // How many seconds the mouse tries to take to run to a hole that's been clicked
 let holeTripHurry = 3; // ...but it won't run more than this many times as fast as usual
 let holeFallTime = 0.3; // How many seconds it takes to drop into the hole, before the next page
@@ -137,7 +138,7 @@ function setup() {
   resolution = constrain(bottomSize() * 1.1 * density * pushZoom, 1, 3); // (Sharp enough pushed in, too)
   setupHoles(); // (Before the sheets, since painting those finishes with the brush)
   mouseSheet = paintMouse(brushName, mouseWeight, resolution * mouseScale);
-  mouseFace = paintMouseFace(mouseSheet); // Its eyes, nose and whiskers in thin lines, for over its colours
+  mouseFace = paintMouseFace(mouseSheet, { line: 0.55 }); // Its eyes, nose and whiskers in thin lines, for over its colours
   setupMouseControls();
   sheets = paintSheets(brushName, lineWeights, resolution);
   buildCrowd();
@@ -417,16 +418,42 @@ function setupHoles() {
   }));
   // How big their signs need to be depends on their font, so measure again once that's loaded
   document.fonts.ready.then(() => holes.forEach((hole) => { hole.fontSize = null; }));
+  let column = null;
+  if (signsAtSide) {
+    document.body.classList.add('art-signs-at-side');
+    column = document.createElement('nav');
+    column.className = 'art-signs';
+    column.setAttribute('aria-label', 'Holes');
+    document.body.append(column);
+    holeTitle = document.createElement('p');
+    holeTitle.className = 'art-hole-title';
+    holeTitle.setAttribute('aria-hidden', 'true'); // (The signs already say it)
+    document.body.append(holeTitle);
+  }
   holes.forEach((hole) => {
+    if (column) {
+      // Its sign, in the column at the side; pointing at it shows the hole's name above the hole
+      hole.sideSign = document.createElement('a');
+      hole.sideSign.className = 'art-sign';
+      hole.sideSign.href = hole.link.href;
+      hole.sideSign.textContent = hole.name.textContent;
+      column.append(hole.sideSign);
+    }
+    // Pointing at its sign, or at the hole, shows its name at the top of the screen
+    for (const link of column ? [hole.sideSign, hole.link] : []) {
+      for (const [type, named] of [['pointerenter', true], ['pointerleave', false], ['focus', true], ['blur', false]]) {
+        link.addEventListener(type, () => nameHole(hole, named));
+      }
+    }
     // A pointer to it, at the edge of the screen, for when it's off the screen (see pointTo())
-    if (!hole.behind) {
+    if (!hole.behind && !column) {
       hole.pointer = document.createElement('a');
       hole.pointer.className = 'art-pointer';
       hole.pointer.href = hole.link.href;
       hole.pointer.hidden = true;
       hole.link.after(hole.pointer);
     }
-    for (const link of [hole.link, hole.pointer].filter(Boolean)) {
+    for (const link of [hole.link, hole.pointer, hole.sideSign].filter(Boolean)) {
       link.addEventListener('click', (event) => {
         // Opening it in a new tab, or asking for less motion, just follows the link
         if (event.metaKey || event.ctrlKey || event.shiftKey || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -435,6 +462,16 @@ function setupHoles() {
       });
     }
   });
+}
+
+// The name of the hole being pointed at, at the top of the screen (see signsAtSide)
+let holeTitle = null;
+let holeTitled = null;
+function nameHole(hole, named) {
+  if (named) holeTitled = hole;
+  else if (holeTitled === hole) holeTitled = null;
+  if (holeTitled) holeTitle.textContent = holeTitled.name.textContent;
+  holeTitle.classList.toggle('shown', !!holeTitled);
 }
 
 // When a hole's sign is off the screen, a pointer to it at that edge: its name, with an arrow the way it is
@@ -604,7 +641,7 @@ function placeHoles() {
 
     // Its name's on a sign, on a post coming up from the back of the hole. Only measuring when the
     // name changes size, since that's slow.
-    let postLength = Math.round(constrain(signPost * size, signPostPixels[0], signPostPixels[1]));
+    let postLength = signsAtSide ? 0 : Math.round(constrain(signPost * size, signPostPixels[0], signPostPixels[1]));
     if (postLength !== hole.postLength) {
       hole.postLength = postLength;
       hole.name.style.marginBottom = `${postLength}px`;
@@ -621,7 +658,7 @@ function placeHoles() {
     // Its post stands on the ground beside the hole, on the side toward the middle of the screen, so its sign
     // stays on the screen; the name on the page moves over with it
     let side = hole.inRow > 0 ? -1 : 1;
-    let beside = Math.round(side * (hole.width / 2 + Math.max(6, hole.width * 0.2)));
+    let beside = signsAtSide ? 0 : Math.round(side * (hole.width / 2 + Math.max(6, hole.width * 0.2))); // (With the signs at the side, its name's right above it)
     if (beside !== hole.beside) {
       hole.beside = beside;
       hole.name.style.transform = `translateX(${beside}px)`;
@@ -631,7 +668,7 @@ function placeHoles() {
 
 // A hole's signpost, standing on the ground beside the hole (see placeHoles()). Its name goes on top, as the link on the page.
 function showSign(ctx, hole) {
-  if (hole.behind) return; // It has its tag instead
+  if (hole.behind || signsAtSide) return; // It has its tag instead, or its sign's at the side
   let middle = hole.left + hole.width / 2 + (hole.beside ?? 0);
   let holeBack = hole.ground; // (Where its post meets the ground, level with the middle of the hole)
   let scale = hole.signWidth / signPen.width;
@@ -965,14 +1002,24 @@ function showDusk(ctx) {
 let lumininVideo = null;
 const lumininClip = '/media/lumininCloseupStabilized.mp4';
 
+const lumininPlays = [2, 7.7]; // The part of it that plays, over and over, in seconds: not its start, where it looks close to white, or its paler end
+
 function startLumininVideo() {
   const video = document.createElement('video');
   video.src = lumininClip;
   video.muted = true;
   video.loop = true;
   video.playsInline = true;
+  video.addEventListener('loadedmetadata', () => (video.currentTime = lumininPlays[0]));
   video.play().catch(() => {});
   return video;
+}
+
+// Kept to the part that plays (see lumininPlays): checked every frame, since the video's own time updates come too
+// seldom to catch it in time
+function keepLumininPlaying(video) {
+  if (video.readyState < 1 || video.seeking) return;
+  if (video.currentTime < lumininPlays[0] || video.currentTime > lumininPlays[1]) video.currentTime = lumininPlays[0];
 }
 
 // Inside the mouse, where it's white, a psychedelic pattern from the Luminin: the hidden close-up video (see lumininVideo),
@@ -986,20 +1033,21 @@ const mouseInsideSaturate = 2.2; // How much its colours are pushed up
 const mouseInsideHueTurn = 40; // How many degrees its hues turn round each second
 const mouseOutline = false; // Is it drawn with its black outline? Without, it's all colour (until the video's ready, when it's drawn as usual)
 const mouseEdge = 0.5; // ...and without it, how thick a hairline goes round it instead, in screen pixels (0 = none)
-// Its trail: a stream of see-through circles in the colours it's showing, scattered behind it as it walks, each placed a
-// random (Gaussian) distance from where it walked, so most land near its path and fewer further out, and each soft,
-// fading out from its middle like a blurred disc, so they blur together into one smudge. They're painted on a map of
-// the ground seen from above, which is never cleared, and every frame the map is laid on the ground in perspective, a
-// strip at a time, so the trail stays where it was left, getting smaller in the distance, with everyone walking over it.
+// Its trail: a noisy line stretching behind it, about as wide as it is, its width swelling and thinning and its middle
+// wandering a little from side to side, with rough edges. It's a mask: the moving colours of the Luminin (the same
+// video as its inside, see lumininVideo) show through it. The line's painted on a map of the ground seen from above,
+// which is never cleared, and every frame the map is laid on the ground in perspective, a strip at a time, so the trail
+// stays where it was left, getting smaller in the distance, with everyone walking over it.
 const trailOn = true;
-const trailStep = 4; // How far it walks between each handful of circles, on the map
-const trailCircles = 3; // How many circles in each handful
-const trailSpread = 0.16; // How far they scatter from its path (the Gaussian's spread), as a share of its own width
-const trailSize = [0.1, 0.22]; // How big a circle is, smallest to biggest, as a share of its own width
-const trailAlpha = 0.3; // How strong a circle is in its middle (they build up where they overlap)
+const trailWidth = 0.14; // How wide the line is, as a share of the width of its picture: about as wide as its body
+const trailSwell = 0.35; // How much its width swells and thins along it (0 = not at all, 1 = from nothing to twice as wide)
+const trailWander = 0.03; // How far its middle wanders from side to side of where it walked, as a share of its own width
+const trailNoise = 0.012; // How quickly the swelling and wandering change along it (bigger = more often), per pixel of the map
+const trailRough = 0.12; // How rough its edges are, as a share of its width
 const trailFlat = 0.42; // How squashed the paint looks lying on the ground, seen at an angle (sets the map's proportions)
-const trailVivid = 1.6; // How much its colours are pushed up from the video's
-const trailEase = 0.05; // How far the circles' colour moves toward what it's showing now, each frame (smaller = smoother)
+const trailHueOffset = 120; // How far round the colour wheel its colours are from the mouse's, in degrees (120 = a third of the way)
+const trailEdge = false; // Is there a hairline round its edges, as round the mouse (see mouseEdge)?
+const trailVideoZoom = 0.5; // How much of the video's width shows across the screen through it (smaller = closer in, bigger colours)
 const trailMapMost = [4096, 2048]; // The biggest the map gets, in pixels, across and from near to far
 
 function insideSheet() {
@@ -1033,6 +1081,7 @@ function showMouseInside(ctx, seconds, cellX, cellY, cellWidth, cellHeight) {
   // The video first, then cut to the mouse's white parts. (The other way round, the video drawn 'source-in' over
   // the mouse's shape, Safari, and so every browser on an iPhone, ignores the shape and fills the whole picture.)
   context.globalCompositeOperation = 'copy';
+  keepLumininPlaying(video);
   context.filter = `brightness(${mouseInsideBright}) saturate(${mouseInsideSaturate}) hue-rotate(${(seconds * mouseInsideHueTurn) % 360}deg)`;
   const sourceWide = video.videoWidth * mouseInsideZoom;
   const sourceTall = (sourceWide * cut.height) / cut.width;
@@ -1071,7 +1120,7 @@ function showMouseInside(ctx, seconds, cellX, cellY, cellWidth, cellHeight) {
     }
   }
   ctx.drawImage(cut, -mouseFeetX, -mouseFeetY, mouseWidth, mouseHeight);
-  if (trailOn) leaveTrail(cut);
+  if (trailOn) leaveTrail();
 }
 
 let mouseEdgeCut = null; // Its shape in black, for the hairline
@@ -1080,9 +1129,11 @@ let mouseFace = null; // Its face in thin lines (see paintMouseFace())
 // The map of the ground the trail's painted on (see trailOn): x across, as in the world, and its depth from far (the
 // top) to near (the bottom), each scaled so a round dab of paint looks the way a flat round thing on the ground would
 let trailMap = null;
-let trailLast = null; // Where the last handful of circles was scattered, on the map
-let trailRGB = null; // The paint's colour now
-let trailPicker = null; // A tiny canvas for finding the colour it's showing
+let trailLast = null; // Where the line was last painted to, on the map
+let trailAlong = 0; // How far along the line it's painted, on the map (where the noise is read from)
+let trailMask = null; // A canvas the size of the screen: the map laid on the ground, this frame
+let trailColour = null; // ...and the video, cut to it
+let trailOutline = null; // ...and the hairline round it
 
 function setupTrail() {
   // How far the map reaches: as far sideways as the mouse can go, and from just behind where it starts to past the furthest hole
@@ -1105,75 +1156,62 @@ function setupTrail() {
 
 const onMap = (x, depth) => [(x + trailMap.reach) * trailMap.across, (trailMap.furthest - depth) * trailMap.along];
 
-// Each frame: its colour now, and, once it's walked far enough, a handful of circles scattered round where it is
-function leaveTrail(cut) {
+// Each frame: the line painted on from where it was last painted to where it is now
+function leaveTrail() {
   if (!trailMap || mouse.falling !== null) return;
-  // Its colour just now: the average of its coloured parts, made more vivid, and eased into from the paint's colour
-  trailPicker ??= document.createElement('canvas');
-  trailPicker.width = trailPicker.height = 12;
-  const picker = trailPicker.getContext('2d', { willReadFrequently: true });
-  picker.clearRect(0, 0, 12, 12);
-  picker.drawImage(cut, 0, 0, 12, 12);
-  const data = picker.getImageData(0, 0, 12, 12).data;
-  let [r, g, b, weight] = [0, 0, 0, 0];
-  for (let i = 0; i < data.length; i += 4) {
-    const a = data[i + 3] / 255;
-    r += data[i] * a;
-    g += data[i + 1] * a;
-    b += data[i + 2] * a;
-    weight += a;
-  }
-  if (weight > 0.5) {
-    [r, g, b] = [r / weight, g / weight, b / weight];
-    const grey = (r + g + b) / 3;
-    const now = [r, g, b].map((c) => Math.max(0, Math.min(255, grey + (c - grey) * trailVivid)));
-    trailRGB = trailRGB ? trailRGB.map((c, n) => c + (now[n] - c) * trailEase) : now;
-  }
   const point = onMap(mouse.x, mouse.depth);
-  if (!trailRGB || point[1] < 0 || point[1] > trailMap.canvas.height || point[0] < 0 || point[0] > trailMap.canvas.width) return;
-  if (trailLast && Math.hypot(point[0] - trailLast[0], point[1] - trailLast[1]) < trailStep) return;
-  trailLast = point;
-  scatterCircles(point);
-}
-
-// A random number from a Gaussian (bell curve) with no shift and a spread of 1
-function gaussian() {
-  let u = 0;
-  while (u === 0) u = Math.random();
-  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * Math.random());
-}
-
-function scatterCircles([x, y]) {
+  if (point[1] < 0 || point[1] > trailMap.canvas.height || point[0] < 0 || point[0] > trailMap.canvas.width) return;
+  if (!trailLast) {
+    trailLast = point;
+    return;
+  }
+  const [dx, dy] = [point[0] - trailLast[0], point[1] - trailLast[1]];
+  const far = Math.hypot(dx, dy);
+  if (far < 1) return;
   const own = mouseWidth * mouseScale * trailMap.across; // Its own width, on the map
+  const side = [-dy / far, dx / far]; // Square to the way it's going
   const context = trailMap.context;
-  const [r, g, b] = trailRGB.map(Math.round);
-  for (let i = 0; i < trailCircles; i++) {
-    const cx = x + gaussian() * trailSpread * own;
-    const cy = y + gaussian() * trailSpread * own;
-    const radius = own * (trailSize[0] + Math.random() * (trailSize[1] - trailSize[0]));
-    // Soft: strongest in the middle, fading smoothly to nothing at its edge, like a blurred disc
-    const soft = context.createRadialGradient(cx, cy, 0, cx, cy, radius);
-    soft.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${trailAlpha})`);
-    soft.addColorStop(0.5, `rgba(${r}, ${g}, ${b}, ${trailAlpha * 0.55})`);
-    soft.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
-    context.fillStyle = soft;
-    context.fillRect(cx - radius, cy - radius, radius * 2, radius * 2);
-    const left = Math.floor(cx - radius);
-    const top = Math.floor(cy - radius);
-    const right = Math.ceil(cx + radius);
-    const bottom = Math.ceil(cy + radius);
+  context.fillStyle = 'white';
+  // Dabs a pixel apart along the way, each as wide as the line is there, set off to the side as far as it's wandered
+  for (let step = 1; step <= far; step++) {
+    const along = trailAlong + step;
+    const swell = 1 + trailSwell * (noise(along * trailNoise, 0) * 2 - 1) * 2;
+    const wander = trailWander * own * (noise(along * trailNoise, 10) * 2 - 1) * 2;
+    const radius = Math.max(0.5, (own * trailWidth * Math.max(0, swell) * (1 + trailRough * (Math.random() * 2 - 1))) / 2);
+    const x = trailLast[0] + (dx * step) / far + side[0] * wander;
+    const y = trailLast[1] + (dy * step) / far + side[1] * wander;
+    context.beginPath();
+    context.arc(x, y, radius, 0, Math.PI * 2);
+    context.fill();
     const p = trailMap.painted;
+    const [left, top, right, bottom] = [Math.floor(x - radius), Math.floor(y - radius), Math.ceil(x + radius), Math.ceil(y + radius)];
     trailMap.painted = p
       ? { left: Math.min(p.left, left), top: Math.min(p.top, top), right: Math.max(p.right, right), bottom: Math.max(p.bottom, bottom) }
       : { left, top, right, bottom };
   }
+  trailAlong += far;
+  trailLast = point;
 }
 
 // The map laid on the ground in perspective: for each thin strip of the screen across the painted part of the ground,
 // the row of the map at that distance, stretched to how big things are there
-function showTrail(ctx) {
+function showTrail(screen) {
   const map = trailMap;
   if (!map?.painted) return;
+  const video = lumininVideo;
+  if (!video || video.readyState < 2 || !video.videoWidth) return;
+  const [wide, tall] = [Math.ceil(width * density), Math.ceil(height * density)];
+  trailMask ??= document.createElement('canvas');
+  trailColour ??= document.createElement('canvas');
+  for (const canvas of [trailMask, trailColour]) {
+    if (canvas.width !== wide || canvas.height !== tall) {
+      canvas.width = wide;
+      canvas.height = tall;
+    }
+  }
+  const ctx = trailMask.getContext('2d');
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, wide, tall);
   const bottom = bottomSize();
   const depthAt = (y) => view.depth - Math.log(sizeAt(y) / bottom); // The depth of the ground this far down the screen
   const toY = (depth) => groundAt(sizeOf(depth), bottom);
@@ -1202,6 +1240,55 @@ function showTrail(ctx) {
     const rowsTop = Math.max(0, Math.min(map.canvas.height - rows, (sourceTop + sourceBottom) / 2 - rows / 2));
     ctx.drawImage(map.canvas, from, rowsTop, to - from, rows, screenFrom, y, screenTo - screenFrom, strip);
   }
+  // The video, over the whole screen, cut to the mask. (The video first and then the mask 'destination-in', not the
+  // other way round, which Safari gets wrong: see showMouseInside())
+  const colour = trailColour.getContext('2d');
+  colour.setTransform(1, 0, 0, 1, 0, 0);
+  colour.globalCompositeOperation = 'copy';
+  colour.filter = `brightness(${mouseInsideBright}) saturate(${mouseInsideSaturate}) hue-rotate(${((millis() / 1000) * mouseInsideHueTurn + trailHueOffset) % 360}deg)`;
+  const sourceWide = video.videoWidth * trailVideoZoom;
+  const sourceTall = Math.min(video.videoHeight, (sourceWide * tall) / wide);
+  const shownWide = (sourceTall * wide) / tall;
+  colour.drawImage(video, (video.videoWidth - shownWide) / 2, (video.videoHeight - sourceTall) / 2, shownWide, sourceTall, 0, 0, wide, tall);
+  colour.filter = 'none';
+  if (inverted) {
+    // Turned inside out now, so that turning the whole picture inside out at the end brings its colours back
+    colour.globalCompositeOperation = 'difference';
+    colour.fillStyle = 'white';
+    colour.fillRect(0, 0, wide, tall);
+  }
+  colour.globalCompositeOperation = 'destination-in';
+  colour.drawImage(trailMask, 0, 0);
+  colour.globalCompositeOperation = 'source-over';
+  screen.setTransform(1, 0, 0, 1, 0, 0);
+  screen.globalAlpha = 1;
+  if (trailEdge && mouseEdge > 0) {
+    // A hairline round it, as round the mouse: its shape nudged a fraction of a pixel every way, with its shape itself
+    // cut out of the middle, so it's only an outline (where the video's cut out, the ground shows, not black), in black
+    trailOutline ??= document.createElement('canvas');
+    const outline = trailOutline;
+    if (outline.width !== wide || outline.height !== tall) {
+      outline.width = wide;
+      outline.height = tall;
+    }
+    const edge = outline.getContext('2d');
+    edge.globalCompositeOperation = 'copy';
+    edge.drawImage(trailMask, 0, 0);
+    edge.globalCompositeOperation = 'source-over';
+    const nudge = mouseEdge * density;
+    for (let turn = 0; turn < 8; turn++) {
+      const angle = (turn / 8) * Math.PI * 2;
+      edge.drawImage(trailMask, Math.cos(angle) * nudge, Math.sin(angle) * nudge);
+    }
+    edge.globalCompositeOperation = 'destination-out';
+    edge.drawImage(trailMask, 0, 0);
+    edge.globalCompositeOperation = 'source-in';
+    edge.fillStyle = 'black'; // (As the mouse's: turning the whole picture inside out at the end turns both)
+    edge.fillRect(0, 0, wide, tall);
+    edge.globalCompositeOperation = 'source-over';
+    screen.drawImage(outline, 0, 0);
+  }
+  screen.drawImage(trailColour, 0, 0);
 }
 
 // The mouse, drawn facing whichever way it's going (see moveMouse())
