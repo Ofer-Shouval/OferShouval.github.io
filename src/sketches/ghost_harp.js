@@ -141,7 +141,9 @@ function start(figure) {
   // sooner, through a filter that closes as it rings, so it darkens like a piano. Low notes ring longer than high ones.
   // Letting go of the note damps it, quickly but not at once.
   function sound(note, velocity, seconds) {
-    if (!soundWanted() || !audio || !out || audio.state !== 'running') return;
+    if (!soundWanted()) return;
+    if (!out) wireUp(); // (The page's sound may have been started by a press somewhere else on it)
+    if (!audio || !out || audio.state !== 'running') return;
     const now = audio.currentTime;
     const frequency = 440 * Math.pow(2, (note - 69) / 12);
     const level = 0.11 * velocity * (note < 40 ? 0.85 : 1);

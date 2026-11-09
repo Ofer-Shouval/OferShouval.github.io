@@ -1407,7 +1407,7 @@ a.card:hover {
 .luminin-stage { position: relative; max-width: 700px; margin: 24px auto 0; }
 /* The stage, its descriptions and its buttons fit the window's height together: the stage shrinks (keeping its shape,
    centred) when the window's too short for it */
-.luminin-stage canvas { display: block; width: auto; max-width: 100%; max-height: calc(100svh - 200px); margin: 0 auto; height: auto; background-color: rgba(11, 11, 13, 0.6); outline: none; cursor: grab; touch-action: none; }
+.luminin-stage canvas { display: block; width: auto; max-width: 100%; max-height: calc(100svh - 200px); margin: 0 auto; height: auto; background-color: rgba(11, 11, 13, 0.6); outline: none; cursor: grab; }
 .luminin-stage canvas:active { cursor: grabbing; }
 .luminin-gestures { display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; margin: 10px 0 24px; }
 .luminin-gestures button { user-select: none; -webkit-user-select: none; padding: 4px 7px; white-space: nowrap; border: 1px solid #7a7a7a; background: none; color: white; font-family: 'Inconsolata', monospace; font-size: 13px; cursor: pointer; }
@@ -1724,4 +1724,55 @@ a.card:hover {
 .page .video-more {
   text-align: center;
   margin-top: 48px;
+}
+
+
+/* Holding a finger down on a phone: no text selection, magnifier or link and image previews on the full-screen
+   sketch pages (front, art, music) or on any sketch, where holding is part of playing (see also media.js) */
+
+.sketch-page,
+.sketch-page *,
+canvas {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* The Luminin page's sketches are only tapped, never dragged, so a finger on them still scrolls the page. (p5 puts
+   touch-action: none on every canvas it draws on, right on the element, hence !important.) */
+.luminin-glow,
+.luminin-page canvas {
+  touch-action: manipulation !important;
+}
+
+
+/* The art landing page inverted: white on black (the sketch turns its own drawing inside out, see inverted in
+   art_walk.js). To go back to black on white, give its body "light" instead of "art-inverted". */
+
+body.art-inverted {
+  background-color: black;
+}
+
+.art-inverted .art-hole,
+.art-inverted .art-instructions {
+  color: white;
+}
+
+.art-inverted .art-instructions span {
+  background-color: black;
+}
+
+.art-inverted .art-hole-behind .art-hole-name {
+  text-decoration-color: rgba(255, 255, 255, 0.45);
+}
+
+.art-inverted .art-hole-behind:hover .art-hole-name,
+.art-inverted .art-hole-behind:focus-visible .art-hole-name {
+  text-decoration-color: white;
+}
+
+.art-inverted .footer.art-list-link {
+  background-color: black;
+  padding: 2px 6px;
+  opacity: 1;
 }

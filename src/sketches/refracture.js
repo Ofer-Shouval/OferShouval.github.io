@@ -212,6 +212,57 @@ function ripple(across, time) {
 
 // The room, and the screen hanging in it, with whatever's projected on it
 let lightUp = 0; // How far it's come up, from dark (0) to lit (1)
+// A blurred copy of a picture drawn onto a context, for the glows. With the canvas's own blur filter where the
+// browser has one; iPhones before iOS 18 don't (they ignore ctx.filter), so there it's shrunk down a step at a time
+// and stretched back up, smoothly, which blurs it nearly as well.
+const canvasBlurs = (() => {
+  const context = document.createElement('canvas').getContext('2d');
+  if (!('filter' in context)) return false;
+  context.filter = 'blur(2px)';
+  return context.filter === 'blur(2px)';
+})();
+const shrunk = new Map(); // The small copies, made again each frame, kept for each blur size
+function drawBlurred(context, image, radius, x, y, w, h) {
+  if (canvasBlurs) {
+    context.filter = `blur(${radius}px)`;
+    context.drawImage(image, x, y, w, h);
+    context.filter = 'none';
+    return;
+  }
+  // About how small it has to be for one of its pixels to spread as far as the blur would
+  const smallWide = Math.max(2, Math.round(w / (radius * 0.8)));
+  const smallTall = Math.max(2, Math.round((smallWide * h) / w));
+  let from = image;
+  let fromWide = image.width;
+  let fromTall = image.height;
+  let step = 0;
+  while (fromWide > smallWide) {
+    const toWide = Math.max(smallWide, Math.round(fromWide / 2));
+    const toTall = Math.max(smallTall, Math.round(fromTall / 2));
+    const key = `${radius}:${step}`;
+    let to = shrunk.get(key);
+    if (!to) shrunk.set(key, (to = document.createElement('canvas')));
+    if (to.width !== toWide || to.height !== toTall) {
+      to.width = toWide;
+      to.height = toTall;
+    }
+    const toContext = to.getContext('2d');
+    toContext.imageSmoothingEnabled = true;
+    toContext.imageSmoothingQuality = 'high';
+    toContext.clearRect(0, 0, toWide, toTall);
+    toContext.drawImage(from, 0, 0, fromWide, fromTall, 0, 0, toWide, toTall);
+    from = to;
+    fromWide = toWide;
+    fromTall = toTall;
+    step++;
+  }
+  const smoothing = context.imageSmoothingEnabled;
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = 'high';
+  context.drawImage(from, 0, 0, fromWide, fromTall, x, y, w, h);
+  context.imageSmoothingEnabled = smoothing;
+}
+
 let lastShown = null;
 function show(lit = true) {
   let { x, y, wide, tall, room } = screen;
@@ -232,12 +283,10 @@ function show(lit = true) {
   if (lit) {
     // The picture, soft, glowing, and bleeding a little into the paper around it
     s.globalCompositeOperation = 'screen';
-    s.filter = 'blur(14px)';
     s.globalAlpha = GLOW * up;
-    s.drawImage(projection, 0, 0, wide, tall);
-    s.filter = 'blur(4px)';
+    drawBlurred(s, projection, 14, 0, 0, wide, tall);
     s.globalAlpha = 0.3 * up;
-    s.drawImage(projection, 0, 0, wide, tall);
+    drawBlurred(s, projection, 4, 0, 0, wide, tall);
     // ...and the streaks themselves, laid on in their own deep colours (added as light, they'd go pale on the paper)
     s.globalCompositeOperation = 'source-over';
     s.filter = 'none'; // Sharp
@@ -245,13 +294,10 @@ function show(lit = true) {
     s.drawImage(projection, 0, 0, wide, tall);
     // ...glowing: a tight bloom and a wide one over them, added as light
     s.globalCompositeOperation = 'screen';
-    s.filter = 'blur(3px)';
     s.globalAlpha = BLOOM[0] * up;
-    s.drawImage(projection, 0, 0, wide, tall);
-    s.filter = 'blur(10px)';
+    drawBlurred(s, projection, 3, 0, 0, wide, tall);
     s.globalAlpha = BLOOM[1] * up;
-    s.drawImage(projection, 0, 0, wide, tall);
-    s.filter = 'none';
+    drawBlurred(s, projection, 10, 0, 0, wide, tall);
     s.globalAlpha = 1;
     s.globalCompositeOperation = 'source-over';
     // ...brighter in the middle, where the projector's aimed
@@ -280,10 +326,8 @@ function show(lit = true) {
   view.fillRect(0, 0, room.wide, room.tall);
   if (lit) {
     view.globalCompositeOperation = 'screen';
-    view.filter = 'blur(40px)';
     view.globalAlpha = SPILL * up;
-    view.drawImage(projection, x - wide * 0.08, y - tall * 0.08, wide * 1.16, tall * 1.16);
-    view.filter = 'none';
+    drawBlurred(view, projection, 40, x - wide * 0.08, y - tall * 0.08, wide * 1.16, tall * 1.16);
     view.globalAlpha = 1;
     view.globalCompositeOperation = 'source-over';
   }
@@ -605,7 +649,10 @@ async function startCamera() {
     run();
   } catch {
     stopCamera();
-    readout.textContent = 'the camera could not start. check that this page is allowed to use it';
+    // Browsers only offer the camera to secure (https) pages, so on a plain http address it isn't there at all
+    readout.textContent = window.isSecureContext
+      ? 'the camera could not start. check that this page is allowed to use it'
+      : 'the camera only works on a secure (https) page';
   }
   button.disabled = false;
 }

@@ -44,8 +44,14 @@ export function onSoundChange(listener) {
 // The page's AudioContext, running, if sound's wanted (and null if it isn't). Only call it from a click or press.
 export function startAudio() {
   if (!wanted) return null;
-  context ??= new AudioContext();
-  context.resume();
+  if (!context) {
+    context = new AudioContext();
+    // So iPhones play it even with the ringer switched to silent, as they do videos and music
+    try {
+      if (navigator.audioSession) navigator.audioSession.type = 'playback';
+    } catch {}
+  }
+  context.resume().catch(() => {});
   return context;
 }
 
@@ -88,7 +94,10 @@ export function soundButton() {
   return button;
 }
 
-// A press starts the page's sound, if it's wanted and hasn't started yet
-for (const type of ['pointerdown', 'keydown']) window.addEventListener(type, () => context?.state !== 'running' && startAudio(), { capture: true });
+// A press starts the page's sound, if it's wanted and hasn't started yet. iPhones only let it start as a finger
+// lifts (touchend, click), not as it touches down, so it tries on each of those.
+for (const type of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) {
+  window.addEventListener(type, () => context?.state !== 'running' && startAudio(), { capture: true });
+}
 
 document.querySelectorAll('[data-sound]').forEach((spot) => spot.append(soundButton()));

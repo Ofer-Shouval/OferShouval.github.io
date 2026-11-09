@@ -38,9 +38,9 @@ let offScreen = 100; // How far past the side of the screen a figure goes before
 let crowdGapWide = 0.21; // How far out to each side it meets the bottom of the screen, as a share of the screen's width
 let crowdGapTall = 0.25; // How far up it goes in the middle, as a share of the screen's height
 let crowdOpening = true; // Is the first frame still being drawn?
-let crowdFade = 1; // How many seconds someone takes to fade in when they arrive
-let crowdFirst = 0.005; // The share of the crowd that's there when the page opens (1 = everyone)
-let crowdFillTime = 7.5; // How many seconds until everyone's arrived
+let crowdFade = 0.6; // How many seconds someone takes to fade in when they arrive
+let crowdFirst = 0.03; // The share of the crowd that's there when the page opens (1 = everyone)
+let crowdFillTime = 3; // How many seconds until everyone's arrived
 let crowdHere = crowdFirst; // The share of the crowd that's allowed on now (see draw())
 let crowdStarted = null; // When the first frame was drawn, in seconds, since painting the crowd takes a while
 let alpha = 0.9; // How solid the figures are, near the bottom of the screen (1 = solid)
@@ -563,14 +563,22 @@ function placeHoles() {
       hole.signHeight = hole.name.offsetHeight;
     }
     hole.signBottom = hole.ground - linkHeight / 2 - postLength;
+    // Its post stands on the ground beside the hole, on the side toward the middle of the screen, so its sign
+    // stays on the screen; the name on the page moves over with it
+    let side = hole.inRow > 0 ? -1 : 1;
+    let beside = Math.round(side * (hole.width / 2 + Math.max(6, hole.width * 0.2)));
+    if (beside !== hole.beside) {
+      hole.beside = beside;
+      hole.name.style.transform = `translateX(${beside}px)`;
+    }
   }
 }
 
-// A hole's signpost, standing at the back of the hole. Its name goes on top, as the link on the page.
+// A hole's signpost, standing on the ground beside the hole (see placeHoles()). Its name goes on top, as the link on the page.
 function showSign(ctx, hole) {
   if (hole.behind) return; // It has its tag instead
-  let middle = hole.left + hole.width / 2;
-  let holeBack = hole.ground - hole.height / 2;
+  let middle = hole.left + hole.width / 2 + (hole.beside ?? 0);
+  let holeBack = hole.ground; // (Where its post meets the ground, level with the middle of the hole)
   let scale = hole.signWidth / signPen.width;
   ctx.setTransform(density, 0, 0, density, 0, 0);
   ctx.globalAlpha = 1;
@@ -788,7 +796,18 @@ function draw() {
   ctx.setTransform(density, 0, 0, density, 0, 0);
   ctx.globalAlpha = 1;
   showDusk(ctx);
+  if (inverted) {
+    // White on black: everything turned inside out at the end (the mouse's inside was turned first, so it comes back as itself)
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = 'difference';
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    ctx.globalCompositeOperation = 'source-over';
+  }
 }
+
+// White on black instead of black on white, when the page asks for it (see .art-inverted in main.css)
+const inverted = document.body.classList.contains('art-inverted');
 
 // Dusk: the ground's a light grey, a little darker and bluer further back, with the black lines on it. Only the ground's dark, so the
 // mouse and its inside stay as bright as ever. The holes are turned to match (see duskHole()), and
@@ -946,6 +965,12 @@ function showMouseInside(ctx, seconds, cellX, cellY, cellWidth, cellHeight) {
   const sourceTall = (sourceWide * cut.height) / cut.width;
   context.drawImage(video, (video.videoWidth - sourceWide) / 2, (video.videoHeight - sourceTall) / 2, sourceWide, sourceTall, 0, 0, cut.width, cut.height);
   context.filter = 'none';
+  if (inverted) {
+    // Turned inside out now, so that turning the whole picture inside out at the end brings its colours back
+    context.globalCompositeOperation = 'difference';
+    context.fillStyle = 'white';
+    context.fillRect(0, 0, cut.width, cut.height);
+  }
   context.globalCompositeOperation = 'destination-in';
   context.drawImage(mouseInside, cellX, cellY, cellWidth, cellHeight, 0, 0, cut.width, cut.height);
   context.globalCompositeOperation = 'source-over';

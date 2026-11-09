@@ -33,3 +33,11 @@ document.querySelectorAll('video[data-src]').forEach((video) => {
   // Fallback for when autoplay is blocked (e.g. iOS Low Power Mode): tap to play.
   video.addEventListener('click', () => video.play());
 });
+
+// On touch screens, holding a finger on a sketch, or anywhere on a full-screen sketch page, doesn't open the
+// browser's menu (see .sketch-page in main.css), since holding is part of playing them
+if (matchMedia('(hover: none)').matches) {
+  document.addEventListener('contextmenu', (event) => {
+    if (document.body.classList.contains('sketch-page') || event.target.closest?.('canvas')) event.preventDefault();
+  });
+}
