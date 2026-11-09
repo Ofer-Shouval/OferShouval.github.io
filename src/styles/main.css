@@ -52,7 +52,7 @@ ul {
   z-index: 2;
 }
 
-/* The menu, art, music, bio, home, in five equal tabs */
+/* Home, art, music, bio, the menu, in five equal tabs */
 .navbar ul {
   display: flex;
   margin: 0;
@@ -91,7 +91,7 @@ ul {
   background-color: rgba(100, 100, 100, 0.6);
 }
 
-/* The menu on the left: three lines, which open a list of every page below the navbar */
+/* The menu on the right: three lines, which open a list of every page below the navbar */
 .nav-menu {
   position: relative;
 }
@@ -117,7 +117,7 @@ ul {
 .nav-menu-list {
   position: absolute;
   top: 100%;
-  left: 0;
+  right: 0;
   display: flex;
   gap: 28px;
   padding: 16px 22px;
