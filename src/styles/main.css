@@ -199,15 +199,44 @@ ul {
   z-index: 2;
 }
 
+.socialBar ul {
+  display: flex;
+  margin: 0;
+  padding: 0;
+}
+
 .socialBar a {
   font-family: 'Major Mono Display', monospace;
   color: white;
-  width: 50%;
-  float: left;
+  flex: 1 1 50%;
+  min-width: 0; /* So a long address shrinks to its half instead of running into the other link */
+  box-sizing: border-box;
   display: block;
   text-align: center;
   padding: 16px 14px;
   text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+/* Room at the bottom of the page for the bar, so it doesn't cover the end of the text */
+body:has(.socialBar) {
+  padding-bottom: 64px;
+}
+
+@media screen and (max-width: 500px) {
+  .socialBar a {
+    padding: 14px 8px;
+    font-size: 12px;
+  }
+
+  /* The address is the long one, so it gets more of the bar */
+  .socialBar a:first-child {
+    flex: 1.7 1 0;
+  }
+
+  .socialBar a:last-child {
+    flex: 1 1 0;
+  }
 }
 
 .socialBar a:hover {
@@ -530,6 +559,26 @@ ul {
   inset: 0;
   width: 100%;
   height: 100%;
+}
+
+/* On a phone, dragging sideways across the sun blows it, and up and down still scrolls the page */
+.sun-opening {
+  touch-action: pan-y;
+}
+
+/* The label says what to do with a mouse, or with a finger */
+.sun-label .for-touch {
+  display: none;
+}
+
+@media (hover: none) {
+  .sun-label .for-mouse {
+    display: none;
+  }
+
+  .sun-label .for-touch {
+    display: inline;
+  }
 }
 
 /* The title, and the index under it, however many lines the title takes */
@@ -1772,6 +1821,30 @@ body.art-inverted {
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
+}
+
+/* On phones, the signs are a row along the bottom instead, above the sound button: clear of the instructions and
+   the holes, in reach of a thumb, and big enough to tap */
+@media screen and (max-width: 600px) {
+  .art-signs {
+    top: auto;
+    left: 12px;
+    right: 12px;
+    bottom: 46px;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .art-sign {
+    display: flex;
+    align-items: center;
+    min-height: 38px;
+    box-sizing: border-box;
+    padding: 0 10px;
+    font-size: 14px;
+  }
 }
 
 /* ...with the holes' own names hidden, and the name of the one pointed at at the top of the screen instead */
