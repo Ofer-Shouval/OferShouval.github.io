@@ -48,6 +48,7 @@ const horizon = 0.25; // How far down the screen the point it's heading away tow
 // The stars streaking past (as in wormhole.js)
 const starCount = 120;
 const starSpeed = 0.35; // How much of the way to the camera a star comes each second
+const starStreak = 0.12; // How long a streak each star leaves, in seconds: from where it was this long ago to where it is, so the faster they go, the longer they get
 const setOffTime = 1.5; // How many seconds after it's free its tail's let go, and its tail takes to start drifting
 const driftWide = 0.25; // How far its tail drifts from the middle of the screen, once it's free, as a share of the width
 const driftTall = 0.12; // ...and up and down, as a share of the height
@@ -111,12 +112,15 @@ const spiralTime = 6; // How many seconds it's there before it starts unwinding
 // Opening on the portals (see choosing), it grows slowly out of its middle, from a point, and stays smaller, so the
 // portals can turn round it closer in
 const choosingSpiral = 0.55; // How big it gets, compared to its usual size
-const choiceRing = 16; // How big the chosen portal opens to at once, across its radius in pixels: a ring, so it's clear the worm's going through it
-const choiceOpen = 0.5; // How many seconds it takes to open to that
+// How the chosen portal grows once the worm launches, eased out and then in: shooting out of its point, steadier in the
+// middle, then racing to cover the screen
+const choiceGrowEase = 3; // How sharp the shooting out and the racing are (1 = none, higher = sharper)
+const choiceGrowSteady = 0.3; // How much steadier it gets in the middle (0 = not at all, steady growth; 1 = it all but stops)
 const panArc = 0.22; // How far the chosen portal's arc to the middle bows out to one side, as a share of how far it goes (0 = straight)
 const panEase = 4; // How strongly the pan eases in and out (2 = gently, higher = slower to start and to settle)
 const gateSpread = 1.4; // How far the others spread out away from it as the camera moves toward it (0 = not at all)
 const gateFade = 1.6; // How many seconds the others take to fade away, spreading out, once one's chosen
+const choosingTurn = true; // While they wait to be chosen, are they on their triangle turning round the spiral (see portalTriangle, portalSpin)? Otherwise they're in a still row (see rowTop). Either way, they stop the moment one's chosen.
 const rowTop = [110, 0.15]; // How far down the screen the row of portals is: this many pixels, or this share of its height if that's further (below the navbar, with room for their names)
 const choiceRoseHold = 0.1; // How many seconds after a portal's chosen the rose starts stretching out into the worm (soon: it's still blooming, never quite formed)
 const choiceGrowTime = 4; // How many seconds it takes, once the worm's there, to grow until it covers the screen (portalTime otherwise)
@@ -308,10 +312,13 @@ export default function spiralWorm(p, container, options = {}) {
     }
     const { x: farX, y: farY } = headingFor();
     const reach = Math.max(p.width, p.height) * 0.5;
+    const speed = starSpeed * (1 + joltStars * rushing + faster);
     for (const star of stars) {
-      const fromX = farX + (star.x * reach) / star.z;
-      const fromY = farY + (star.y * reach) / star.z;
-      star.z -= starSpeed * (1 + joltStars * rushing + faster) * dt;
+      star.z -= speed * dt;
+      // Its streak, back to where it was starStreak ago (no further back than where it appeared)
+      const wasZ = Math.min(1, star.z + speed * Math.max(dt, starStreak));
+      const fromX = farX + (star.x * reach) / wasZ;
+      const fromY = farY + (star.y * reach) / wasZ;
       if (star.z < 0.05) {
         star.x = p.random(-1, 1);
         star.y = p.random(-1, 1);
@@ -505,7 +512,10 @@ export default function spiralWorm(p, container, options = {}) {
     // one stays where it is (see rowTop)
     if (options.chooseFirst !== false) {
       const place = portals.indexOf(portal);
-      const row = (n) => ({ x: (p.width * (n + 1)) / (portals.length + 1), y: Math.max(rowTop[0], p.height * rowTop[1]) });
+      const row = (n) =>
+        choosingTurn
+          ? onTriangle(portals[n], (choiceAt ?? seconds) - (choosingFrom ?? seconds)) // (Turned as far as it had when one was chosen)
+          : { x: (p.width * (n + 1)) / (portals.length + 1), y: Math.max(rowTop[0], p.height * rowTop[1]) };
       const here = row(place);
       if (choiceAt === null) return here;
       // Once one's chosen, the camera moves up and forward toward it, so they move as things do in depth: the spiral,
@@ -524,8 +534,12 @@ export default function spiralWorm(p, container, options = {}) {
       return { x: heading.x + (here.x - chosenAt.x) * spread, y: heading.y + (here.y - chosenAt.y) * spread };
     }
     // Otherwise, at the corners of a triangle turning slowly round the middle of the screen
+    return onTriangle(portal, seconds - portalsFrom);
+  }
+  // Where a portal is on their triangle round the middle of the screen, once it's been turning for `time` seconds
+  function onTriangle(portal, time) {
     const out = portalTriangle * Math.min(p.width, p.height);
-    const turned = (seconds - portalsFrom) * portalSpin;
+    const turned = time * portalSpin;
     const [x, y] = portal.towards;
     return {
       x: p.width / 2 + (x * Math.cos(turned) - y * Math.sin(turned)) * out,
@@ -554,15 +568,22 @@ export default function spiralWorm(p, container, options = {}) {
     return portalPoint;
   }
 
-  // How big the chosen one is across its radius, at `at`: opening from its point into a ring at once, and growing the
-  // whole way from the moment it's chosen until it covers the screen (when it's done, see choiceGrownAt()), by the same
-  // share each moment, so it's slow while it's small and races at the end, like something coming nearer
+  // How big the chosen one is across its radius, at `at`: a point, as it was waiting, until the worm launches forward, and
+  // then shooting out of it, steadier in the middle, then racing to cover the screen (see choiceGrowEase) (when it's done, see
+  // choiceGrownAt()), so the worm seems to shoot through it at speed
   function choiceRadius(at) {
-    const open = Math.min(1, (seconds - choiceAt) / choiceOpen);
-    const ring = p.lerp(waitingSize() / 2, choiceRing, 1 - (1 - open) ** 3);
-    const grown = Math.min(1, Math.max(0, (seconds - choiceAt) / Math.max(0.1, choiceGrownAt() - choiceAt)));
+    const point = waitingSize() / 2;
+    const eased = choiceGrowth();
     const covers = Math.hypot(Math.max(at.x, p.width - at.x), Math.max(at.y, p.height - at.y));
-    return ring * Math.pow(Math.max(1, covers / ring), grown);
+    return point * Math.pow(Math.max(1, covers / point), eased); // (By shares, so it grows faster as it gets bigger, like something coming nearer)
+  }
+  // How far through its growth the chosen one is, from the worm's launch until it covers the screen, eased out and then
+  // in: fast at both ends and steadier in the middle (see choiceGrowEase, choiceGrowSteady). The worm's drawn into it
+  // the same way, from when it starts drawing it in (`from`).
+  function choiceGrowth(from = unwindStart + unwindTime + setOffTime) {
+    const grown = Math.min(1, Math.max(0, (seconds - from) / Math.max(0.1, choiceGrownAt() - from)));
+    const outIn = grown < 0.5 ? 0.5 * (1 - (1 - 2 * grown) ** choiceGrowEase) : 0.5 + 0.5 * (2 * grown - 1) ** choiceGrowEase;
+    return p.lerp(grown, outIn, choiceGrowSteady);
   }
   // When the chosen one's covered the screen: choiceGrowTime after it's opened round the worm, after it's let go
   function choiceGrownAt() {
@@ -955,7 +976,7 @@ export default function spiralWorm(p, container, options = {}) {
         // The worm's drawn in toward the chosen one's middle as it grows: head first, aiming straight at it, and the
         // rest following, until all of it's going in
         if (isChosen) {
-          const drawn = exiting * exiting * (3 - 2 * exiting);
+          const drawn = choice ? choiceGrowth(chosen.at) : exiting * exiting * (3 - 2 * exiting); // (Chosen first, in step with its growth)
           for (const point of points) {
             const pulled = drawn * p.lerp(point.along, 1, drawn * drawn) * portalPull;
             point.x += (x - point.x) * pulled;
