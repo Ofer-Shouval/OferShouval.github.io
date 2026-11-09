@@ -116,7 +116,6 @@ const choiceOpen = 0.5; // How many seconds it takes to open to that
 const panArc = 0.22; // How far the chosen portal's arc to the middle bows out to one side, as a share of how far it goes (0 = straight)
 const panEase = 4; // How strongly the pan eases in and out (2 = gently, higher = slower to start and to settle)
 const gateSpread = 1.4; // How far the others spread out away from it as the camera moves toward it (0 = not at all)
-const gateNearer = 0.4; // How much bigger the chosen one gets as the camera moves toward it (0 = not at all)
 const gateFade = 1.6; // How many seconds the others take to fade away, spreading out, once one's chosen
 const rowTop = [110, 0.15]; // How far down the screen the row of portals is: this many pixels, or this share of its height if that's further (below the navbar, with room for their names)
 const choiceRoseHold = 0.1; // How many seconds after a portal's chosen the rose starts stretching out into the worm (soon: it's still blooming, never quite formed)
@@ -555,10 +554,19 @@ export default function spiralWorm(p, container, options = {}) {
     return portalPoint;
   }
 
-  // How big the chosen one is, waiting for the worm, across its radius: opening from its point into a ring, and staying so
-  function choiceRadius() {
+  // How big the chosen one is across its radius, at `at`: opening from its point into a ring at once, and growing the
+  // whole way from the moment it's chosen until it covers the screen (when it's done, see choiceGrownAt()), by the same
+  // share each moment, so it's slow while it's small and races at the end, like something coming nearer
+  function choiceRadius(at) {
     const open = Math.min(1, (seconds - choiceAt) / choiceOpen);
-    return p.lerp(waitingSize() / 2, choiceRing, 1 - (1 - open) ** 3) * (1 + gateNearer * cameraMove); // (Bigger as it's neared)
+    const ring = p.lerp(waitingSize() / 2, choiceRing, 1 - (1 - open) ** 3);
+    const grown = Math.min(1, Math.max(0, (seconds - choiceAt) / Math.max(0.1, choiceGrownAt() - choiceAt)));
+    const covers = Math.hypot(Math.max(at.x, p.width - at.x), Math.max(at.y, p.height - at.y));
+    return ring * Math.pow(Math.max(1, covers / ring), grown);
+  }
+  // When the chosen one's covered the screen: choiceGrowTime after it's opened round the worm, after it's let go
+  function choiceGrownAt() {
+    return unwindStart + unwindTime + setOffTime + portalAfter + choiceGrowTime;
   }
 
   // The portal the mouse is over, while they're waiting: on its point, or its name on top of it
@@ -609,7 +617,7 @@ export default function spiralWorm(p, container, options = {}) {
       context.globalAlpha = shown;
       if (portal === choice) {
         // Chosen: it stops, and opens at once from its point into a ring, a hole for the worm to go through
-        radius = choiceRadius();
+        radius = choiceRadius(portal.at);
         fillPortal(context, x, y, radius, portal.inside); // (Dark inside, or static for bio, as it is once it opens)
         context.beginPath();
         context.arc(x, y, radius, 0, Math.PI * 2);
@@ -668,9 +676,8 @@ export default function spiralWorm(p, container, options = {}) {
     // Chosen before it played: only that one opens, from where it's been waiting, and it starts growing at once,
     // drawing the worm in (it's already showing, so it doesn't fade in again)
     if (portalsUp && choice && !chosen) chosen = { portal: choice, at: seconds };
-    if (choice) portalsOpen = 1;
     const opened = Math.min(1, Math.max(0, (sinceLetGo - portalAfter) / portalOpen));
-    portalsOpen = opened * opened * (3 - 2 * opened);
+    portalsOpen = choice ? 1 : opened * opened * (3 - 2 * opened); // (Chosen first, it's already showing: it mustn't fade out and in again as the worm flies at it)
     if (!portalsUp) portalsFrom = seconds;
     const exiting = chosen ? Math.min(1, (seconds - chosen.at) / (choice ? choiceGrowTime : portalTime)) : 0; // How far the chosen one's grown
     // The ground, with any lightning: the spiral's, or the flashes that come with the worm snapping back
@@ -871,6 +878,8 @@ export default function spiralWorm(p, container, options = {}) {
     // top of it, waiting. Once one's chosen, it grows from its point into a thin ring, the others fade away, and it drifts
     // to the middle of the screen, growing faster and faster until it covers the screen, drawing the worm in. They go
     // behind the worm, so it goes in head first.
+    // (While they're waiting, they're behind the spiral and the worm too, so the chosen one doesn't cover the worm as it grows)
+    if (waiting()) drawChoosing();
     if (portalsUp) {
       const over = chosen ? null : portalAtMouse();
       p.canvas.style.cursor = over ? 'pointer' : '';
@@ -881,19 +890,23 @@ export default function spiralWorm(p, container, options = {}) {
         const opening = openingAt(portal);
         portal.at ??= { ...opening };
         if (!chosen) Object.assign(portal.at, opening);
-        let radius = isChosen && choice ? choiceRadius() : waitingSize() / 2; // (Chosen first, it grows on from its ring)
+        let radius = waitingSize() / 2;
         if (isChosen) {
           const nearer = exiting * exiting * (3 - 2 * exiting);
           // (Chosen first, it opens where it's been waiting, with the worm already heading into it)
+          // ...keeping to it exactly, on the camera's arc, as it did while waiting, so it doesn't lag and catch up as it's handed over
           const wanted = choice ? opening : { x: p.lerp(opening.x, p.width / 2, nearer), y: p.lerp(opening.y, p.height / 2, nearer) };
-          const keep = 1 - Math.exp(-dt / portalFollow);
+          const keep = choice ? 1 : 1 - Math.exp(-dt / portalFollow);
           portal.at.x += (wanted.x - portal.at.x) * keep;
           portal.at.y += (wanted.y - portal.at.y) * keep;
-          const covers = Math.hypot(Math.max(portal.at.x, p.width - portal.at.x), Math.max(portal.at.y, p.height - portal.at.y));
-          const from = Math.max(radius, 1);
-          // Growing by the same share each moment, so it's slow while it's small and races at the end, like something
-          // coming nearer
-          radius = from * Math.pow(covers / from, exiting);
+          if (choice) radius = choiceRadius(portal.at); // (Chosen first, it's been growing since it was chosen, and grows on the same way)
+          else {
+            const covers = Math.hypot(Math.max(portal.at.x, p.width - portal.at.x), Math.max(portal.at.y, p.height - portal.at.y));
+            const from = Math.max(radius, 1);
+            // Growing by the same share each moment, so it's slow while it's small and races at the end, like something
+            // coming nearer
+            radius = from * Math.pow(covers / from, exiting);
+          }
           if (fillsAt === null && radius * 2 >= Math.min(p.width, p.height)) fillsAt = seconds;
         }
         const { x, y } = portal.at;
@@ -1016,8 +1029,6 @@ export default function spiralWorm(p, container, options = {}) {
     }
     context.restore();
     }
-
-    if (waiting()) drawChoosing();
 
     // The end: once the worm's gone into the chosen portal and it's filled, it's on to its page (or once it's covered
     // the screen, whatever happens)
