@@ -1,6 +1,6 @@
 # Site rebuild — to do
 
-Updated 8 November 2026 (save point 65). Placeholders on the site show as dashed "TODO" boxes in `npm run dev`.
+Updated 9 November 2026 (save point 77). Placeholders on the site show as dashed "TODO" boxes in `npm run dev`.
 
 ## Content to gather and write
 
@@ -20,7 +20,9 @@ Updated 8 November 2026 (save point 65). Placeholders on the site show as dashed
 - [ ] Close-ups: check the song titles and write a line on each song's mood (one is called "red": is that its real title?)
 
 ### Art
-- [ ] Years for Sun Deity, the visualizers and the animation work (their cards have none)
+- [x] Point in Passing is now a section on the film/animation page (`art/film-animation.html#point-in-passing`)
+- [ ] **Old Point in Passing and Animation pages** (`art/point-in-passing.html`, `art/animation.html`): nothing links to them. Point in Passing's content is on the film/animation page now, and the animation page is an older copy of that page. Archive them both?
+- [x] The list of everything (`art/all.html`) is archived in `archive/art-list/`, with its links taken out. (Its cards were the only place that needed years for Sun Deity, the visualizers and the animation work.)
 
 ### Bio
 - [ ] Update the text for the last 5 years (it still reads as written in 2021)
@@ -35,7 +37,7 @@ Updated 8 November 2026 (save point 65). Placeholders on the site show as dashed
 - [ ] **Old live page** (`music/live.html`): nothing links to it now. Delete it, or keep it for later?
 - [ ] **Old recordings page**: it forwards to Unfamiliar State. Show the list again once there's a second release
 - [ ] **Album player on iPhones**: test it, including whether it keeps playing with the screen locked
-- [ ] **Art landing page**: you said it would need "a little work"
+- [ ] **Art landing page**: anything left to do on it? Done so far: the mouse's Luminin-coloured trail, the signs in a column at the top right with the name of the hole pointed at shown at the top middle
 - [ ] Clear out the leftover files in `public/media`: `lumininBabys1.mp4` (empty) and the two `.sb-…` files (one is about 30 MB)
 - [ ] Favicon and link-preview tags, so shared links show an image and a description
 
