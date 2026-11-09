@@ -13,7 +13,7 @@ npm run preview  # serve the dist/ build locally
 
 - `index.html` — home: the wormhole (old sketches turning into each other, in `src/wormhole/wormhole.js`), ending in three portals to art, music and bio (`src/wormhole/spiral-worm.js`)
 - `art/` — one page per piece; `art/index.html` is the walking landing page; `art/sketchbook/` has the sketch test page, and its index forwards to the front page
-- `music/` — `index.html` is the full-screen "Wake" sketch, with gates to `live.html`, `recordings.html` (releases grid), `videos.html` and `info.html`; `release-template.html` to copy for each release
+- `music/` — `index.html` is the full-screen "Wake" sketch, with gates to `live.html`, `recordings.html` (releases grid), `videos.html` and `info.html`; `archive/old-pages/release-template.html` to copy for each release
 - `teaching/` — courses and student work (left out of the navbar and the build for now; still runs in `npm run dev`)
 - `bio/` — bio
 - `projects.html`, `bio.html` — redirects from the old URLs
