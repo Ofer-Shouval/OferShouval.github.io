@@ -418,13 +418,53 @@ function setupHoles() {
   // How big their signs need to be depends on their font, so measure again once that's loaded
   document.fonts.ready.then(() => holes.forEach((hole) => { hole.fontSize = null; }));
   holes.forEach((hole) => {
-    hole.link.addEventListener('click', (event) => {
-      // Opening it in a new tab, or asking for less motion, just follows the link
-      if (event.metaKey || event.ctrlKey || event.shiftKey || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-      event.preventDefault();
-      sendMouseToHole(hole);
-    });
+    // A pointer to it, at the edge of the screen, for when it's off the screen (see pointTo())
+    if (!hole.behind) {
+      hole.pointer = document.createElement('a');
+      hole.pointer.className = 'art-pointer';
+      hole.pointer.href = hole.link.href;
+      hole.pointer.hidden = true;
+      hole.link.after(hole.pointer);
+    }
+    for (const link of [hole.link, hole.pointer].filter(Boolean)) {
+      link.addEventListener('click', (event) => {
+        // Opening it in a new tab, or asking for less motion, just follows the link
+        if (event.metaKey || event.ctrlKey || event.shiftKey || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        event.preventDefault();
+        sendMouseToHole(hole);
+      });
+    }
   });
+}
+
+// When a hole's sign is off the screen, a pointer to it at that edge: its name, with an arrow the way it is
+const pointerRoom = { top: 64, side: 8, bottom: 40 }; // How far in from the edges they sit, in pixels (the top clears the navbar)
+function pointTo(hole) {
+  if (!hole.pointer) return;
+  const middle = hole.left + hole.width / 2 + (hole.beside ?? 0);
+  const signTop = hole.signBottom - (hole.signHeight ?? 0);
+  let way = null;
+  // (Once its middle's past the edge, so it's at least half gone)
+  if (middle < 0) way = 'left';
+  else if (middle > width) way = 'right';
+  else if (hole.ground > height) way = 'down';
+  else if (signTop < pointerRoom.top - 20) way = 'up';
+  const pointer = hole.pointer;
+  if (!way) {
+    if (!pointer.hidden) pointer.hidden = true;
+    return;
+  }
+  const name = hole.name.textContent;
+  const text = { left: `← ${name}`, right: `${name} →`, up: `↑ ${name}`, down: `↓ ${name}` }[way];
+  if (pointer.textContent !== text) pointer.textContent = text;
+  pointer.hidden = false;
+  pointer.dataset.way = way;
+  const y = constrain(hole.signBottom - (hole.signHeight ?? 0) / 2, pointerRoom.top + 10, height - pointerRoom.bottom - 10);
+  const x = constrain(middle, 60, width - 60);
+  pointer.style.left = way === 'left' ? `${pointerRoom.side}px` : way === 'right' ? 'auto' : `${x}px`;
+  pointer.style.right = way === 'right' ? `${pointerRoom.side}px` : 'auto';
+  pointer.style.top = way === 'up' ? `${pointerRoom.top}px` : way === 'down' ? 'auto' : `${y}px`;
+  pointer.style.bottom = way === 'down' ? `${pointerRoom.bottom}px` : 'auto';
 }
 
 // Scatter the holes for the size of the screen, keeping their signs apart and on the screen. It's a new
@@ -577,6 +617,7 @@ function placeHoles() {
       hole.signHeight = hole.name.offsetHeight;
     }
     hole.signBottom = hole.ground - linkHeight / 2 - postLength;
+    pointTo(hole);
     // Its post stands on the ground beside the hole, on the side toward the middle of the screen, so its sign
     // stays on the screen; the name on the page moves over with it
     let side = hole.inRow > 0 ? -1 : 1;
@@ -952,7 +993,9 @@ const mouseEdge = 0.5; // ...and without it, how thick a hairline goes round it 
 const trailOn = true;
 const trailStep = 6; // How far it walks between the line's points, on the map
 const trailPiece = 5; // How many of the line's points are painted at a time
-const trailWeight = 0.3; // How wide the brush is, as a share of its own width
+const trailWeight = 0.4; // How wide the brush is, as a share of its own width
+const trailBristles = 9; // How many lines it's painted in, side by side, each following the line behind it (like a brush's bristles)
+const trailBristleWeight = 0.22; // How thick each bristle's line is, as a share of the brush's width
 const trailFlat = 0.42; // How squashed the paint looks lying on the ground, seen at an angle (sets the map's proportions)
 const trailVivid = 1.6; // How much its colours are pushed up from the video's
 const trailBlend = 0.35; // How far the paint's colour moves toward what it's showing now, each piece (smaller = smoother)
@@ -1098,6 +1141,7 @@ function leaveTrail(cut) {
 }
 
 let trailPaintRGB = null;
+let trailBristleSet = null; // The brush's bristles, the same all the way along (see paintTrail())
 function paintTrail() {
   const points = trailLine;
   trailPaintRGB = trailPaintRGB ? trailPaintRGB.map((c, n) => c + (trailRGB[n] - c) * trailBlend) : trailRGB;
@@ -1108,7 +1152,26 @@ function paintTrail() {
   const ys = points.map(([, y]) => y);
   const middle = [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
   const size = trailPainter.size;
-  const picture = trailPainter.paint(points.map(([x, y]) => [x - middle[0] + size / 2, y - middle[1] + size / 2]), colour, brushWide);
+  // The bristles: lines side by side across the brush, each following the line at its own distance to one side, so
+  // the paint's streaks run along the trail, stretching out behind it
+  trailBristleSet ??= Array.from({ length: trailBristles }, (_, n) => ({
+    across: (n / (trailBristles - 1) - 0.5) + (Math.random() - 0.5) * 0.08, // Where it is across the brush, from -0.5 to 0.5
+    weight: trailBristleWeight * (0.6 + Math.random() * 0.8),
+    shade: (Math.random() - 0.5) * 30, // A little lighter or darker than the rest
+  }));
+  const local = points.map(([x, y]) => [x - middle[0] + size / 2, y - middle[1] + size / 2]);
+  const sideways = local.map((point, i) => {
+    const before = local[Math.max(0, i - 1)];
+    const after = local[Math.min(local.length - 1, i + 1)];
+    const length = Math.hypot(after[0] - before[0], after[1] - before[1]) || 1;
+    return [-(after[1] - before[1]) / length, (after[0] - before[0]) / length];
+  });
+  const lines = trailBristleSet.map(({ across, weight, shade }) => ({
+    points: local.map(([x, y], i) => [x + sideways[i][0] * across * brushWide, y + sideways[i][1] * across * brushWide]),
+    colour: `rgb(${trailPaintRGB.map((c) => Math.round(Math.max(0, Math.min(255, c + shade)))).join(', ')})`,
+    weight: weight * brushWide,
+  }));
+  const picture = trailPainter.paint(lines);
   const left = Math.round(middle[0] - size / 2);
   const top = Math.round(middle[1] - size / 2);
   trailMap.context.drawImage(picture, left, top);

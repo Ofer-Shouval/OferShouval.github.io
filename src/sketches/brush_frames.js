@@ -235,7 +235,7 @@ export function paintMouse(name, weight, resolution) {
 // A paintbrush for the mouse's trail (see art_walk.js): soft, see-through paint laid along a line, a short piece at a
 // time. Each piece is painted on a small canvas of the brush's own, starting from clear, and handed back to be added
 // to the trail's map of the ground, so nothing is painted twice. (p5.brush only paints in WebGL, on its own canvas.)
-export function trailBrush(size = 512, { opacity = 26, scatter = 2, spacing = 0.25 } = {}) {
+export function trailBrush(size = 512, { opacity = 45, scatter = 2, spacing = 0.25 } = {}) {
   brush.add('trail paint', {
     type: 'marker',
     weight: 1,
@@ -251,13 +251,16 @@ export function trailBrush(size = 512, { opacity = 26, scatter = 2, spacing = 0.
   let gl = canvas.getContext('webgl2');
   return {
     size,
-    // Paint along points (in the canvas's own pixels, from its top left corner) and give back the canvas
-    paint(points, colour, weight) {
+    // Paint lines, each { points, colour, weight } with its points in the canvas's own pixels from its top left
+    // corner, and give back the canvas
+    paint(lines) {
       brush.clear();
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
-      brush.set('trail paint', colour, weight);
-      brush.spline(points.map(([x, y]) => [x - size / 2, y - size / 2]), 0.5); // (The brush measures from the middle)
+      for (let { points, colour, weight } of lines) {
+        brush.set('trail paint', colour, weight);
+        brush.spline(points.map(([x, y]) => [x - size / 2, y - size / 2]), 0.5); // (The brush measures from the middle)
+      }
       brush.render();
       return canvas;
     },
