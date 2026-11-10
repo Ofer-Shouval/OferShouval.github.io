@@ -73,11 +73,19 @@ let holeWidth = 50; // How wide they are, in the frames' own pixels, which is ab
 let holeLinkSize = [32, 20]; // The smallest their links can be, in pixels, so that they can still be clicked from far away
 let holeShape = 0.42; // How tall they look, compared to how wide, seen from above
 let holePen = { width: 90, weight: 3 }; // How they're drawn, before they're stretched to fit
+let holeLitEdge = 1; // How thick the black edge round a hole is while it's lit with the Luminin's colours (see showHole), in pixels
 let holeNameSize = [15, 24]; // The smallest and biggest their names can be, in pixels
 let signPen = { width: 160, height: 44, post: 80, weight: 2.6 }; // How the signposts are drawn, before they're stretched to fit
 let signPost = 110; // How tall a signpost's post is, in the frames' own pixels
 let signPostPixels = [16, 70]; // ...but no shorter or taller than this, in pixels, so that the sign's still readable from far away
-let signsAtSide = true; // Are the holes' signs in a column at the side of the screen, where clicking one sends the mouse to its hole, with the name of whichever hole, or sign, is pointed at shown at the top of the screen? Otherwise each has a signpost beside its hole.
+// With the signposts beside their holes, how they look: 'line' (its name in a plain box with a thin border, like the
+// pointers at the edge of the screen, right above its hole, with an arrow down to it), 'trail' (a wooden plank with a pointed end aiming at its hole, on
+// a wooden post beside it), 'board' (the name on a hand-drawn board, on a post beside its hole) or 'tag' (just the
+// name, right above its hole, on a thin line down to it)
+let signStyle = 'line';
+let signFade = { power: 0.6, least: 1 }; // How quickly the signs fade toward the horizon (like distanceFade, bigger = faster), and the faintest they get (1 = they never fade: solid at any distance)
+let signBoards = signStyle === 'board';
+let signsAtSide = false; // Are the holes' signs in a column at the side of the screen, where clicking one sends the mouse to its hole, with the name of whichever hole, or sign, is pointed at shown at the top of the screen? Otherwise each has a signpost beside its hole.
 let holeTripTime = 3; // How many seconds the mouse tries to take to run to a hole that's been clicked
 let holeTripHurry = 3; // ...but it won't run more than this many times as fast as usual
 let holeFallTime = 0.3; // How many seconds it takes to drop into the hole, before the next page
@@ -244,6 +252,12 @@ function setupMouseControls() {
     event.preventDefault();
   });
   window.addEventListener('keyup', (event) => keysHeld.delete(event.code));
+  // Back on this page as it was left (the browser's back button), the mouse that went down a hole is back
+  window.addEventListener('pageshow', (event) => {
+    if (!event.persisted || !mouse?.gone) return;
+    mouse.gone = false;
+    holes.forEach((hole) => (hole.chosen = false));
+  });
   window.addEventListener('blur', () => keysHeld.clear());
   // A click or tap walks it there, and holding and dragging keeps it walking toward wherever the pointer is,
   // which on a phone is the only way to steer it as it goes
@@ -262,6 +276,30 @@ function setupMouseControls() {
   for (const type of ['pointerup', 'pointercancel']) {
     window.addEventListener(type, (event) => event.pointerId === steering && (steering = null));
   }
+  // Two fingers swiped up on a trackpad (or a mouse's wheel) lifts the camera back up toward where it was when the page
+  // opened (see swipeLift). Not a pinch, which comes as a wheel with ctrl held.
+  window.addEventListener(
+    'wheel',
+    (event) => {
+      if (event.ctrlKey || event.target?.closest?.('nav, .navbar, .menu')) return;
+      event.preventDefault();
+      const pixels = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaMode === 2 ? event.deltaY * height : event.deltaY;
+      swipeLift.goal = constrain(swipeLift.goal + (pixels * swipeLift.perPixel) / height, 0, 1);
+      swipeLift.swipedAt = millis();
+    },
+    { passive: false },
+  );
+}
+
+// Swiping up lifts the camera back up from however far it's dipped (see pushCamera) toward the height it was at when
+// the page opened (1 = all the way there, never higher), easing there (`ease`, in seconds). Once the swiping's stopped
+// for `hold` seconds, it eases slowly back down to where it would be (`settle`, in seconds). `perPixel` is how far a
+// swipe lifts it, compared to how far the page would scroll.
+let swipeLift = { perPixel: 2, ease: 0.6, hold: 1.2, settle: 3, goal: 0, now: 0, swipedAt: -Infinity };
+function liftCamera() {
+  let seconds = Math.min(deltaTime / 1000, 0.1);
+  if (millis() - swipeLift.swipedAt > swipeLift.hold * 1000) swipeLift.goal *= Math.exp(-seconds / swipeLift.settle);
+  swipeLift.now += (swipeLift.goal - swipeLift.now) * (1 - Math.exp(-seconds / swipeLift.ease));
 }
 
 // How far sideways the camera can go, which is as far as the furthest hole
@@ -288,7 +326,11 @@ function moveMouse() {
     mouse.falling += seconds / holeFallTime;
     if (mouse.falling >= 1) {
       let { href } = mouse.fallingInto.link;
-      mouse.falling = null; // (So that it's back if the browser's back button returns to this page as it was)
+      // Gone down the hole: it stays gone (and its hole and sign stay lit) until the next page takes over, instead of
+      // popping back up full size for the frames in between. Its fall's over, so that if the browser's back button
+      // returns to this page as it was, it's back (see the pageshow in setupMouseControls()).
+      mouse.falling = null;
+      mouse.gone = true;
       window.location.href = href;
     }
     followMouse();
@@ -419,6 +461,7 @@ function setupHoles() {
   // How big their signs need to be depends on their font, so measure again once that's loaded
   document.fonts.ready.then(() => holes.forEach((hole) => { hole.fontSize = null; }));
   let column = null;
+  if (!signsAtSide && !signBoards) document.body.classList.add(`art-sign-${signStyle}s`); // (See signStyle)
   if (signsAtSide) {
     document.body.classList.add('art-signs-at-side');
     column = document.createElement('nav');
@@ -452,6 +495,13 @@ function setupHoles() {
       hole.pointer.href = hole.link.href;
       hole.pointer.hidden = true;
       hole.link.after(hole.pointer);
+    }
+    // Pointing at its sign (or the hole, or its pointer) fills the hole with the Luminin's colours, as the mouse is
+    // filled (see showHole)
+    for (const link of [hole.link, hole.pointer, hole.sideSign].filter(Boolean)) {
+      for (const [type, on] of [['pointerenter', true], ['pointerleave', false], ['focus', true], ['blur', false]]) {
+        link.addEventListener(type, () => (hole.pointedAt = on));
+      }
     }
     for (const link of [hole.link, hole.pointer, hole.sideSign].filter(Boolean)) {
       link.addEventListener('click', (event) => {
@@ -562,6 +612,7 @@ function standHoles() {
 // gets there (see moveMouse()).
 function sendMouseToHole(hole) {
   if (mouse.falling !== null) return;
+  holes.forEach((other) => (other.chosen = other === hole)); // Its hole stays lit while the mouse runs to it (see showHole)
   let stops = tripStopsTo(hole);
   // How many steps it is, stop by stop
   let perStep = mouseStride * mouseScale;
@@ -653,14 +704,21 @@ function placeHoles() {
       hole.signWidth = hole.name.offsetWidth;
       hole.signHeight = hole.name.offsetHeight;
     }
+    // Fading with distance like the crowd, though more quickly, and never so much it can't be read
+    let fade = Math.max(signFade.least, Math.min(1, pow(hole.width / holeWidth / bottomSize(), signFade.power)));
+    if (Math.abs(fade - (hole.fade ?? -1)) > 0.01) {
+      hole.fade = fade;
+      hole.name.style.opacity = fade.toFixed(2); // (All of it, so the crowd shows through the far ones)
+    }
     hole.signBottom = hole.ground - linkHeight / 2 - postLength;
     pointTo(hole);
     // Its post stands on the ground beside the hole, on the side toward the middle of the screen, so its sign
     // stays on the screen; the name on the page moves over with it
     let side = hole.inRow > 0 ? -1 : 1;
-    let beside = signsAtSide ? 0 : Math.round(side * (hole.width / 2 + Math.max(6, hole.width * 0.2))); // (With the signs at the side, its name's right above it)
+    let beside = signsAtSide || signStyle === 'tag' || signStyle === 'line' ? 0 : Math.round(side * (hole.width / 2 + Math.max(6, hole.width * 0.2))); // (With the signs at the side, its name's right above it)
     if (beside !== hole.beside) {
       hole.beside = beside;
+      hole.name.dataset.point = side > 0 ? 'left' : 'right'; // A trail sign's point aims back at its hole
       hole.name.style.transform = `translateX(${beside}px)`;
     }
   }
@@ -670,11 +728,49 @@ function placeHoles() {
 function showSign(ctx, hole) {
   if (hole.behind || signsAtSide) return; // It has its tag instead, or its sign's at the side
   let middle = hole.left + hole.width / 2 + (hole.beside ?? 0);
-  let holeBack = hole.ground; // (Where its post meets the ground, level with the middle of the hole)
+  // Where its post meets the ground: level with the middle of the hole, beside it, or a tag's line at the hole's back edge
+  let holeBack = signStyle === 'tag' || signStyle === 'line' ? hole.ground - hole.height / 2 : hole.ground;
   let scale = hole.signWidth / signPen.width;
   ctx.setTransform(density, 0, 0, density, 0, 0);
-  ctx.globalAlpha = 1;
+  ctx.globalAlpha = hole.fade ?? 1; // (Faded with its sign, see standHoles)
   let postHeight = holeBack - hole.signBottom;
+  if (signStyle === 'line') {
+    // A thin line down from its plank, ending in an arrowhead just above the hole
+    let tip = holeBack - 3;
+    let head = Math.max(5, hole.fontSize * 0.4);
+    if (tip - hole.signBottom < head * 1.5) return; // (No room for it)
+    ctx.strokeStyle = document.body.classList.contains('art-inverted') ? 'white' : 'black';
+    ctx.lineWidth = 1; // (As thin as its box's border)
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(middle, hole.signBottom);
+    ctx.lineTo(middle, tip);
+    ctx.moveTo(middle - head * 0.6, tip - head);
+    ctx.lineTo(middle, tip);
+    ctx.lineTo(middle + head * 0.6, tip - head);
+    ctx.stroke();
+    return;
+  }
+  if (signStyle === 'trail') {
+    // A wooden post, from under its plank down into the ground, a little darker where it's in the earth
+    let thick = Math.max(3, hole.fontSize * 0.32);
+    ctx.fillStyle = '#5b3d22';
+    ctx.fillRect(middle - thick / 2, hole.signBottom, thick, postHeight);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+    ctx.fillRect(middle - thick / 2, hole.signBottom, thick * 0.3, postHeight); // (Its shaded side)
+    return;
+  }
+  if (!signBoards) {
+    // A tag: a thin line from just under its name down to the hole
+    ctx.strokeStyle = document.body.classList.contains('art-inverted') ? 'white' : 'black';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(middle, hole.signBottom);
+    ctx.lineTo(middle, holeBack);
+    ctx.stroke();
+    return;
+  }
   let postMargin = (signMargin * postHeight) / signPen.post;
   ctx.drawImage(duskBoard(hole.sign.post, (hole.signBottom + holeBack) / 2), middle - signMargin * scale, hole.signBottom - postMargin, signMargin * 2 * scale, postHeight + postMargin * 2);
   let marginX = signMargin * scale;
@@ -686,16 +782,114 @@ function showSign(ctx, hole) {
   );
 }
 
-// A hole, with its middle on the ground where it is. Its picture's white, and a "difference" blend makes
-// it black on the white ground, while anyone walking over it comes out white.
+// A hole, with its middle on the ground where it is, drawn on the ground before anyone's drawn, so everyone walks in
+// front of it: black, or while it's lit, the Luminin's colours with a thin black edge
 function showHole(ctx, hole) {
   if (hole.behind) return; // Off the screen
   let margin = (holeMargin * hole.width) / holePen.width;
   ctx.setTransform(density, 0, 0, density, 0, 0);
   ctx.globalAlpha = alpha * Math.min(1, pow(hole.width / holeWidth / bottomSize(), distanceFade)); // The same fade as the crowd's
-  ctx.globalCompositeOperation = 'difference';
-  ctx.drawImage(duskHole(hole.picture, hole.ground), hole.left - margin, hole.ground - hole.height / 2 - margin, hole.width + margin * 2, hole.height + margin * 2);
-  ctx.globalCompositeOperation = 'source-over';
+  let [x, y, w, h] = [hole.left - margin, hole.ground - hole.height / 2 - margin, hole.width + margin * 2, hole.height + margin * 2];
+  // Once the mouse has given up on it (it's been steered somewhere else), it isn't the chosen one any more
+  if (hole.chosen && mouseTarget?.hole !== hole && mouse.falling === null && !mouse.gone) hole.chosen = false;
+  lightSign(hole);
+  let lit = (hole.pointedAt || hole.chosen) && litHole(hole, w, h);
+  if (lit) {
+    // A thin black edge round it: the hole drawn black as usual, a little bigger, with the colours over it
+    let edge = holeLitEdge;
+    drawHoleShape(ctx, hole, x - edge, y - edge, w + edge * 2, h + edge * 2);
+    ctx.drawImage(lit, x, y, w, h);
+    return;
+  }
+  drawHoleShape(ctx, hole, x, y, w, h);
+}
+
+// A hole's shape, dark against the ground under it: black on the plain white ground, or with the dusk, the ground's
+// colour turned inside out (a 'difference' blend, which works since it's drawn before anything's on the ground but the
+// trail)
+const blackHoles = new Map(); // Each hole's picture in black, made once
+function drawHoleShape(ctx, hole, x, y, w, h) {
+  if (duskOn) {
+    ctx.globalCompositeOperation = 'difference';
+    ctx.drawImage(duskHole(hole.picture, hole.ground), x, y, w, h);
+    ctx.globalCompositeOperation = 'source-over';
+    return;
+  }
+  let black = blackHoles.get(hole.picture);
+  if (!black) {
+    black = document.createElement('canvas');
+    black.width = hole.picture.width;
+    black.height = hole.picture.height;
+    const context = black.getContext('2d');
+    context.drawImage(hole.picture, 0, 0);
+    context.globalCompositeOperation = 'source-in';
+    context.fillStyle = 'black';
+    context.fillRect(0, 0, black.width, black.height);
+    blackHoles.set(hole.picture, black);
+  }
+  ctx.drawImage(black, x, y, w, h);
+}
+
+// The Luminin's colours, as the mouse is filled with (see showMouseInside()): the video, brightened, its colours
+// pushed up and its hues turning, over the whole of a canvas
+function lumininColours(context, video, wide, tall, hueOffset = 0) {
+  context.globalCompositeOperation = 'copy';
+  context.filter = `brightness(${mouseInsideBright}) saturate(${mouseInsideSaturate}) hue-rotate(${((millis() / 1000) * mouseInsideHueTurn + hueOffset) % 360}deg)`;
+  const sourceWide = Math.min(video.videoWidth, video.videoWidth * mouseInsideZoom * Math.max(1, wide / tall / 2));
+  const sourceTall = Math.min(video.videoHeight, (sourceWide * tall) / wide);
+  context.drawImage(video, (video.videoWidth - sourceWide) / 2, (video.videoHeight - sourceTall) / 2, sourceWide, sourceTall, 0, 0, wide, tall);
+  context.filter = 'none';
+  context.globalCompositeOperation = 'source-over';
+}
+
+// A hole's sign, filled with the Luminin's colours while it's pointed at or picked, like its hole (see litHole), but
+// signHueOffset round the colour wheel from it: a canvas behind its name, inside its border (see .art-hole-name.lit)
+const signHueOffset = 120; // In degrees (120 = a third of the way round)
+function lightSign(hole) {
+  const video = lumininVideo;
+  const on = !!(hole.pointedAt || hole.chosen) && video && video.readyState >= 2 && video.videoWidth > 0;
+  if (hole.name.classList.contains('lit') !== on) hole.name.classList.toggle('lit', on);
+  if (!on) return;
+  if (!hole.signCanvas) {
+    hole.signCanvas = document.createElement('canvas');
+    hole.signCanvas.className = 'art-sign-colours';
+    hole.signCanvas.setAttribute('aria-hidden', 'true');
+    hole.name.prepend(hole.signCanvas);
+  }
+  const canvas = hole.signCanvas;
+  const [cw, ch] = [Math.max(1, Math.ceil((hole.signWidth ?? 100) * density)), Math.max(1, Math.ceil((hole.signHeight ?? 30) * density))];
+  if (canvas.width !== cw || canvas.height !== ch) {
+    canvas.width = cw;
+    canvas.height = ch;
+  }
+  lumininColours(canvas.getContext('2d'), video, cw, ch, signHueOffset);
+}
+
+// A hole filled with the Luminin's colours, as the mouse is (see showMouseInside()), for while its sign's pointed at
+// or it's been picked: the video, cut to the hole's shape. Null until the video's ready.
+function litHole(hole, wide, tall) {
+  const video = lumininVideo;
+  if (!video || video.readyState < 2 || !video.videoWidth) return null;
+  hole.lit ??= document.createElement('canvas');
+  const canvas = hole.lit;
+  const [cw, ch] = [Math.max(1, Math.ceil(wide * density)), Math.max(1, Math.ceil(tall * density))];
+  if (canvas.width !== cw || canvas.height !== ch) {
+    canvas.width = cw;
+    canvas.height = ch;
+  }
+  const context = canvas.getContext('2d');
+  lumininColours(context, video, cw, ch);
+  if (inverted) {
+    // Turned inside out now, so that turning the whole picture inside out at the end brings its colours back
+    context.globalCompositeOperation = 'difference';
+    context.fillStyle = 'white';
+    context.fillRect(0, 0, cw, ch);
+  }
+  // (The video first, then cut to the hole's shape, which Safari gets right: see showMouseInside())
+  context.globalCompositeOperation = 'destination-in';
+  context.drawImage(hole.picture, 0, 0, cw, ch);
+  context.globalCompositeOperation = 'source-over';
+  return canvas;
 }
 
 // Row number n: the figures that are this many rows further away than the bottom of the screen, with
@@ -784,16 +978,19 @@ function pushCamera() {
   }
   pushed = constrain(pushed, -0.1, 1.1); // (Only a safety net: clamping it tightly would make a kink)
   // Lower by an even share each time, so it looks like it's moving at an even pace
-  cameraHeight = cameraHeightUsual / Math.pow(pushZoom, pushed);
+  cameraHeight = cameraHeightUsual / Math.pow(pushZoom, pushed * (1 - swipeLift.now)); // (Lifted back up while it's swiped, see swipeLift)
 }
 
 function draw() {
+  liftCamera();
   pushCamera();
   moveMouse();
   placeHoles();
   background(255);
   if (duskOn) showGround(drawingContext);
   if (trailOn) showTrail(drawingContext); // Painted on the ground, so under everyone
+  // The holes, on the ground too, so everyone walks in front of them (see showHole())
+  for (let hole of holes) showHole(drawingContext, hole);
   let seconds = millis() / 1000;
   crowdStarted ??= seconds;
   // It grows by the same share of itself all the way, so that they keep arriving at a pace that shows
@@ -884,8 +1081,6 @@ function draw() {
   }
   if (!mouseShown) showMouse(ctx, seconds);
   crowdOpening = false;
-  // The holes go over everyone, in a way that shows them walking across, in white (see showHole())
-  for (let hole of holes) showHole(ctx, hole);
   ctx.setTransform(density, 0, 0, density, 0, 0);
   ctx.globalAlpha = 1;
   showDusk(ctx);
@@ -1043,12 +1238,139 @@ const trailWidth = 0.14; // How wide the line is, as a share of the width of its
 const trailSwell = 0.35; // How much its width swells and thins along it (0 = not at all, 1 = from nothing to twice as wide)
 const trailWander = 0.03; // How far its middle wanders from side to side of where it walked, as a share of its own width
 const trailNoise = 0.012; // How quickly the swelling and wandering change along it (bigger = more often), per pixel of the map
-const trailRough = 0.12; // How rough its edges are, as a share of its width
+const trailSharp = true; // Is it painted onto its map hard-edged, every pixel either painted or not? (Otherwise its soft edges blur further as the map's stretched onto the ground near the camera)
+const trailPixelled = true; // Is the map stretched onto the ground without smoothing, so near the camera its hard edges show its pixels, in stair steps?
+const trailRough = 0.02; // How rough its edges are, as a share of its width (0.12 was soft and hairy)
 const trailFlat = 0.42; // How squashed the paint looks lying on the ground, seen at an angle (sets the map's proportions)
 const trailHueOffset = 120; // How far round the colour wheel its colours are from the mouse's, in degrees (120 = a third of the way)
-const trailEdge = false; // Is there a hairline round its edges, as round the mouse (see mouseEdge)?
+const trailEdge = true; // Is there a hairline round its edges, as round the mouse (see mouseEdge)?
+const trailEdgeWidth = 1; // ...and how thick, in the screen's own pixels (its smallest dots, finer than a CSS pixel on sharp screens), kept sharp, in whole pixels like its stair steps
 const trailVideoZoom = 0.5; // How much of the video's width shows across the screen through it (smaller = closer in, bigger colours)
 const trailMapMost = [4096, 2048]; // The biggest the map gets, in pixels, across and from near to far
+// Its colours change gradually along it, from its newest end (the colour it'd otherwise be all over) to its oldest,
+// this many degrees round the colour wheel, spread over however long it's got, the video still showing through
+const trailGradient = { on: true, turn: 180 };
+
+// The shader that colours the trail with its gradient: the map's painted in colours that say how far along it each
+// pixel is (see leaveTrail), and this reads that back for each pixel on the screen and turns the video's colours that
+// much round the colour wheel, with the same brightness and saturation as the mouse's (see mouseInsideBright). Null
+// if there's no WebGL, and then the trail's one colour all over, as without the gradient.
+const trailShader = trailGradient.on ? makeTrailShader() : null;
+const trailGradientOn = !!trailShader;
+
+function makeTrailShader() {
+  const canvas = document.createElement('canvas');
+  const gl = canvas.getContext('webgl', { premultipliedAlpha: true, alpha: true, antialias: false });
+  if (!gl) return null;
+  const vertex = `
+    attribute vec2 corner;
+    void main() { gl_Position = vec4(corner, 0.0, 1.0); }`;
+  const fragment = `
+    precision highp float;
+    uniform sampler2D mask, video;
+    uniform vec2 screen;
+    uniform vec4 shown; // The part of the video across the screen, as shares of it: left, top, width, height
+    uniform float hue, turn, newest, oldest, bright, saturation, inverted;
+    vec3 saturate3(vec3 c, float s) {
+      return clamp(mat3(
+        0.213 + 0.787 * s, 0.213 - 0.213 * s, 0.213 - 0.213 * s,
+        0.715 - 0.715 * s, 0.715 + 0.285 * s, 0.715 - 0.715 * s,
+        0.072 - 0.072 * s, 0.072 - 0.072 * s, 0.072 + 0.928 * s) * c, 0.0, 1.0);
+    }
+    vec3 hueRotate(vec3 c, float degrees) {
+      float a = radians(degrees);
+      float k = cos(a), n = sin(a);
+      return clamp(mat3(
+        0.213 + k * 0.787 - n * 0.213, 0.213 - k * 0.213 + n * 0.143, 0.213 - k * 0.213 - n * 0.787,
+        0.715 - k * 0.715 - n * 0.715, 0.715 + k * 0.285 + n * 0.140, 0.715 - k * 0.715 + n * 0.715,
+        0.072 - k * 0.072 + n * 0.928, 0.072 - k * 0.072 - n * 0.283, 0.072 + k * 0.928 + n * 0.072) * c, 0.0, 1.0);
+    }
+    void main() {
+      vec2 at = vec2(gl_FragCoord.x / screen.x, 1.0 - gl_FragCoord.y / screen.y); // (From the top, as the canvases are)
+      vec4 m = texture2D(mask, at);
+      if (m.a < 0.5) { gl_FragColor = vec4(0.0); return; }
+      vec3 code = floor(m.rgb * 255.0 + 0.5);
+      float along = code.r * 65536.0 + code.g * 256.0 + code.b;
+      float t = clamp((newest - along) / max(1.0, newest - oldest), 0.0, 1.0); // 0 at its newest end, 1 at its oldest
+      vec3 c = texture2D(video, shown.xy + at * shown.zw).rgb;
+      c = clamp(c * bright, 0.0, 1.0);
+      c = saturate3(c, saturation);
+      c = hueRotate(c, hue + turn * t);
+      if (inverted > 0.5) c = 1.0 - c;
+      gl_FragColor = vec4(c, 1.0);
+    }`;
+  const compile = (type, source) => {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    return gl.getShaderParameter(shader, gl.COMPILE_STATUS) ? shader : null;
+  };
+  const vs = compile(gl.VERTEX_SHADER, vertex);
+  const fs = compile(gl.FRAGMENT_SHADER, fragment);
+  if (!vs || !fs) return null;
+  const program = gl.createProgram();
+  gl.attachShader(program, vs);
+  gl.attachShader(program, fs);
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return null;
+  gl.useProgram(program);
+  const buffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  const corner = gl.getAttribLocation(program, 'corner');
+  gl.enableVertexAttribArray(corner);
+  gl.vertexAttribPointer(corner, 2, gl.FLOAT, false, 0, 0);
+  const texture = (unit, filter) => {
+    const t = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE0 + unit);
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return t;
+  };
+  const maskTexture = texture(0, gl.NEAREST); // (Nearest: blending how far along neighbouring pixels are would be wrong)
+  const videoTexture = texture(1, gl.LINEAR);
+  const where = (name) => gl.getUniformLocation(program, name);
+  gl.uniform1i(where('mask'), 0);
+  gl.uniform1i(where('video'), 1);
+  const uniforms = Object.fromEntries(['screen', 'shown', 'hue', 'turn', 'newest', 'oldest', 'bright', 'saturation', 'inverted'].map((n) => [n, where(n)]));
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE); // (So the colours that say how far along it is come through untouched)
+  return {
+    draw(mask, video, shown, hue, newest) {
+      try {
+        if (canvas.width !== mask.width || canvas.height !== mask.height) {
+          canvas.width = mask.width;
+          canvas.height = mask.height;
+        }
+        gl.viewport(0, 0, canvas.width, canvas.height);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, maskTexture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, mask);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, videoTexture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+        gl.uniform2f(uniforms.screen, canvas.width, canvas.height);
+        gl.uniform4f(uniforms.shown, shown[0] / video.videoWidth, shown[1] / video.videoHeight, shown[2] / video.videoWidth, shown[3] / video.videoHeight);
+        gl.uniform1f(uniforms.hue, hue);
+        gl.uniform1f(uniforms.turn, trailGradient.turn);
+        gl.uniform1f(uniforms.newest, newest);
+        gl.uniform1f(uniforms.oldest, 1);
+        gl.uniform1f(uniforms.bright, mouseInsideBright);
+        gl.uniform1f(uniforms.saturation, mouseInsideSaturate);
+        gl.uniform1f(uniforms.inverted, inverted ? 1 : 0);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        return canvas;
+      } catch {
+        return null;
+      }
+    },
+  };
+}
 
 function insideSheet() {
   const canvas = document.createElement('canvas');
@@ -1172,6 +1494,7 @@ function leaveTrail() {
   const side = [-dy / far, dx / far]; // Square to the way it's going
   const context = trailMap.context;
   context.fillStyle = 'white';
+  let dabbed = null; // The part of the map painted this time
   // Dabs a pixel apart along the way, each as wide as the line is there, set off to the side as far as it's wandered
   for (let step = 1; step <= far; step++) {
     const along = trailAlong + step;
@@ -1180,14 +1503,47 @@ function leaveTrail() {
     const radius = Math.max(0.5, (own * trailWidth * Math.max(0, swell) * (1 + trailRough * (Math.random() * 2 - 1))) / 2);
     const x = trailLast[0] + (dx * step) / far + side[0] * wander;
     const y = trailLast[1] + (dy * step) / far + side[1] * wander;
-    context.beginPath();
-    context.arc(x, y, radius, 0, Math.PI * 2);
-    context.fill();
+    if (trailGradientOn) {
+      // Painted in a colour that's how far along it is (see trailGradient), in whole pixels, a row at a time, so that
+      // no pixel's half one colour and half another, which would read as somewhere else along it
+      const at = Math.min(0xffffff, Math.floor(along));
+      context.fillStyle = `rgb(${at >> 16}, ${(at >> 8) & 255}, ${at & 255})`;
+      for (let row = Math.ceil(y - radius - 0.5); row <= Math.floor(y + radius - 0.5); row++) {
+        const half = Math.sqrt(Math.max(0, radius * radius - (row + 0.5 - y) ** 2));
+        const from = Math.round(x - half);
+        const to = Math.round(x + half);
+        if (to > from) context.fillRect(from, row, to - from, 1);
+      }
+    } else {
+      context.beginPath();
+      context.arc(x, y, radius, 0, Math.PI * 2);
+      context.fill();
+    }
     const p = trailMap.painted;
     const [left, top, right, bottom] = [Math.floor(x - radius), Math.floor(y - radius), Math.ceil(x + radius), Math.ceil(y + radius)];
     trailMap.painted = p
       ? { left: Math.min(p.left, left), top: Math.min(p.top, top), right: Math.max(p.right, right), bottom: Math.max(p.bottom, bottom) }
       : { left, top, right, bottom };
+    dabbed = dabbed
+      ? { left: Math.min(dabbed.left, left), top: Math.min(dabbed.top, top), right: Math.max(dabbed.right, right), bottom: Math.max(dabbed.bottom, bottom) }
+      : { left, top, right, bottom };
+  }
+  if (trailSharp && dabbed && !trailGradientOn) { // (Painted in whole pixels already, with the gradient)
+    // Every pixel just painted either painted or not, none half way, so its edges stay sharp when they're stretched
+    const left = Math.max(0, dabbed.left);
+    const top = Math.max(0, dabbed.top);
+    const wide = Math.min(trailMap.canvas.width, dabbed.right) - left;
+    const tall = Math.min(trailMap.canvas.height, dabbed.bottom) - top;
+    if (wide > 0 && tall > 0) {
+      const image = context.getImageData(left, top, wide, tall);
+      const pixels = image.data;
+      for (let i = 3; i < pixels.length; i += 4) {
+        const solid = pixels[i] >= 128;
+        pixels[i - 3] = pixels[i - 2] = pixels[i - 1] = solid ? 255 : 0;
+        pixels[i] = solid ? 255 : 0;
+      }
+      context.putImageData(image, left, top);
+    }
   }
   trailAlong += far;
   trailLast = point;
@@ -1219,6 +1575,7 @@ function showTrail(screen) {
   const end = Math.min(height, toY(map.furthest - map.painted.bottom / map.along));
   ctx.setTransform(density, 0, 0, density, 0, 0);
   ctx.globalAlpha = 1;
+  ctx.imageSmoothingEnabled = !trailPixelled && !trailGradientOn; // (See trailPixelled. With the gradient, smoothing would blend how far along each pixel is with its neighbours', and with nothing at the edges)
   const strip = 1;
   for (let y = Math.floor(top); y < end; y += strip) {
     const size = sizeAt(y + strip / 2);
@@ -1240,29 +1597,36 @@ function showTrail(screen) {
     const rowsTop = Math.max(0, Math.min(map.canvas.height - rows, (sourceTop + sourceBottom) / 2 - rows / 2));
     ctx.drawImage(map.canvas, from, rowsTop, to - from, rows, screenFrom, y, screenTo - screenFrom, strip);
   }
-  // The video, over the whole screen, cut to the mask. (The video first and then the mask 'destination-in', not the
-  // other way round, which Safari gets wrong: see showMouseInside())
-  const colour = trailColour.getContext('2d');
-  colour.setTransform(1, 0, 0, 1, 0, 0);
-  colour.globalCompositeOperation = 'copy';
-  colour.filter = `brightness(${mouseInsideBright}) saturate(${mouseInsideSaturate}) hue-rotate(${((millis() / 1000) * mouseInsideHueTurn + trailHueOffset) % 360}deg)`;
+  const hue = ((millis() / 1000) * mouseInsideHueTurn + trailHueOffset) % 360;
   const sourceWide = video.videoWidth * trailVideoZoom;
   const sourceTall = Math.min(video.videoHeight, (sourceWide * tall) / wide);
   const shownWide = (sourceTall * wide) / tall;
-  colour.drawImage(video, (video.videoWidth - shownWide) / 2, (video.videoHeight - sourceTall) / 2, shownWide, sourceTall, 0, 0, wide, tall);
-  colour.filter = 'none';
-  if (inverted) {
-    // Turned inside out now, so that turning the whole picture inside out at the end brings its colours back
-    colour.globalCompositeOperation = 'difference';
-    colour.fillStyle = 'white';
-    colour.fillRect(0, 0, wide, tall);
+  const shown = [(video.videoWidth - shownWide) / 2, (video.videoHeight - sourceTall) / 2, shownWide, sourceTall];
+  // With the gradient, the shader colours it (see trailShader); otherwise, or if that fails, it's done here
+  let coloured = trailShader ? trailShader.draw(trailMask, video, shown, hue, trailAlong) : null;
+  if (!coloured) {
+    // The video, over the whole screen, cut to the mask. (The video first and then the mask 'destination-in', not the
+    // other way round, which Safari gets wrong: see showMouseInside())
+    const colour = trailColour.getContext('2d');
+    colour.setTransform(1, 0, 0, 1, 0, 0);
+    colour.globalCompositeOperation = 'copy';
+    colour.filter = `brightness(${mouseInsideBright}) saturate(${mouseInsideSaturate}) hue-rotate(${hue}deg)`;
+    colour.drawImage(video, ...shown, 0, 0, wide, tall);
+    colour.filter = 'none';
+    if (inverted) {
+      // Turned inside out now, so that turning the whole picture inside out at the end brings its colours back
+      colour.globalCompositeOperation = 'difference';
+      colour.fillStyle = 'white';
+      colour.fillRect(0, 0, wide, tall);
+    }
+    colour.globalCompositeOperation = 'destination-in';
+    colour.drawImage(trailMask, 0, 0);
+    colour.globalCompositeOperation = 'source-over';
+    coloured = trailColour;
   }
-  colour.globalCompositeOperation = 'destination-in';
-  colour.drawImage(trailMask, 0, 0);
-  colour.globalCompositeOperation = 'source-over';
   screen.setTransform(1, 0, 0, 1, 0, 0);
   screen.globalAlpha = 1;
-  if (trailEdge && mouseEdge > 0) {
+  if (trailEdge && trailEdgeWidth > 0) {
     // A hairline round it, as round the mouse: its shape nudged a fraction of a pixel every way, with its shape itself
     // cut out of the middle, so it's only an outline (where the video's cut out, the ground shows, not black), in black
     trailOutline ??= document.createElement('canvas');
@@ -1275,10 +1639,10 @@ function showTrail(screen) {
     edge.globalCompositeOperation = 'copy';
     edge.drawImage(trailMask, 0, 0);
     edge.globalCompositeOperation = 'source-over';
-    const nudge = mouseEdge * density;
-    for (let turn = 0; turn < 8; turn++) {
-      const angle = (turn / 8) * Math.PI * 2;
-      edge.drawImage(trailMask, Math.cos(angle) * nudge, Math.sin(angle) * nudge);
+    // Nudged by whole pixels, so the hairline's as sharp as its edges (see trailEdgeWidth)
+    const nudge = Math.max(1, Math.round(trailEdgeWidth));
+    for (const [x, y] of [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]]) {
+      edge.drawImage(trailMask, x * nudge, y * nudge);
     }
     edge.globalCompositeOperation = 'destination-out';
     edge.drawImage(trailMask, 0, 0);
@@ -1288,11 +1652,12 @@ function showTrail(screen) {
     edge.globalCompositeOperation = 'source-over';
     screen.drawImage(outline, 0, 0);
   }
-  screen.drawImage(trailColour, 0, 0);
+  screen.drawImage(coloured, 0, 0);
 }
 
 // The mouse, drawn facing whichever way it's going (see moveMouse())
 function showMouse(ctx, seconds) {
+  if (mouse.gone) return; // Down a hole, with the next page on its way (see moveMouse())
   let bigger = sizeOf(mouse.depth);
   let action = mouse.walking ? mouseWalking : mouse.bow > 0 ? mouseLowering : mouseSitting;
   let step = mouse.walking ? mouse.walked : action === mouseLowering ? mouse.bow * (mouseSteps - 1) : seconds * mouseSwings;
