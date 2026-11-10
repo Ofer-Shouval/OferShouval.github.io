@@ -722,6 +722,40 @@ function placeHoles() {
       hole.name.style.transform = `translateX(${beside}px)`;
     }
   }
+  keepPointersApart();
+}
+
+// The pointers at the edges of the screen, nudged apart wherever they'd overlap: those at the sides stacked up the
+// screen, and those at the top and bottom moved along it (see pointTo())
+const pointerGap = 6; // How far apart they're kept, in pixels
+function keepPointersApart() {
+  const shown = holes.map((hole) => hole.pointer).filter((pointer) => pointer && !pointer.hidden);
+  for (const pointer of shown) if (pointer.style.translate) pointer.style.translate = '';
+  if (shown.length < 2) return;
+  const order = { left: 0, right: 1, down: 2, up: 3 };
+  const boxes = shown
+    .map((pointer) => ({ pointer, way: pointer.dataset.way, rect: pointer.getBoundingClientRect() }))
+    .sort((a, b) => order[a.way] - order[b.way] || b.rect.top - a.rect.top);
+  const placed = [];
+  const overlap = (a, b) =>
+    a.left < b.right + pointerGap && b.left < a.right + pointerGap && a.top < b.bottom + pointerGap && b.top < a.bottom + pointerGap;
+  for (const { pointer, way, rect } of boxes) {
+    let [x, y] = [0, 0];
+    for (let tries = 0; tries < placed.length + 1; tries++) {
+      const box = { left: rect.left + x, right: rect.right + x, top: rect.top + y, bottom: rect.bottom + y };
+      const other = placed.find((p) => overlap(box, p));
+      if (!other) break;
+      if (way === 'left' || way === 'right') {
+        y = other.top - pointerGap - rect.bottom; // Up above it...
+        if (rect.top + y < pointerRoom.top) y = other.bottom + pointerGap - rect.top; // ...or below, if there's no room above
+      } else {
+        x = other.right + pointerGap - rect.left; // Along to the right of it...
+        if (rect.right + x > width - pointerRoom.side) x = other.left - pointerGap - rect.right; // ...or the left
+      }
+    }
+    if (x || y) pointer.style.translate = `${Math.round(x)}px ${Math.round(y)}px`;
+    placed.push({ left: rect.left + x, right: rect.right + x, top: rect.top + y, bottom: rect.bottom + y });
+  }
 }
 
 // A hole's signpost, standing on the ground beside the hole (see placeHoles()). Its name goes on top, as the link on the page.
@@ -982,6 +1016,7 @@ function pushCamera() {
 }
 
 function draw() {
+  keepLumininPlaying(); // (First, so whatever it colours this frame all comes from the same one, see lumininPair)
   liftCamera();
   pushCamera();
   moveMouse();
@@ -1193,28 +1228,54 @@ function showDusk(ctx) {
   ctx.drawImage(duskCorners, 0, 0, width, height);
 }
 
-// The colours of the Luminin, for the mouse's inside: the stabilized close-up of it plays, hidden
+// The colours of the Luminin, for the mouse's inside: the stabilized close-up of it plays, hidden. There are two of
+// it, taking turns, so it never has to jump back to the start of its loop while it's being shown: seeking there, it
+// shows a frame from somewhere else for a moment (near white, from the clip's start), which flickers everything it
+// colours. lumininVideo is whichever's playing.
 let lumininVideo = null;
+let lumininPair = [];
 const lumininClip = '/media/lumininCloseupStabilized.mp4';
 
 const lumininPlays = [2, 7.7]; // The part of it that plays, over and over, in seconds: not its start, where it looks close to white, or its paler end
 
 function startLumininVideo() {
-  const video = document.createElement('video');
-  video.src = lumininClip;
-  video.muted = true;
-  video.loop = true;
-  video.playsInline = true;
-  video.addEventListener('loadedmetadata', () => (video.currentTime = lumininPlays[0]));
-  video.play().catch(() => {});
-  return video;
+  lumininPair = [0, 1].map((n) => {
+    const video = document.createElement('video');
+    video.src = lumininClip;
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = 'auto';
+    video.addEventListener('loadedmetadata', () => (video.currentTime = lumininPlays[0]));
+    if (n === 0) video.play().catch(() => {});
+    return video;
+  });
+  return lumininPair[0];
 }
 
-// Kept to the part that plays (see lumininPlays): checked every frame, since the video's own time updates come too
-// seldom to catch it in time
-function keepLumininPlaying(video) {
-  if (video.readyState < 1 || video.seeking) return;
-  if (video.currentTime < lumininPlays[0] || video.currentTime > lumininPlays[1]) video.currentTime = lumininPlays[0];
+// Kept to the part that plays (see lumininPlays), checked every frame, since the video's own time updates come too
+// seldom to catch it in time. At the end of it, the other one, waiting at its start, takes over, and this one goes
+// back to the start out of sight, ready for its next turn.
+function keepLumininPlaying() {
+  const video = lumininVideo;
+  if (!video || video.readyState < 1 || video.seeking) return;
+  if (video.currentTime < lumininPlays[0] - 0.05 && video.currentTime < 0.5) {
+    video.currentTime = lumininPlays[0]; // (Just loaded, and not there yet)
+    return;
+  }
+  if (video.currentTime < lumininPlays[1] && !video.ended) {
+    if (video.paused) video.play().catch(() => {});
+    return;
+  }
+  const next = lumininPair.find((other) => other !== video);
+  const waiting = next && next.readyState >= 2 && !next.seeking && Math.abs(next.currentTime - lumininPlays[0]) < 0.1;
+  if (!waiting) {
+    video.currentTime = lumininPlays[0]; // (The other isn't ready: back to the start the old way)
+    return;
+  }
+  next.play().catch(() => {});
+  lumininVideo = next;
+  video.pause();
+  video.currentTime = lumininPlays[0];
 }
 
 // Inside the mouse, where it's white, a psychedelic pattern from the Luminin: the hidden close-up video (see lumininVideo),
@@ -1223,7 +1284,7 @@ function keepLumininPlaying(video) {
 let mouseInside = null; // Its pictures, with only the white parts kept, see-through everywhere else
 let mouseInsideCut = null; // Where this frame's picture of its inside is made
 const mouseInsideZoom = 0.25; // How much of the video's width shows inside it (smaller = closer in, bigger colours)
-const mouseInsideBright = 1.6; // How much brighter than the video it is, glowing against the dusk
+const mouseInsideBright = 0.7; // How much brighter than the video it is, glowing against the dusk (and its trail, and the holes and signs it lights)
 const mouseInsideSaturate = 2.2; // How much its colours are pushed up
 const mouseInsideHueTurn = 40; // How many degrees its hues turn round each second
 const mouseOutline = false; // Is it drawn with its black outline? Without, it's all colour (until the video's ready, when it's drawn as usual)
@@ -1238,15 +1299,14 @@ const trailWidth = 0.14; // How wide the line is, as a share of the width of its
 const trailSwell = 0.35; // How much its width swells and thins along it (0 = not at all, 1 = from nothing to twice as wide)
 const trailWander = 0.03; // How far its middle wanders from side to side of where it walked, as a share of its own width
 const trailNoise = 0.012; // How quickly the swelling and wandering change along it (bigger = more often), per pixel of the map
-const trailSharp = true; // Is it painted onto its map hard-edged, every pixel either painted or not? (Otherwise its soft edges blur further as the map's stretched onto the ground near the camera)
 const trailPixelled = true; // Is the map stretched onto the ground without smoothing, so near the camera its hard edges show its pixels, in stair steps?
 const trailRough = 0.02; // How rough its edges are, as a share of its width (0.12 was soft and hairy)
 const trailFlat = 0.42; // How squashed the paint looks lying on the ground, seen at an angle (sets the map's proportions)
 const trailHueOffset = 120; // How far round the colour wheel its colours are from the mouse's, in degrees (120 = a third of the way)
 const trailEdge = true; // Is there a hairline round its edges, as round the mouse (see mouseEdge)?
+const trailFade = { power: 0.7, least: 0 }; // How quickly it fades toward the horizon, faster than the crowd (see distanceFade, bigger = faster), and the faintest it gets
 const trailEdgeWidth = 1; // ...and how thick, in the screen's own pixels (its smallest dots, finer than a CSS pixel on sharp screens), kept sharp, in whole pixels like its stair steps
 const trailVideoZoom = 0.5; // How much of the video's width shows across the screen through it (smaller = closer in, bigger colours)
-const trailMapMost = [4096, 2048]; // The biggest the map gets, in pixels, across and from near to far
 // Its colours change gradually along it, from its newest end (the colour it'd otherwise be all over) to its oldest,
 // this many degrees round the colour wheel, spread over however long it's got, the video still showing through
 const trailGradient = { on: true, turn: 180 };
@@ -1267,7 +1327,7 @@ function makeTrailShader() {
     void main() { gl_Position = vec4(corner, 0.0, 1.0); }`;
   const fragment = `
     precision highp float;
-    uniform sampler2D mask, video;
+    uniform sampler2D mask, video, fade; // (fade: how faded each row of the screen is, see trailFadeRows())
     uniform vec2 screen;
     uniform vec4 shown; // The part of the video across the screen, as shares of it: left, top, width, height
     uniform float hue, turn, newest, oldest, bright, saturation, inverted;
@@ -1297,7 +1357,8 @@ function makeTrailShader() {
       c = saturate3(c, saturation);
       c = hueRotate(c, hue + turn * t);
       if (inverted > 0.5) c = 1.0 - c;
-      gl_FragColor = vec4(c, 1.0);
+      float faded = texture2D(fade, vec2(0.5, at.y)).a;
+      gl_FragColor = vec4(c * faded, faded);
     }`;
   const compile = (type, source) => {
     const shader = gl.createShader(type);
@@ -1332,14 +1393,16 @@ function makeTrailShader() {
   };
   const maskTexture = texture(0, gl.NEAREST); // (Nearest: blending how far along neighbouring pixels are would be wrong)
   const videoTexture = texture(1, gl.LINEAR);
+  const fadeTexture = texture(2, gl.LINEAR);
   const where = (name) => gl.getUniformLocation(program, name);
   gl.uniform1i(where('mask'), 0);
   gl.uniform1i(where('video'), 1);
+  gl.uniform1i(where('fade'), 2);
   const uniforms = Object.fromEntries(['screen', 'shown', 'hue', 'turn', 'newest', 'oldest', 'bright', 'saturation', 'inverted'].map((n) => [n, where(n)]));
   gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
   gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE); // (So the colours that say how far along it is come through untouched)
   return {
-    draw(mask, video, shown, hue, newest) {
+    draw(mask, video, shown, hue, newest, fade) {
       try {
         if (canvas.width !== mask.width || canvas.height !== mask.height) {
           canvas.width = mask.width;
@@ -1352,6 +1415,9 @@ function makeTrailShader() {
         gl.activeTexture(gl.TEXTURE1);
         gl.bindTexture(gl.TEXTURE_2D, videoTexture);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, fadeTexture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, fade);
         gl.uniform2f(uniforms.screen, canvas.width, canvas.height);
         gl.uniform4f(uniforms.shown, shown[0] / video.videoWidth, shown[1] / video.videoHeight, shown[2] / video.videoWidth, shown[3] / video.videoHeight);
         gl.uniform1f(uniforms.hue, hue);
@@ -1403,7 +1469,6 @@ function showMouseInside(ctx, seconds, cellX, cellY, cellWidth, cellHeight) {
   // The video first, then cut to the mouse's white parts. (The other way round, the video drawn 'source-in' over
   // the mouse's shape, Safari, and so every browser on an iPhone, ignores the shape and fills the whole picture.)
   context.globalCompositeOperation = 'copy';
-  keepLumininPlaying(video);
   context.filter = `brightness(${mouseInsideBright}) saturate(${mouseInsideSaturate}) hue-rotate(${(seconds * mouseInsideHueTurn) % 360}deg)`;
   const sourceWide = video.videoWidth * mouseInsideZoom;
   const sourceTall = (sourceWide * cut.height) / cut.width;
@@ -1448,41 +1513,127 @@ function showMouseInside(ctx, seconds, cellX, cellY, cellWidth, cellHeight) {
 let mouseEdgeCut = null; // Its shape in black, for the hairline
 let mouseFace = null; // Its face in thin lines (see paintMouseFace())
 
-// The map of the ground the trail's painted on (see trailOn): x across, as in the world, and its depth from far (the
-// top) to near (the bottom), each scaled so a round dab of paint looks the way a flat round thing on the ground would
+// The map of the ground the trail's painted on (see trailOn): x across, as in the world, and its depth, further away
+// further up, each scaled so a round dab of paint looks the way a flat round thing on the ground would. It goes on as
+// far as the mouse does, in square tiles, each made the first time the trail crosses it and kept from then on, so
+// the trail stays wherever it was left, however far the mouse goes and comes back (see trailTile).
 let trailMap = null;
 let trailLast = null; // Where the line was last painted to, on the map
 let trailAlong = 0; // How far along the line it's painted, on the map (where the noise is read from)
 let trailMask = null; // A canvas the size of the screen: the map laid on the ground, this frame
 let trailColour = null; // ...and the video, cut to it
 let trailOutline = null; // ...and the hairline round it
+const trailTileSize = 512; // How big each tile of the map is, in its pixels
+const trailTilesMost = 96; // The most tiles kept (each takes a megabyte). Past that, the ones painted on longest ago go.
 
 function setupTrail() {
-  // How far the map reaches: as far sideways as the mouse can go, and from just behind where it starts to past the furthest hole
-  const nearest = mouseEntersFrom - 0.2;
-  const furthest = Math.max(mouseHome, ...holes.map((hole) => hole.depth ?? 0)) + 0.6;
-  const reach = (holeReach ?? 0) + width / 2 / sizeOf(furthest) + 100;
-  // How many of the map's pixels for each of the world's: across, about one, and from near to far, enough that a round
-  // dab of paint looks squashed by trailFlat just in front of where the camera keeps the mouse
-  let across = 1;
+  // How many of the map's pixels for each of the world's: across, one, and from near to far, enough that a round dab
+  // of paint looks squashed by trailFlat just in front of where the camera keeps the mouse
+  const across = 1;
   const big = sizeOf(mouseHome);
   const downScreen = (groundAt(sizeOf(mouseHome - 0.01), bottomSize()) - groundAt(sizeOf(mouseHome + 0.01), bottomSize())) / 0.02;
-  let along = (downScreen * across) / (trailFlat * big);
-  across = Math.min(across, trailMapMost[0] / (reach * 2));
-  along = Math.min(along, trailMapMost[1] / (furthest - nearest));
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.ceil(reach * 2 * across);
-  canvas.height = Math.ceil((furthest - nearest) * along);
-  trailMap = { canvas, context: canvas.getContext('2d'), reach, furthest, nearest, across, along, painted: null };
+  const along = (downScreen * across) / (trailFlat * big);
+  trailMap = { across, along, tiles: new Map(), painted: null, paintedAt: 0 };
 }
 
-const onMap = (x, depth) => [(x + trailMap.reach) * trailMap.across, (trailMap.furthest - depth) * trailMap.along];
+const onMap = (x, depth) => [x * trailMap.across, -depth * trailMap.along];
+
+// The tile of the map at this column and row of tiles, made if it isn't there yet and `make` says to
+function trailTile(column, row, make) {
+  const key = `${column},${row}`;
+  let tile = trailMap.tiles.get(key);
+  if (!tile && make) {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = trailTileSize;
+    tile = { canvas, context: canvas.getContext('2d'), column, row };
+    trailMap.tiles.set(key, tile);
+    if (trailMap.tiles.size > trailTilesMost) {
+      // Let go of the one painted on longest ago
+      let oldest = null;
+      for (const [k, t] of trailMap.tiles) if (t !== tile && (!oldest || t.paintedAt < oldest[1].paintedAt)) oldest = [k, t];
+      if (oldest) trailMap.tiles.delete(oldest[0]);
+    }
+  }
+  if (tile && make) tile.paintedAt = ++trailMap.paintedAt;
+  return tile;
+}
+
+// A row of whole pixels painted on the map, from x to x + wide, across however many tiles it covers
+function paintTrailRow(x, y, wide, colour) {
+  const T = trailTileSize;
+  const row = Math.floor(y / T);
+  for (let column = Math.floor(x / T); column * T < x + wide; column++) {
+    const tile = trailTile(column, row, true);
+    const from = Math.max(x, column * T);
+    const to = Math.min(x + wide, (column + 1) * T);
+    tile.context.fillStyle = colour;
+    tile.context.fillRect(from - column * T, y - row * T, to - from, 1);
+  }
+}
+
+// When the mouse has stood still a while, a blob of the trail's paint spreads very slowly out from under it, a little
+// lumpy, keeping its shape as it grows, until the mouse moves on (and it stays where it was left, like the rest of it)
+const trailBlob = {
+  wait: 1, // How many seconds the mouse has to have been still before it starts
+  grow: 5, // How quickly it spreads, in the map's pixels a second
+  most: 2.5, // The biggest it gets across, from its middle to its edge, compared to the mouse's width
+  bumps: 0.3, // How lumpy its edge is (0 = round)
+  points: 72, // How many points round its edge
+};
+let blob = null;
+function growBlob() {
+  if (stillFor < trailBlob.wait || mouse.gone) {
+    blob = null;
+    return;
+  }
+  const own = mouseWidth * mouseScale * trailMap.across; // The mouse's width, on the map
+  if (!blob) {
+    const [x, y] = onMap(mouse.x, mouse.depth);
+    blob = { x, y, radius: (own * trailWidth) / 2, painted: 0, seed: Math.random() * 1000 };
+  }
+  blob.radius = Math.min(own * trailBlob.most, blob.radius + trailBlob.grow * Math.min(deltaTime / 1000, 0.1));
+  if (blob.radius - blob.painted < 0.5) return; // (Only painted again once it's grown by half a pixel)
+  blob.painted = blob.radius;
+  // Its edge: lumpy, the same lumps however big it gets
+  const edge = [];
+  for (let i = 0; i < trailBlob.points; i++) {
+    const angle = (i / trailBlob.points) * Math.PI * 2;
+    const lump = noise(blob.seed + Math.cos(angle) * 1.2 + 1.2, blob.seed + Math.sin(angle) * 1.2 + 1.2) * 2 - 1;
+    const r = blob.radius * (1 + trailBlob.bumps * lump);
+    edge.push([blob.x + Math.cos(angle) * r, blob.y + Math.sin(angle) * r]);
+  }
+  // Filled in whole pixels, a row at a time, like the line (see leaveTrail), in its newest colour
+  const at = Math.min(0xffffff, Math.floor(trailAlong));
+  const colour = trailGradientOn ? `rgb(${at >> 16}, ${(at >> 8) & 255}, ${at & 255})` : 'white';
+  const ys = edge.map(([, y]) => y);
+  const [top, bottom] = [Math.floor(Math.min(...ys)), Math.ceil(Math.max(...ys))];
+  for (let row = top; row < bottom; row++) {
+    const middle = row + 0.5;
+    const crossings = [];
+    edge.forEach(([x1, y1], i) => {
+      const [x2, y2] = edge[(i + 1) % edge.length];
+      if ((y1 <= middle) !== (y2 <= middle)) crossings.push(x1 + ((middle - y1) / (y2 - y1)) * (x2 - x1));
+    });
+    crossings.sort((a, b) => a - b);
+    for (let i = 0; i + 1 < crossings.length; i += 2) {
+      const from = Math.round(crossings[i]);
+      const to = Math.round(crossings[i + 1]);
+      if (to > from) paintTrailRow(from, row, to - from, colour);
+    }
+  }
+  const xs = edge.map(([x]) => x);
+  const [left, right] = [Math.floor(Math.min(...xs)), Math.ceil(Math.max(...xs))];
+  const p = trailMap.painted;
+  trailMap.painted = p
+    ? { left: Math.min(p.left, left), top: Math.min(p.top, top), right: Math.max(p.right, right), bottom: Math.max(p.bottom, bottom) }
+    : { left, top, right, bottom };
+}
 
 // Each frame: the line painted on from where it was last painted to where it is now
 function leaveTrail() {
   if (!trailMap || mouse.falling !== null) return;
+  growBlob();
   const point = onMap(mouse.x, mouse.depth);
-  if (point[1] < 0 || point[1] > trailMap.canvas.height || point[0] < 0 || point[0] > trailMap.canvas.width) return;
   if (!trailLast) {
     trailLast = point;
     return;
@@ -1492,10 +1643,10 @@ function leaveTrail() {
   if (far < 1) return;
   const own = mouseWidth * mouseScale * trailMap.across; // Its own width, on the map
   const side = [-dy / far, dx / far]; // Square to the way it's going
-  const context = trailMap.context;
-  context.fillStyle = 'white';
-  let dabbed = null; // The part of the map painted this time
-  // Dabs a pixel apart along the way, each as wide as the line is there, set off to the side as far as it's wandered
+  // Dabs a pixel apart along the way, each as wide as the line is there, set off to the side as far as it's wandered.
+  // Each's painted in whole pixels, a row at a time, so its edges are hard and stay sharp when they're stretched: no
+  // pixel's half painted,
+  // which with the gradient would read as somewhere else along it.
   for (let step = 1; step <= far; step++) {
     const along = trailAlong + step;
     const swell = 1 + trailSwell * (noise(along * trailNoise, 0) * 2 - 1) * 2;
@@ -1503,54 +1654,51 @@ function leaveTrail() {
     const radius = Math.max(0.5, (own * trailWidth * Math.max(0, swell) * (1 + trailRough * (Math.random() * 2 - 1))) / 2);
     const x = trailLast[0] + (dx * step) / far + side[0] * wander;
     const y = trailLast[1] + (dy * step) / far + side[1] * wander;
-    if (trailGradientOn) {
-      // Painted in a colour that's how far along it is (see trailGradient), in whole pixels, a row at a time, so that
-      // no pixel's half one colour and half another, which would read as somewhere else along it
-      const at = Math.min(0xffffff, Math.floor(along));
-      context.fillStyle = `rgb(${at >> 16}, ${(at >> 8) & 255}, ${at & 255})`;
-      for (let row = Math.ceil(y - radius - 0.5); row <= Math.floor(y + radius - 0.5); row++) {
-        const half = Math.sqrt(Math.max(0, radius * radius - (row + 0.5 - y) ** 2));
-        const from = Math.round(x - half);
-        const to = Math.round(x + half);
-        if (to > from) context.fillRect(from, row, to - from, 1);
-      }
-    } else {
-      context.beginPath();
-      context.arc(x, y, radius, 0, Math.PI * 2);
-      context.fill();
+    // In a colour that's how far along it is, with the gradient (see trailGradient); otherwise just white
+    const at = Math.min(0xffffff, Math.floor(along));
+    const colour = trailGradientOn ? `rgb(${at >> 16}, ${(at >> 8) & 255}, ${at & 255})` : 'white';
+    for (let row = Math.ceil(y - radius - 0.5); row <= Math.floor(y + radius - 0.5); row++) {
+      const half = Math.sqrt(Math.max(0, radius * radius - (row + 0.5 - y) ** 2));
+      const from = Math.round(x - half);
+      const to = Math.round(x + half);
+      if (to > from) paintTrailRow(from, row, to - from, colour);
     }
     const p = trailMap.painted;
     const [left, top, right, bottom] = [Math.floor(x - radius), Math.floor(y - radius), Math.ceil(x + radius), Math.ceil(y + radius)];
     trailMap.painted = p
       ? { left: Math.min(p.left, left), top: Math.min(p.top, top), right: Math.max(p.right, right), bottom: Math.max(p.bottom, bottom) }
       : { left, top, right, bottom };
-    dabbed = dabbed
-      ? { left: Math.min(dabbed.left, left), top: Math.min(dabbed.top, top), right: Math.max(dabbed.right, right), bottom: Math.max(dabbed.bottom, bottom) }
-      : { left, top, right, bottom };
-  }
-  if (trailSharp && dabbed && !trailGradientOn) { // (Painted in whole pixels already, with the gradient)
-    // Every pixel just painted either painted or not, none half way, so its edges stay sharp when they're stretched
-    const left = Math.max(0, dabbed.left);
-    const top = Math.max(0, dabbed.top);
-    const wide = Math.min(trailMap.canvas.width, dabbed.right) - left;
-    const tall = Math.min(trailMap.canvas.height, dabbed.bottom) - top;
-    if (wide > 0 && tall > 0) {
-      const image = context.getImageData(left, top, wide, tall);
-      const pixels = image.data;
-      for (let i = 3; i < pixels.length; i += 4) {
-        const solid = pixels[i] >= 128;
-        pixels[i - 3] = pixels[i - 2] = pixels[i - 1] = solid ? 255 : 0;
-        pixels[i] = solid ? 255 : 0;
-      }
-      context.putImageData(image, left, top);
-    }
   }
   trailAlong += far;
   trailLast = point;
 }
 
+// How faded the trail is on each row of the screen, by how far away the ground there is: a canvas one pixel wide and
+// a row for each of the screen's, solid black where it's not faded at all, see-through where it's gone. Laid over it
+// 'destination-in' (see showTrail()), or read by the shader.
+let trailFadeCanvas = null;
+function trailFadeRows() {
+  const rows = Math.max(1, Math.ceil(height));
+  trailFadeCanvas ??= document.createElement('canvas');
+  const canvas = trailFadeCanvas;
+  if (canvas.width !== 1 || canvas.height !== rows) {
+    canvas.width = 1;
+    canvas.height = rows;
+  }
+  const context = canvas.getContext('2d');
+  const image = context.createImageData(1, rows);
+  const solidTo = sizeAt(height * mouseSpot.y); // Solid as far as where the camera keeps the mouse, fading past it
+  for (let y = 0; y < rows; y++) {
+    const near = sizeAt(y + 0.5) / solidTo; // 1 where the mouse is kept, smaller further away
+    const faded = Math.max(trailFade.least, Math.min(1, Math.pow(near, trailFade.power)));
+    image.data[y * 4 + 3] = Math.round(faded * 255);
+  }
+  context.putImageData(image, 0, 0);
+  return canvas;
+}
+
 // The map laid on the ground in perspective: for each thin strip of the screen across the painted part of the ground,
-// the row of the map at that distance, stretched to how big things are there
+// the row of the map at that distance, stretched to how big things are there, from whichever of its tiles it crosses
 function showTrail(screen) {
   const map = trailMap;
   if (!map?.painted) return;
@@ -1571,31 +1719,42 @@ function showTrail(screen) {
   const bottom = bottomSize();
   const depthAt = (y) => view.depth - Math.log(sizeAt(y) / bottom); // The depth of the ground this far down the screen
   const toY = (depth) => groundAt(sizeOf(depth), bottom);
-  const top = Math.max(0, toY(map.furthest - map.painted.top / map.along));
-  const end = Math.min(height, toY(map.furthest - map.painted.bottom / map.along));
+  const top = Math.max(0, toY(-map.painted.top / map.along));
+  const end = Math.min(height, toY(-map.painted.bottom / map.along));
   ctx.setTransform(density, 0, 0, density, 0, 0);
   ctx.globalAlpha = 1;
   ctx.imageSmoothingEnabled = !trailPixelled && !trailGradientOn; // (See trailPixelled. With the gradient, smoothing would blend how far along each pixel is with its neighbours', and with nothing at the edges)
+  const T = trailTileSize;
   const strip = 1;
   for (let y = Math.floor(top); y < end; y += strip) {
     const size = sizeAt(y + strip / 2);
-    const rowTop = (map.furthest - depthAt(y)) * map.along;
-    const rowBottom = (map.furthest - depthAt(y + strip)) * map.along;
+    const sourceTop = -depthAt(y) * map.along;
+    const sourceBottom = -depthAt(y + strip) * map.along;
     // Only the part of the map that's painted, and on the screen
-    let from = Math.max(map.painted.left, (view.x - width / 2 / size + map.reach) * map.across);
-    let to = Math.min(map.painted.right, (view.x + width / 2 / size + map.reach) * map.across);
-    const sourceTop = Math.max(0, rowTop);
-    const sourceBottom = Math.min(map.canvas.height, rowBottom);
-    from = Math.max(0, from);
-    to = Math.min(map.canvas.width, to);
-    if (to <= from || sourceBottom <= sourceTop) continue;
-    const screenFrom = width / 2 + (from / map.across - map.reach - view.x) * size;
-    const screenTo = width / 2 + (to / map.across - map.reach - view.x) * size;
+    const from = Math.max(map.painted.left, (view.x - width / 2 / size) * map.across);
+    const to = Math.min(map.painted.right, (view.x + width / 2 / size) * map.across);
+    if (to <= from || sourceBottom <= sourceTop || sourceBottom < map.painted.top || sourceTop > map.painted.bottom) continue;
+    const screenFrom = width / 2 + (from / map.across - view.x) * size;
+    const screenTo = width / 2 + (to / map.across - view.x) * size;
     // (At least a whole row of the map, centred on the strip. The strips meet exactly, a whole pixel each: the paint's
     // see-through, so any overlap would show as a darker line.)
     const rows = Math.max(1, sourceBottom - sourceTop);
-    const rowsTop = Math.max(0, Math.min(map.canvas.height - rows, (sourceTop + sourceBottom) / 2 - rows / 2));
-    ctx.drawImage(map.canvas, from, rowsTop, to - from, rows, screenFrom, y, screenTo - screenFrom, strip);
+    const rowsTop = (sourceTop + sourceBottom) / 2 - rows / 2;
+    const perX = (screenTo - screenFrom) / (to - from);
+    for (let row = Math.floor(rowsTop / T); row * T < rowsTop + rows; row++) {
+      const fromY = Math.max(rowsTop, row * T);
+      const toY2 = Math.min(rowsTop + rows, (row + 1) * T);
+      for (let column = Math.floor(from / T); column * T < to; column++) {
+        const tile = trailTile(column, row, false);
+        if (!tile) continue;
+        const fromX = Math.max(from, column * T);
+        const toX = Math.min(to, (column + 1) * T);
+        ctx.drawImage(
+          tile.canvas, fromX - column * T, fromY - row * T, toX - fromX, toY2 - fromY,
+          screenFrom + (fromX - from) * perX, y + ((fromY - rowsTop) / rows) * strip, (toX - fromX) * perX, ((toY2 - fromY) / rows) * strip,
+        );
+      }
+    }
   }
   const hue = ((millis() / 1000) * mouseInsideHueTurn + trailHueOffset) % 360;
   const sourceWide = video.videoWidth * trailVideoZoom;
@@ -1603,7 +1762,8 @@ function showTrail(screen) {
   const shownWide = (sourceTall * wide) / tall;
   const shown = [(video.videoWidth - shownWide) / 2, (video.videoHeight - sourceTall) / 2, shownWide, sourceTall];
   // With the gradient, the shader colours it (see trailShader); otherwise, or if that fails, it's done here
-  let coloured = trailShader ? trailShader.draw(trailMask, video, shown, hue, trailAlong) : null;
+  const fade = trailFadeRows();
+  let coloured = trailShader ? trailShader.draw(trailMask, video, shown, hue, trailAlong, fade) : null;
   if (!coloured) {
     // The video, over the whole screen, cut to the mask. (The video first and then the mask 'destination-in', not the
     // other way round, which Safari gets wrong: see showMouseInside())
@@ -1621,6 +1781,7 @@ function showTrail(screen) {
     }
     colour.globalCompositeOperation = 'destination-in';
     colour.drawImage(trailMask, 0, 0);
+    colour.drawImage(fade, 0, 0, wide, tall); // (Faded with distance, see trailFadeRows())
     colour.globalCompositeOperation = 'source-over';
     coloured = trailColour;
   }
@@ -1649,6 +1810,8 @@ function showTrail(screen) {
     edge.globalCompositeOperation = 'source-in';
     edge.fillStyle = 'black'; // (As the mouse's: turning the whole picture inside out at the end turns both)
     edge.fillRect(0, 0, wide, tall);
+    edge.globalCompositeOperation = 'destination-in';
+    edge.drawImage(fade, 0, 0, wide, tall); // (Faded with distance like the rest of it)
     edge.globalCompositeOperation = 'source-over';
     screen.drawImage(outline, 0, 0);
   }
