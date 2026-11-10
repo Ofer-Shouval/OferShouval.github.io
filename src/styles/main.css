@@ -1998,3 +1998,20 @@ body.art-inverted {
 .art-pointer[hidden] {
   display: none;
 }
+
+/* Teaching page: a big opening line, and short headings over the statement's steps */
+.teaching-page > h3 { max-width: 700px; margin: 40px auto 0; }
+.teaching-page > h3 + p { margin-top: 8px; }
+.page .teaching-lede {
+  font-family: 'Major Mono Display', monospace;
+  font-weight: normal;
+  font-size: 26px;
+  line-height: 1.4;
+  text-align: center;
+  text-transform: lowercase; /* Major Mono draws capitals as heavy blocks */
+  max-width: 820px;
+  margin: 0 auto 48px;
+}
+@media (max-width: 600px) {
+  .page .teaching-lede { font-size: 20px; }
+}
