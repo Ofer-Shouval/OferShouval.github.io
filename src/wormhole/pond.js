@@ -13,6 +13,7 @@
 import p5 from 'p5';
 import wormhole from './wormhole.js';
 import { soundButton, startAudio, soundWanted, setSound } from '../scripts/sound.js';
+import { diveScore } from './dive_score.js';
 
 export default function pond(p, container) {
   // Raindrops fall, one into the middle of the screen at the start and then more, anywhere, now and then, and wherever
@@ -909,8 +910,28 @@ export default function pond(p, container) {
 
   // Entering: the sound comes on, the words go, and the drop in colour falls where it was pressed, with the camera
   // coming round to look down on it (see the dive)
+  // Composer mode (?compose at the end of the address): entering saves the dive's score, a MIDI file to write music
+  // to it in a DAW, starting at the press that enters (see dive_score.js)
+  const composing = new URLSearchParams(location.search).has('compose');
+  function saveScore() {
+    if (!composing) return;
+    const settings = {
+      fall: dropTime, above: aboveTime, handOverAt, colourSpin, spinUpAt, spinUp, wormAt, wormTime, rushUp, rushDown,
+      tunnelGoneAt, tunnelGoneTime, wormRush, springAt, springUp, springFor, springDown, springRush, stretch,
+      stretchTime, stretchSettle, starsIn,
+    };
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([diveScore(settings)], { type: 'audio/midi' }));
+    link.download = 'dive-score.mid';
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+  }
+
   function enter(x, y) {
     if (dive) return; // Only once
+    saveScore();
     if (!soundWanted()) setSound(true);
     else startAudio();
     introTimers.forEach(clearTimeout);
