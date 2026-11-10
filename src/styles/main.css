@@ -1123,8 +1123,8 @@ body:has(.socialBar) {
   position: absolute;
   z-index: 2;
   color: white;
-  /* A quarter of the way from the bottom of the words (about 32px below the middle) to the bottom */
-  top: calc(50% + 32px + (50% - 32px) * 0.25);
+  /* Halfway between the bottom of the words (about 32px below the middle) and the bottom */
+  top: calc(50% + 32px + (50% - 32px) * 0.5);
   left: 50%;
   opacity: 0;
   visibility: hidden;
