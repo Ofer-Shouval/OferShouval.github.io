@@ -1,0 +1,16 @@
+{
+  "tracks": [
+    {
+      "sound": "patch:landing/synth.json",
+      "when": "drop",
+      "volume": 0.8,
+      "off": false
+    },
+    {
+      "sound": "patch:landing/zz-test-background.json",
+      "when": "always",
+      "volume": 0.8,
+      "off": true
+    }
+  ]
+}
