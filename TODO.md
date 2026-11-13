@@ -27,7 +27,7 @@ Updated 9 November 2026 (save point 77). Placeholders on the site show as dashed
 ### Bio
 - [ ] Update the text for the last 5 years (it still reads as written in 2021)
 - [ ] Give the page its own look (the TV static idea)
-- [ ] Resume PDF: replace with a current one
+- [x] Resume PDF: replaced with the 2026 one
 
 ### Teaching (left out of the site for now)
 - [ ] Teaching statement, courses, student projects and their permission
