@@ -68,6 +68,7 @@ const synth = instrument(audio, patch, master, { follow: false });
 let library = { sounds: [], patches: [], pages: {} };
 let section = sectionOf(remembered('section', 'landing')) ? remembered('section', 'landing') : 'landing'; // The section being worked on
 let tracks = null; // The scene's tracks, once they're made (see tracks.js)
+let selectedTrack = null; // The track whose synth or sampler is open in the controls, if one is
 let currentFile = null; // The saved patch file it was loaded from, if any, like 'art/ghost-harp.json'
 let savedJSON = ''; // What it was when it was last loaded or saved, to tell if it's changed since
 let savedName = null; // Its name in its saved file: what pages playing it know it by (see `follow` in patch.js)
@@ -76,7 +77,8 @@ const live = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('sou
 
 // Each section's colour, so it's plain at a glance which one's open
 const sectionColours = { landing: '#7fd1c7', music: '#f2b45c', art: '#ee93d2', bio: '#9fb7ff', teaching: '#b6e37a', shared: '#bdbdbd' };
-const unsaved = () => JSON.stringify(patch) !== savedJSON && !(savedJSON === '' && JSON.stringify(patch) === JSON.stringify(complete(blankPatch)));
+// (A track's own sound that isn't saved as a patch is kept with the track, so there's nothing to say about it)
+const unsaved = () => (selectedTrack && !currentFile ? false : JSON.stringify(patch) !== savedJSON && !(savedJSON === '' && JSON.stringify(patch) === JSON.stringify(complete(blankPatch))));
 
 // --- What the controls are ---------------------------------------------------------------------------------------
 // [path, label, min, max, scale, extra]: scale is 'lin', 'log', 'cube' (fine near the bottom, for short times) or
@@ -581,13 +583,17 @@ const camel = (s) => s.replace(/-(\w)/g, (_, c) => c.toUpperCase()).replace(/^\d
 let draftTimer = 0;
 function changed() {
   synth.setPatch(patch);
-  tracks?.patchChanged(); // (A background track playing it starts a new note of it)
+  if (selectedTrack) {
+    selectedTrack.patch = patch; // (The track has it, and keeps it)
+    tracks.soundChanged(selectedTrack);
+    showInstrument();
+  }
   if (savedName) live?.postMessage({ name: savedName, patch }); // So the pages playing it change with it
   heldChanged();
   showJSON();
   showStatus();
   clearTimeout(draftTimer);
-  draftTimer = setTimeout(keepDraft, 300);
+  if (!selectedTrack) draftTimer = setTimeout(keepDraft, 300); // (A track keeps its own)
 }
 
 function showStatus(text, error = false) {
@@ -637,6 +643,24 @@ function enterSection(id) {
 function renderPatchList() {
   const list = $('patch-list');
   list.innerHTML = '';
+  if (selectedTrack) {
+    // A track's: a saved patch to load into it, from any section, or an empty one to start again from
+    list.append(new Option(currentFile ? '' : '(its own, not saved as a patch)', ''));
+    list.append(new Option('+ an empty synth', 'new:synth'));
+    list.append(new Option('+ an empty sampler', 'new:sampler'));
+    for (const s of siteSections) {
+      const patches = library.patches.filter((p) => p.section === s.id);
+      if (!patches.length) continue;
+      const holder = document.createElement('optgroup');
+      holder.label = s.label;
+      for (const { file, patch: saved } of patches) holder.append(new Option(saved.name ?? file, file));
+      list.append(holder);
+    }
+    list.options[0].hidden = !!currentFile;
+    list.value = currentFile ?? '';
+    if (list.value !== (currentFile ?? '')) list.value = '';
+    return;
+  }
   const group = (label, patches) => {
     if (!patches.length) return;
     const holder = document.createElement('optgroup');
@@ -681,7 +705,7 @@ function showPreview() {
   $('preview-open').hidden = inScene;
   $('preview-open').href = inScene ? '' : page;
   $('preview-hint').textContent = inScene
-    ? 'The front page\'s pond. With ▶ play on, each drop plays the patch as it lands; clicking the water drops one there.'
+    ? 'The front page\'s pond. Each drop plays your tracks as it lands; clicking the water drops one there.'
     : 'Click into the page to hear it. A page that plays a patch follows the sliders here.';
   const frame = $('preview-frame');
   const src = inScene ? 'about:blank' : page; // (The page doesn't keep running behind the scene)
@@ -849,12 +873,18 @@ function openPatch(next, file) {
   render();
   showStatus(kept && unsaved() ? 'changed (not saved): your unsaved changes, brought back' : undefined);
   suitPlayMode();
-  if (tracks) tracks.refresh(); // (A track playing it plays it from here now)
 }
 
 $('revert').onclick = () => {
   const saved = library.patches.find((p) => p.file === currentFile);
   if (!confirm(saved ? `Go back to "${saved.patch.name}" as it was last saved?` : 'Start this new patch over?')) return;
+  if (selectedTrack) {
+    // A track's: back to the patch it was loaded from or saved as
+    patch = complete(structuredClone(saved ? saved.patch : selectedTrack.kind === 'sampler' ? samplerOf([]) : { ...blankPatch, name: '' }));
+    render();
+    changed();
+    return;
+  }
   delete drafts[draftKey()];
   remember('drafts', drafts);
   openPatch(saved ? saved.patch : { ...blankPatch }, saved ? currentFile : null);
@@ -864,6 +894,21 @@ $('revert').onclick = () => {
 $('patch-list').onchange = () => {
   const file = $('patch-list').value;
   const found = library.patches.find((p) => p.file === file);
+  $('patch-list').blur(); // So the computer's keys play notes again
+  if (selectedTrack) {
+    // Into the track: a copy of a saved patch (saving it again updates that one), or an empty synth or sampler
+    const empty = file.startsWith('new:');
+    if (!found && !empty) return;
+    patch = empty ? (file === 'new:sampler' ? samplerOf([]) : complete({ ...blankPatch, name: '' })) : complete(structuredClone(found.patch));
+    currentFile = empty ? null : file;
+    savedJSON = empty ? '' : JSON.stringify(patch);
+    savedName = empty ? null : patch.name;
+    selectedTrack.from = currentFile;
+    render();
+    changed();
+    renderPatchList();
+    return;
+  }
   keepDraft(); // The one being left: its changes are kept for when it's opened again
   if (found && found.section !== section) enterSection(found.section); // A patch from another section takes you there
   openPatch(found ? found.patch : { ...blankPatch, name: 'untitled' }, found ? file : null);
@@ -873,9 +918,21 @@ $('patch-list').onchange = () => {
 
 // Saving, into the section's folder: any sounds dropped on the page go into its sound folder first, so the patch names
 // them by URL
+let replacing = null; // A patch it'd save over (another of the same name), once save's been pressed for it once
+$('patch-name').addEventListener('input', () => (replacing = null));
 $('save').onclick = async () => {
-  const name = slug(patch.name);
-  if (!name) return showStatus('give it a name first', true);
+  const name = slug(patch.name ?? '');
+  if (!name) {
+    $('patch-name').focus();
+    return showStatus('give it a name first, to save it as a patch', true);
+  }
+  // Saving over another patch (not the one it's from) only on a second press
+  const id = `${section}/${name}.json`;
+  if (id !== currentFile && library.patches.some((p) => p.file === id) && replacing !== id) {
+    replacing = id;
+    return showStatus(`there's already a patch called "${name}" in ${section}: press save again to replace it`, true);
+  }
+  replacing = null;
   try {
     const uploaded = new Map();
     for (const layer of patch.layers) {
@@ -906,7 +963,12 @@ $('save').onclick = async () => {
     savedName = patch.name;
     await loadLibrary();
     synth.setPatch(patch);
+    if (selectedTrack) {
+      selectedTrack.from = currentFile; // (Saving again updates this one)
+      tracks.soundChanged(selectedTrack);
+    }
     render();
+    renderPatchList();
     showStatus('saved ' + result.file);
   } catch (error) {
     showStatus('not saved: ' + error.message, true);
@@ -931,9 +993,16 @@ addEventListener('drop', async (event) => {
   for (const file of event.dataTransfer.files) {
     try {
       const buffer = await audio.decodeAudioData(await file.arrayBuffer());
-      const src = `local:${Date.now().toString(36)}-${file.name}`;
+      let src = `local:${Date.now().toString(36)}-${file.name}`;
+      if (selectedTrack) {
+        // A track's sampler: the sound goes into the section's sound folder now (the track keeps it, saved or not)
+        const response = await fetch(`/__sandbox/sample?section=${section}&name=` + encodeURIComponent(file.name), { method: 'POST', body: file });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error);
+        src = result.src;
+        await loadLibrary();
+      } else localFiles.set(src, file);
       provideBuffer(audio, src, buffer);
-      localFiles.set(src, file);
       // Into a sampler with no sounds yet, if that's what's open; otherwise as a sample layer of its own
       const empty = patch.layers.find((layer) => layer.kind === 'sample' && !srcsOf(layer).length);
       if (empty) empty.src = src;
@@ -943,7 +1012,7 @@ addEventListener('drop', async (event) => {
       showStatus(`${file.name} isn't a sound this browser can read`, true);
     }
   }
-  synth.setPatch(patch);
+  changed(); // (A track's sampler keeps its new sounds)
   render();
 });
 
@@ -1139,82 +1208,65 @@ tracks = makeTracks({
   master,
   holder: $('tracks'),
   library: () => library,
-  live: () => ({ file: currentFile, synth }),
-  patchFor(file) {
-    const found = library.patches.find((p) => p.file === file);
-    if (!found) return null;
-    return drafts[file] ? complete(withoutLostSounds(drafts[file])) : found.patch;
-  },
-  siblingsOf,
-  // A new, empty patch for a track, saved straight away in the open section (never over one already there): a synth
-  // (a sine wave, dying away, or kept going for a background) or a sampler (with no sounds in it yet, played as they
-  // are, or looped for a background)
-  async makePatch(name, kind, background) {
-    let base = slug(name) || 'untitled';
-    let file = base;
-    for (let n = 2; library.patches.some((p) => p.file === `${section}/${file}.json`); n++) file = `${base}-${n}`;
-    const sampler = {
-      ...structuredClone(blankPatch),
-      name: file.replace(/-/g, ' '),
-      level: 1,
-      out: 1,
-      filter: { ...structuredClone(blankPatch.filter), start: { ratio: 0, add: 20000, velocity: 0 }, end: { ratio: 0, add: 20000 } },
-      echo: { time: 0.37, feedback: 0.35, wet: 0 },
-      layers: [{ ...layerDefaults.sample, follow: false, loop: background, sustain: 1 }],
-    };
-    const start = kind === 'sampler'
-      ? sampler
-      : background
-      ? {
-          ...structuredClone(blankPatch),
-          name: file.replace(/-/g, ' '),
-          level: 0.12,
-          attack: 2,
-          release: 2,
-          range: { low: 50, high: 62, scale: 'pentatonic', key: 2 },
-          filter: { ...structuredClone(blankPatch.filter), sway: { depth: 6, rate: 0.1 } },
-          layers: [
-            { ...layerDefaults.osc, wave: 'sine', level: 0.6, sustain: 1 },
-            { ...layerDefaults.osc, wave: 'triangle', ratio: 2, detune: 6, level: 0.25, sustain: 1 },
-            { ...layerDefaults.noise, hold: true, color: 'pink', ratio: 6, level: 0.15 },
-          ],
-          echo: { time: 0.5, feedback: 0.4, wet: 0.3 },
-        }
-      : { ...structuredClone(blankPatch), name: file.replace(/-/g, ' ') };
-    try {
-      const response = await fetch(`/__sandbox/patch?section=${section}&name=${file}`, { method: 'POST', body: JSON.stringify(start) });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error);
-      await loadLibrary();
-      showStatus('made ' + result.file);
-      return result.id;
-    } catch (error) {
-      showStatus('not made: ' + error.message, true);
-      return null;
-    }
-  },
+  blank: (kind) => (kind === 'sampler' ? samplerOf([]) : { ...structuredClone(blankPatch), name: '' }),
+  samplerOf,
+  select: selectTrack,
+  selected: () => selectedTrack,
   async onSave(list) {
     try {
       const response = await fetch(`/__sandbox/scene?name=${sceneName}`, { method: 'POST', body: JSON.stringify({ tracks: list }) });
       if (!response.ok) throw new Error((await response.json()).error);
       library.scenes ??= {};
       library.scenes[sceneName] = { tracks: structuredClone(list) };
-      showStatus('tracks saved');
     } catch (error) {
-      showStatus('tracks not saved: ' + error.message, true);
+      showStatus('tracks not kept: ' + error.message, true);
     }
     showPlayBar();
   },
-  openPatch(file) {
-    const found = library.patches.find((p) => p.file === file);
-    if (!found) return;
-    keepDraft();
-    if (found.section !== section) enterSection(found.section);
-    openPatch(found.patch, file);
-    renderPatchList();
-    changed();
-  },
 });
+
+// A sampler: sound files played as they are (one at random each time, if there are several), with nothing done to
+// them, until its sliders say otherwise
+function samplerOf(srcs) {
+  return complete({
+    ...structuredClone(blankPatch),
+    name: '',
+    level: 1,
+    out: 1,
+    filter: { ...structuredClone(blankPatch.filter), start: { ratio: 0, add: 20000, velocity: 0 }, end: { ratio: 0, add: 20000 } },
+    echo: { time: 0.37, feedback: 0.35, wet: 0 },
+    layers: [{ ...layerDefaults.sample, src: srcs.length > 1 ? srcs : (srcs[0] ?? ''), follow: false, sustain: 1 }],
+  });
+}
+
+// Opening a track's synth or sampler in the controls (or, with null, going back to a patch on its own)
+function selectTrack(track) {
+  if (track === selectedTrack) return;
+  if (!selectedTrack) keepDraft(); // Leaving a patch on its own: its changes are kept for when it's opened again
+  selectedTrack = track;
+  remember('selectedTrack', track ? tracks.list.indexOf(track) : -1);
+  if (!track) {
+    openPatch({ ...blankPatch }, null);
+  } else {
+    const saved = library.patches.find((p) => p.file === track.from);
+    currentFile = saved ? track.from : null;
+    savedJSON = saved ? JSON.stringify(complete(saved.patch)) : '';
+    savedName = saved ? complete(saved.patch).name : null;
+    patch = track.patch;
+    synth.setPatch(patch);
+    render();
+  }
+  renderPatchList();
+  showInstrument();
+  showStatus();
+  tracks.render();
+}
+// The card at the top of the controls: what's being worked on, and where it's from
+function showInstrument() {
+  $('instrument-kind').textContent = selectedTrack ? selectedTrack.kind : 'patch';
+  $('instrument-of').textContent = selectedTrack ? `of the track "${tracks.label(selectedTrack)}"` : 'on its own';
+}
+
 const sceneLeads = () => sceneShowing() && tracks.active;
 // There's no play button: the scene plays whenever it's showing (its tracks, or with none, the open patch on each drop,
 // or as one long note if it's a background), and the master volume turns it up or down
@@ -1388,6 +1440,10 @@ if (last && sectionOf(last.section)) {
   const first = library.patches.find((p) => p.section === section);
   if (first) openPatch(first.patch, first.file);
 }
+// The track that was open last time, if there are tracks
+const keptTrack = tracks.list[remembered('selectedTrack', 0)] ?? tracks.list[0];
+if (keptTrack) selectTrack(keptTrack);
+showInstrument();
 renderPatchList();
 showStatus();
 buildKeyboard();

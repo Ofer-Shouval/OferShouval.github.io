@@ -829,3 +829,46 @@ body.keys-hidden .keys-drawer {
   color: var(--dim);
   font-variant-numeric: tabular-nums;
 }
+
+/* The synth or sampler being worked on, with loading and saving */
+.instrument .kind {
+  color: var(--section);
+}
+
+.instrument-of {
+  color: var(--dim);
+}
+
+.instrument-save {
+  display: flex;
+  gap: 8px;
+}
+
+.instrument-save input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* A track's name: pressed, it opens its synth or sampler */
+.track {
+  grid-template-columns: auto minmax(0, 2fr) minmax(0, 1fr) minmax(60px, 1fr) auto;
+}
+
+.track-name {
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track-name .kind {
+  color: var(--dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.track.selected .track-name {
+  border-color: var(--section);
+  color: var(--section);
+}

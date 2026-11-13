@@ -1,3 +1,14 @@
+/* How wide the pages' column of text and media is: a bit wider on a wide screen */
+:root {
+  --column: 700px;
+}
+
+@media (min-width: 1200px) {
+  :root {
+    --column: 840px;
+  }
+}
+
 html, body {
   margin: 0;
   padding: 0;
@@ -508,7 +519,7 @@ body:has(.socialBar) {
 
 
 /* The teaser on the left of the text column, words to its right; stacked on a narrow screen */
-.luminin-intro { display: flex; align-items: center; gap: 24px; max-width: 700px; margin: 24px auto; }
+.luminin-intro { display: flex; align-items: center; gap: 24px; max-width: var(--column); margin: 24px auto; }
 .luminin-intro .container.luminin-teaser { flex: 0 0 50%; width: 50%; margin: 0; }
 .page .luminin-intro p { margin: 0; }
 .page .luminin-intro p + p { margin-top: 16px; }
@@ -616,7 +627,7 @@ body:has(.socialBar) {
 
 .sun-opening {
   position: relative;
-  width: min(100%, 700px);
+  width: min(100%, var(--column));
   height: max(min(78vh, 737px), 360px);
   margin: 0 auto;
   overflow: hidden;
@@ -712,7 +723,7 @@ body:has(.socialBar) {
    what it's playing under it */
 .installation .ghost-harp-sim {
   position: relative;
-  max-width: 700px;
+  max-width: var(--column);
   margin: 32px auto 40px;
 }
 
@@ -778,6 +789,13 @@ body:has(.socialBar) {
     margin: 0;
   }
 
+  /* Its photos and videos, as wide as the harp and its words side by side */
+  .page #ghost-harp > .imageGrid,
+  .page #ghost-harp > img,
+  .page #ghost-harp > video {
+    max-width: none;
+  }
+
   .ghost-harp-text {
     position: sticky;
     top: 72px;
@@ -804,7 +822,7 @@ body:has(.socialBar) {
 }
 
 .installation figure {
-  max-width: 700px;
+  max-width: var(--column);
   margin: 24px auto;
 }
 
@@ -852,7 +870,7 @@ body:has(.socialBar) {
 
 .refracture {
   position: relative;
-  max-width: 700px;
+  max-width: var(--column);
   margin: 24px auto;
 }
 
@@ -897,7 +915,7 @@ body:has(.socialBar) {
 }
 
 .page .feature h2 {
-  max-width: 700px;
+  max-width: var(--column);
   margin: 0 auto;
   padding: 0;
   text-align: left;
@@ -910,7 +928,7 @@ body:has(.socialBar) {
   display: grid;
   grid-template-columns: max-content 1fr;
   gap: 6px 24px;
-  max-width: 700px;
+  max-width: var(--column);
   margin: 32px auto;
   font-family: 'Inconsolata', monospace;
   font-size: 13px;
@@ -960,7 +978,7 @@ body:has(.socialBar) {
   font-weight: 100;
   font-size: 14px;
   line-height: 1.6;
-  max-width: 700px;
+  max-width: var(--column);
   margin: 24px auto;
   display: block;
 }
@@ -971,12 +989,12 @@ body:has(.socialBar) {
   display: block;
   margin: 24px auto;
   border: 0px solid white;
-  max-width: 700px;
+  max-width: var(--column);
 }
 
 .back-link {
   display: block;
-  max-width: 700px;
+  max-width: var(--column);
   margin: 0 auto 24px;
   font-size: 14px;
   text-decoration: none;
@@ -986,13 +1004,13 @@ body:has(.socialBar) {
   text-decoration: underline;
 }
 
-/* Photos or videos side by side, across the same 700px column as everything else, edge to edge with it. Each one
+/* Photos or videos side by side, across the same column as everything else (--column), edge to edge with it. Each one
    grows in proportion to its --ratio (width / height, 1 if not given), so a wide one next to a tall one still comes
    out the same height. */
 .imageGrid {
   display: flex;
   gap: 16px;
-  max-width: 700px;
+  max-width: var(--column);
   margin: 24px auto;
 }
 
@@ -1004,12 +1022,12 @@ body:has(.socialBar) {
 }
 
 .container {
-  max-width: 700px;
+  max-width: var(--column);
   position: relative;
   margin: 24px auto;
   overflow: hidden;
   width: 100%;
-  padding-top: min(56.25%, 393.75px); /* 16:9 aspect ratio, capped at max-width */
+  padding-top: min(56.25%, calc(var(--column) * 0.5625)); /* 16:9 aspect ratio, capped at max-width */
 }
 
 .responsive-iframe {
@@ -1382,7 +1400,7 @@ a.card:hover {
   font-family: 'Inconsolata', monospace;
   font-size: 14px;
   padding: 24px;
-  max-width: 700px;
+  max-width: var(--column);
   margin: 24px auto;
   text-align: center;
 }
@@ -1401,7 +1419,7 @@ a.card:hover {
 /* Timeline (e.g. Luminin since 2021) */
 
 .timeline {
-  max-width: 700px;
+  max-width: var(--column);
   margin: 0 auto;
   border-left: 1px solid #ccc;
   padding-left: 24px;
@@ -1419,7 +1437,7 @@ a.card:hover {
 /* Shows list */
 
 .shows {
-  max-width: 700px;
+  max-width: var(--column);
   margin: 0 auto;
   width: 100%;
   border-collapse: collapse;
@@ -1496,17 +1514,17 @@ a.card:hover {
 /* Luminin page */
 .page .luminin-lede { font-size: 1.2em; text-align: left; }
 /* The title and section headings on the text column's left edge, over what they head */
-.luminin-page > h1, .luminin-page > h2 { max-width: 700px; text-align: left; }
+.luminin-page > h1, .luminin-page > h2 { max-width: var(--column); text-align: left; }
 .luminin-page > h1 { margin: 0 auto 24px; }
 .luminin-page > h2 { margin: 64px auto 24px; }
 /* Sub-headings in the text column, close above what they head; captions close under their videos */
-.luminin-page > h3 { max-width: 700px; margin: 48px auto 8px; }
+.luminin-page > h3 { max-width: var(--column); margin: 48px auto 8px; }
 /* Sub-headings in the headings' typeface */
 .luminin-page h3 { font-family: 'Major Mono Display', monospace; font-weight: normal; }
 .luminin-page > .container + p, .luminin-page > video + p { margin-top: 8px; }
-.luminin-sim { position: relative; max-width: 700px; margin: 24px auto 0; }
+.luminin-sim { position: relative; max-width: var(--column); margin: 24px auto 0; }
 .luminin-sim canvas { display: block; width: 100% !important; height: auto !important; aspect-ratio: 8 / 3; background-color: black; outline: none; cursor: crosshair; }
-.luminin-stage { position: relative; max-width: 700px; margin: 24px auto 0; }
+.luminin-stage { position: relative; max-width: var(--column); margin: 24px auto 0; }
 /* The stage, its descriptions and its buttons fit the window's height together: the stage shrinks (keeping its shape,
    centred) when the window's too short for it */
 .luminin-stage canvas { display: block; width: auto; max-width: 100%; max-height: calc(100svh - 200px); margin: 0 auto; height: auto; background-color: rgba(11, 11, 13, 0.6); outline: none; cursor: grab; }
@@ -1532,12 +1550,12 @@ a.card:hover {
 .part-drawing .dots { fill: rgba(255, 255, 255, 0.6); }
 
 /* The concept's three points, in the same column and type as the page's paragraphs */
-.page .luminin-ideas { max-width: 700px; margin: 24px auto; padding-left: 0; list-style: none; color: rgba(255, 255, 255, 0.8); font-family: 'Source Code Pro', monospace; font-weight: 100; font-size: 14px; line-height: 1.6; }
+.page .luminin-ideas { max-width: var(--column); margin: 24px auto; padding-left: 0; list-style: none; color: rgba(255, 255, 255, 0.8); font-family: 'Source Code Pro', monospace; font-weight: 100; font-size: 14px; line-height: 1.6; }
 .luminin-ideas li { margin-bottom: 0.6em; }
 .luminin-ideas strong { color: white; font-weight: inherit; }
 /* Close-ups: a gallery in the text column, three to a row (two on a narrow screen), each clip the same shape with its
    song's name under it */
-.closeups { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; max-width: 700px; margin: 24px auto 48px; }
+.closeups { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; max-width: var(--column); margin: 24px auto 48px; }
 @media (max-width: 640px) { .closeups { grid-template-columns: repeat(2, 1fr); } }
 .closeups .luminin-pair { display: contents; } /* Its two tiles sit in the gallery like the rest */
 .closeup { margin: 0; }
@@ -1553,7 +1571,7 @@ a.card:hover {
 /* Album player (see src/scripts/album_player.js): a bar of controls over the list of tracks */
 
 .album-player {
-  max-width: 700px;
+  max-width: var(--column);
   margin: 24px auto;
   font-family: 'Inconsolata', monospace;
   color: white;
@@ -1768,13 +1786,24 @@ a.card:hover {
 /* Videos (see src/scripts/youtube_cards.js): thumbnails in a grid, each turning into YouTube's player when clicked */
 
 .video-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center; /* An odd one out sits in the middle under the rest */
   gap: 32px 24px;
+  max-width: var(--column);
+  margin: 0 auto;
 }
 
+/* Two to a row, across the same column as everything else, or one on a phone */
 .page .video-card {
+  flex: 0 0 calc((100% - 24px) / 2);
   margin: 0;
+}
+
+@media (max-width: 640px) {
+  .page .video-card {
+    flex-basis: 100%;
+  }
 }
 
 .video-thumb,
@@ -2008,7 +2037,7 @@ body.art-inverted {
 }
 
 /* Teaching page: a big opening line, and short headings over the statement's steps */
-.teaching-page > h3 { max-width: 700px; margin: 40px auto 0; }
+.teaching-page > h3 { max-width: var(--column); margin: 40px auto 0; }
 .teaching-page > h3 + p { margin-top: 8px; }
 .page .teaching-lede {
   font-family: 'Major Mono Display', monospace;

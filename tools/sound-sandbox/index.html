@@ -15,14 +15,6 @@
   </nav>
 
   <header class="bar">
-    <label class="field">patch
-      <select id="patch-list"></select>
-    </label>
-    <label class="field">name
-      <input id="patch-name" type="text" spellcheck="false">
-    </label>
-    <button id="save" class="primary">save</button>
-    <button id="revert" hidden title="Throw away the changes since it was last saved">revert</button>
     <span id="status" class="status"></span>
     <span class="spacer"></span>
     <div class="mode-switch" role="group" aria-label="How many controls to show">
@@ -69,6 +61,23 @@
     </section>
 
     <section class="shape-column">
+      <!-- The synth or sampler being worked on (the open track's, or a patch on its own): a saved patch can be loaded
+           into it, and it's saved as one only by naming it and pressing save -->
+      <div class="card instrument" id="instrument">
+        <div class="card-head">
+          <span class="kind" id="instrument-kind">patch</span>
+          <span class="instrument-of" id="instrument-of"></span>
+          <span class="spacer"></span>
+          <label class="field small">load
+            <select id="patch-list"></select>
+          </label>
+        </div>
+        <div class="instrument-save">
+          <input id="patch-name" type="text" spellcheck="false" placeholder="name it to save it as a patch">
+          <button id="save" class="primary">save</button>
+          <button id="revert" hidden title="Back to the patch as it was last saved">revert</button>
+        </div>
+      </div>
       <div id="sections"></div>
       <p class="hint simple-only">These are the main controls. <b>all controls</b>, at the top, shows every setting.</p>
       <details class="json all-only">
