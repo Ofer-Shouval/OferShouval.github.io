@@ -63,7 +63,7 @@ ul {
   z-index: 2;
 }
 
-/* Home, art, music, bio, the menu, in five equal tabs */
+/* Home, visual art, music, teaching, bio, the menu: tabs that share the width, each as wide as its word plus an even share of what's left */
 .navbar ul {
   display: flex;
   margin: 0;
@@ -80,8 +80,9 @@ ul {
 
 .navbar ul > a,
 .nav-menu {
-  flex: none;
-  width: 20%;
+  flex: 1 1 0;
+  min-width: max-content;
+  white-space: nowrap;
 }
 
 .navbar ul > a,
@@ -193,6 +194,24 @@ ul {
   .nav-menu-button {
     padding: 16px 0;
     font-size: 12px;
+  }
+
+  /* On a phone the word tabs take the room, and the home and menu tabs, only icons, stay narrow */
+  .navbar ul > a {
+    flex: 1 1 auto;
+  }
+
+  .navbar ul > a[aria-label="home"],
+  .nav-menu {
+    flex: 0 0 40px;
+    min-width: 0;
+  }
+}
+
+/* The smallest phones (320px wide): teaching is only in the menu, so the other tabs have room */
+@media screen and (max-width: 359px) {
+  .navbar ul > a[href="/teaching/"] {
+    display: none;
   }
 }
 
@@ -2029,4 +2048,49 @@ body.art-inverted {
 }
 @media (max-width: 600px) {
   .page .teaching-lede { font-size: 20px; }
+}
+
+/* Teaching: an "under construction" sign until the page is ready (teaching/index.html) */
+.under-construction {
+  min-height: calc(100vh - 60px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  box-sizing: border-box;
+}
+
+.construction-sign {
+  width: min(100%, 420px);
+  border: 1px solid #ccc;
+  text-align: center;
+}
+
+/* Black and white hazard stripes, top and bottom */
+.construction-stripes {
+  height: 14px;
+  background: repeating-linear-gradient(-45deg, #ccc 0 10px, transparent 10px 20px);
+}
+
+.construction-sign h1 {
+  display: block;
+  margin: 4px 16px 0;
+  font-size: 22px;
+  font-weight: normal;
+}
+
+.construction-section {
+  margin: 28px 16px 0;
+  color: rgba(255, 255, 255, 0.6);
+  font-family: 'Major Mono Display', monospace;
+  font-size: 13px;
+}
+
+.construction-note {
+  margin: 14px 24px 28px;
+  color: rgba(255, 255, 255, 0.8);
+  font-family: 'Source Code Pro', monospace;
+  font-weight: 300;
+  font-size: 13px;
+  line-height: 1.6;
 }
