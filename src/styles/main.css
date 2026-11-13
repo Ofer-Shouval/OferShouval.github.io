@@ -742,31 +742,6 @@ body:has(.socialBar) {
   color: white;
 }
 
-.installation .ghost-harp-controls {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px 16px;
-  margin-top: 10px;
-}
-
-.ghost-harp-midi {
-  padding: 4px 12px;
-  border: 1px solid #555;
-  border-radius: 999px;
-  background: none;
-  color: white;
-  font-family: 'Inconsolata', monospace;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.ghost-harp-midi:hover,
-.ghost-harp-midi:focus-visible {
-  border-color: white;
-}
-
 /* ...on the left, with its description and details on the right, staying in view while the harp scrolls by. Its name
    and first line go above both. On narrow screens, one after the other. */
 @media (min-width: 800px) {
@@ -775,25 +750,12 @@ body:has(.socialBar) {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 40px;
     align-items: start;
-    margin-top: 32px;
-  }
-
-  /* Its name and first line, lined up with the harp's left edge */
-  .page #ghost-harp > h2,
-  .page #ghost-harp > p {
-    max-width: none;
-    margin-left: 0;
+    max-width: var(--column);
+    margin: 32px auto 0;
   }
 
   .installation .ghost-harp-top .ghost-harp-sim {
     margin: 0;
-  }
-
-  /* Its photos and videos, as wide as the harp and its words side by side */
-  .page #ghost-harp > .imageGrid,
-  .page #ghost-harp > img,
-  .page #ghost-harp > video {
-    max-width: none;
   }
 
   .ghost-harp-text {
@@ -816,9 +778,25 @@ body:has(.socialBar) {
   scroll-margin-top: 72px; /* So its name isn't under the navbar when it's jumped to */
 }
 
+/* Each installation in the same column, so the lines between them are as wide as what's in them */
+.installation {
+  max-width: var(--column);
+  margin-left: auto;
+  margin-right: auto;
+}
+
 .installation + .installation {
   padding-top: 72px;
   border-top: 1px solid #333;
+}
+
+/* Photos, videos and sketches one after another are as far apart as the ones side by side (see .imageGrid) */
+.page .installation > :is(img, video, figure, .imageGrid, .container, .ghost-harp-top):has(+ :is(img, video, figure, .imageGrid, .container)) {
+  margin-bottom: 16px;
+}
+
+.page .installation > :is(img, video, figure, .imageGrid, .container, .ghost-harp-top) + :is(img, video, figure, .imageGrid, .container) {
+  margin-top: 16px;
 }
 
 .installation figure {
