@@ -111,7 +111,11 @@ let video = document.createElement('video');
 video.playsInline = true;
 video.muted = true;
 let stream = null;
-let file = holder.dataset.video || null; // The videos it plays, if it's been given them
+// The videos it plays, if it's been given them. On a phone-sized screen, data-video-small's instead, if it's given
+// (smaller copies: the grid there only looks at about 190 by 140 pixels of the video, so they look the same, and
+// arrive far sooner on a slow connection)
+const PHONE = matchMedia('(max-width: 820px)').matches;
+let file = (PHONE && holder.dataset.videoSmall) || holder.dataset.video || null;
 const SPEED = Number(holder.dataset.speed) || 1; // How fast the videos play (data-speed; 0.25 is four times slower)
 // Players for each video: as many as there are stretches of it mixed in at once
 let sources = [];
